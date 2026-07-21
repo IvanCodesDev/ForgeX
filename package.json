@@ -1,0 +1,14 @@
+{
+  "name": "forgex-insight",
+  "version": "0.9.0",
+  "private": true,
+  "description": "FORGE·X 智造洞察 — 工业 3D 打印仿真 × InfiniSynapse 数据分析（零 npm 依赖，node server/index.js 即起）",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node tests/smoke.js && node tests/sim-calib.test.js && node tests/exporter.test.js && node tests/insight.test.js && node tests/server.test.js && node tests/check-refs.js"
+  }
+}

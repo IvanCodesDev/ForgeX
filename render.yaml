@@ -1,0 +1,17 @@
+# Render 一键部署蓝图（Blueprint）— New + → Blueprint → 选本仓库即可
+# 零 npm 依赖：无 install / 无 build；Render 自动注入 PORT，config.js 会读取。
+services:
+  - type: web
+    name: forgex-insight
+    runtime: node
+    plan: free
+    buildCommand: "echo zero-dependency, nothing to build"
+    startCommand: node server/index.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      # 经 Render 反代，限流需读 X-Forwarded-For 才能区分真实访客
+      - key: TRUST_PROXY
+        value: "1"
+      # InfiniSynapse 密钥到手后在 Render 控制台补：INFINI_API_KEY / INFINI_VERIFIED=1

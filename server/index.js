@@ -1,0 +1,168 @@
+/* FORGE·X 智造洞察 — 自有薄后端（Node ≥18 原生 http，零 npm 依赖）
+   设计见 doc/开发文档.md §8。职责：
+   1. /api/* 业务接口（分析任务 / SSE 进度 / 数据源 / 知识库 / 分享）
+   2. /share/:token 公开分享页（服务端渲染）
+   3. 静态托管前端（allowlist，server/ 与 .env 永不可达）→ 同源部署零 CORS
+   引擎双模：mock（复用前端本地分析引擎）/ infinisynapse（key + 附录 B 核准后启用）。
+   零依赖动机：评委 clone 后 `node server/index.js` 即起，无 install、无供应链风险；
+   若后续需要 Fastify 生态，services/* 与框架无关，仅需替换本文件与 routes/*。 */
+"use strict";
+const http = require("http");
+const crypto = require("crypto");
+
+const { getConfig } = require("./config");
+const { createLogger } = require("./lib/logger");
+const { HttpError, sendJson, serveStatic, clientIp } = require("./lib/http");
+const { DatasourceStore } = require("./services/datasource");
+const { TaskStore } = require("./services/analysis");
+const { KnowledgeStore } = require("./services/knowledge");
+const { ShareStore } = require("./services/share");
+const { InfiniClient } = require("./services/infini");
+
+/* ── 极简路由器 ─────────────────────────────── */
+
+class Router {
+  constructor() {
+    this.routes = [];
+  }
+  add(method, pattern, handler) {
+    this.routes.push({ method, pattern, handler });
+  }
+  match(method, pathname) {
+    for (const r of this.routes) {
+      if (r.method !== method) continue;
+      const m = r.pattern.exec(pathname);
+      if (m) return { handler: r.handler, m };
+    }
+    return null;
+  }
+}
+
+/* ── 服务组装（可测：不自动 listen） ───────────── */
+
+function createApp(overrides) {
+  const cfg = getConfig(overrides);
+  const log = createLogger(cfg.logLevel);
+  const infini = new InfiniClient(cfg, log);
+  const datasources = new DatasourceStore(cfg);
+  const tasks = new TaskStore(cfg, log, infini);
+  const knowledge = new KnowledgeStore(cfg);
+  const shares = new ShareStore();
+
+  // 同 IP 冷却限流（仅分析接口调用）
+  const lastHit = new Map();
+  function rateLimit(ip) {
+    if (cfg.rateLimitMs <= 0) return;
+    const now = Date.now();
+    const last = lastHit.get(ip) || 0;
+    if (now - last < cfg.rateLimitMs) {
+      throw new HttpError(429, "请求过于频繁，请 " + Math.ceil((cfg.rateLimitMs - (now - last)) / 1000) + " 秒后重试");
+    }
+    lastHit.set(ip, now);
+    if (lastHit.size > 10000) lastHit.clear();   // 防 Map 无界增长
+  }
+
+  const ctx = { cfg, log, infini, datasources, tasks, knowledge, shares, rateLimit };
+  const router = new Router();
+
+  router.add("GET", /^\/healthz$/, (req, res) => {
+    sendJson(res, 200, { ok: true, engine: cfg.mode, reason: cfg.modeReason, now: Date.now() });
+  });
+  require("./routes/analyze").register(router, ctx);
+  require("./routes/datasource").register(router, ctx);
+  require("./routes/knowledge").register(router, ctx);
+  require("./routes/share").register(router, ctx);
+
+  function applyCors(req, res) {
+    const origin = req.headers.origin;
+    if (origin && cfg.allowOrigins.includes(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+      res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      res.setHeader("Access-Control-Max-Age", "600");
+    }
+  }
+
+  const server = http.createServer(async (req, res) => {
+    const reqId = crypto.randomBytes(4).toString("hex");
+    const ip = clientIp(req, cfg.trustProxy);
+    const started = Date.now();
+    let pathname = "/";
+    try {
+      pathname = new URL(req.url, "http://x").pathname;
+    } catch (e) {
+      return sendJson(res, 400, { error: "URL 不合法" });
+    }
+    applyCors(req, res);
+    if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
+
+    res.on("finish", () => {
+      // SSE 长连接结束时也会走到这，一并计入访问日志
+      log.info("http", { reqId, ip, method: req.method, path: pathname, status: res.statusCode, ms: Date.now() - started });
+    });
+
+    try {
+      const hit = router.match(req.method, pathname);
+      if (hit) {
+        const rc = { reqId, ip, origin: req.headers.origin || "" };
+        await hit.handler(req, res, hit.m, rc);
+        return;
+      }
+      if (req.method === "GET" || req.method === "HEAD") {
+        if (pathname.startsWith("/api/")) return sendJson(res, 404, { error: "接口不存在" });
+        return serveStatic(req, res, cfg.staticRoot);
+      }
+      sendJson(res, 404, { error: "接口不存在" });
+    } catch (err) {
+      if (res.headersSent) { try { res.end(); } catch (e2) { /* 已断开 */ } return; }
+      if (err instanceof HttpError) return sendJson(res, err.status, { error: err.message });
+      log.error("unhandled", { reqId, path: pathname, error: err.message, stack: err.stack });
+      sendJson(res, 500, { error: "服务器内部错误" });
+    }
+  });
+
+  // 周期清理过期数据源 / 任务 / 知识文档 / 分享页
+  const sweeper = setInterval(() => {
+    const now = Date.now();
+    datasources.sweep(now);
+    tasks.sweep(now);
+    knowledge.sweep(now);
+    shares.sweep(now);
+  }, 60 * 1000);
+  sweeper.unref();
+
+  function close() {
+    clearInterval(sweeper);
+    tasks.closeAll();
+    return new Promise((resolve) => server.close(resolve));
+  }
+
+  return { server, cfg, log, ctx, close };
+}
+
+/* ── 直接运行入口 ───────────────────────────── */
+
+if (require.main === module) {
+  const app = createApp();
+  const { cfg, log } = app;
+  app.server.listen(cfg.port, cfg.host, () => {
+    log.info("FORGE·X server started", {
+      url: "http://" + cfg.host + ":" + cfg.port,
+      engine: cfg.mode,
+      reason: cfg.modeReason,
+    });
+  });
+  let closing = false;
+  const shutdown = (sig) => {
+    if (closing) return;
+    closing = true;
+    log.info("shutting down", { sig });
+    app.close().then(() => process.exit(0));
+    setTimeout(() => process.exit(1), 5000).unref();   // 兜底强退
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
+
+module.exports = { createApp };

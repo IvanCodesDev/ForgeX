@@ -1,0 +1,20 @@
+# 密钥与本地环境（sk- key 只活在 server/.env，绝不入库）
+server/.env
+.env
+
+node_modules/
+*.log
+Thumbs.db
+.DS_Store
+
+# IDE / 智能体配置（非项目代码，不入公开仓库）
+.cursor/
+
+# 冗余备份
+*.bak
+
+# 临时验证脚本（作者标注"跑完即删"，不入公开仓库）
+.tmp-*
+
+# 内部策略/设计文档（含夺奖策略与竞品分析，默认不进公开仓库；需要公开再补 commit）
+doc/开发文档.md

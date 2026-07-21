@@ -1,0 +1,19 @@
+# 密钥绝不进镜像（与 .gitignore 同口径）
+server/.env
+.env
+
+# 运行时不需要的内容：版本库 / IDE / 测试 / 内部文档（doc 仅保留对外示例数据）
+.git
+.gitignore
+.cursor
+node_modules
+tests
+doc/*
+!doc/samples
+!doc/samples/**
+*.log
+*.bak
+Thumbs.db
+.DS_Store
+Dockerfile
+.dockerignore

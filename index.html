@@ -1,0 +1,211 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<!-- 国产双核浏览器（360/QQ/搜狗/2345 等）强制走 Webkit 极速内核，避免落入 IE 兼容内核 -->
+<meta name="renderer" content="webkit">
+<meta name="force-rendering" content="webkit">
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FORGE·X 智造洞察 — 3D打印仿真与数据分析</title>
+<link rel="stylesheet" href="css/style.css?v=7">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%231c1712'/%3E%3Cpath d='M11 12h10l-3.4 6h-3.2z' fill='%23f0e8d8'/%3E%3Crect x='14.6' y='19.5' width='2.8' height='4.5' fill='%23ff4f2a'/%3E%3C/svg%3E">
+</head>
+<body class="boot">
+
+  <!-- 浅色雾面背景（Canvas 之下的兜底层） -->
+  <div id="bg-space" aria-hidden="true"></div>
+
+  <!-- 3D 视口 -->
+  <canvas id="gl"></canvas>
+
+  <!-- WebGL 不可用兜底 -->
+  <div id="webgl-fallback" hidden>
+    <div class="fb-card">
+      <h2>无法初始化 3D 视口</h2>
+      <p id="fb-reason">当前浏览器或显卡驱动不支持 WebGL。</p>
+      <p>建议：① 更换 Chrome / Edge / Firefox / 360 极速模式等现代浏览器；② 在浏览器设置中开启「硬件加速」；③ 更新显卡驱动后重试。</p>
+    </div>
+  </div>
+
+  <!-- ══ 顶部：浮动极简条 ══ -->
+  <header id="topbar">
+    <div class="brand pill-card boot-item">
+      <div class="brand-mark" id="brand-mark"></div>
+      <div class="brand-text">
+        <div class="brand-name">FORGE·X</div>
+        <div class="brand-strip" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      </div>
+    </div>
+
+    <nav id="flow-pills" class="pill-card boot-item" aria-label="工作流程"></nav>
+
+    <div class="top-right boot-item">
+      <div class="status-pill pill-card" id="status-pill">
+        <span class="sp-dot"></span><span class="sp-text">初始化…</span>
+      </div>
+      <div class="seg-ctrl pill-card" id="speed-seg" title="仿真时间倍率">
+        <button data-v="1">1×</button><button data-v="2">2×</button><button data-v="4" class="on">4×</button><button data-v="8">8×</button>
+      </div>
+      <button class="icon-btn pill-card" id="btn-params" title="工艺参数"></button>
+      <button class="icon-btn pill-card" id="btn-about" title="关于与操作说明"></button>
+      <button class="icon-btn pill-card" id="btn-fullscreen" title="全屏"></button>
+    </div>
+  </header>
+
+  <!-- ══ 左侧：上下文浮动卡片 ══ -->
+  <section id="ctx-panel" class="float-card boot-item">
+    <header class="panel-head">
+      <h2 id="ctx-title">模型</h2>
+      <span class="ph-tag mono" id="ctx-step">01</span>
+      <button class="close-btn" id="ctx-close" title="收起面板"></button>
+    </header>
+    <div id="ctx-body" class="panel-body"></div>
+  </section>
+
+  <!-- ══ 右侧：参数浮动卡片（默认收起） ══ -->
+  <aside id="param-panel" class="float-card" hidden>
+    <header class="panel-head">
+      <h2>工艺参数</h2>
+      <span class="ph-tag mono warn-tag" id="param-lock-tag" hidden>打印中锁定</span>
+      <button class="close-btn" id="param-close" title="收起面板"></button>
+    </header>
+    <div class="panel-body" id="param-body"></div>
+  </aside>
+
+  <!-- ══ 左侧：智造洞察面板（默认收起） ══ -->
+  <section id="insight-panel" class="float-card" hidden>
+    <header class="panel-head">
+      <h2>智造洞察</h2>
+      <span class="ph-tag mono" id="insight-engine-tag">本地演示</span>
+      <button class="close-btn" id="insight-close" title="收起面板"></button>
+    </header>
+    <div class="panel-body" id="insight-body"></div>
+  </section>
+
+  <!-- ══ 视口角落徽章 ══ -->
+  <div id="hud">
+    <div class="hud-corner boot-item">
+      <div class="seg-ctrl pill-card" id="hud-cam">
+        <button data-v="overview" class="on">总览</button><button data-v="nozzle">喷头</button><button data-v="top">俯视</button>
+      </div>
+    </div>
+    <div class="hud-info mono boot-item">
+      <span id="hud-action">待机</span><i></i><span id="hud-coords">X — · Y — · Z —</span>
+    </div>
+  </div>
+
+  <!-- ══ 底部：居中控制 Dock ══ -->
+  <footer id="dock" class="pill-card boot-item">
+    <div class="ring-wrap" title="打印进度">
+      <svg viewBox="0 0 96 96" class="ring">
+        <circle class="ring-bg" cx="48" cy="48" r="41"/>
+        <circle class="ring-fg" id="ring-fg" cx="48" cy="48" r="41"/>
+      </svg>
+      <div class="ring-center">
+        <div class="ring-val mono" id="ring-val">0<span>%</span></div>
+        <div class="ring-lab" id="ring-lab" hidden>就绪</div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="btn-start"><span class="bi bi-play"></span>开始打印</button>
+    <button class="dock-icon" id="btn-pause" disabled title="暂停"><span class="bi bi-pause"></span></button>
+    <button class="dock-icon danger" id="btn-stop" disabled title="停止"><span class="bi bi-stop"></span></button>
+
+    <span class="dock-sep"></span>
+
+    <div class="dock-stat"><span class="ds-lab">层</span><b class="mono" id="stat-layer">— / —</b></div>
+    <div class="dock-stat"><span class="ds-lab">剩余</span><b class="mono" id="stat-remain">—</b></div>
+    <div class="dock-stat hide-sm"><span class="ds-lab dot-noz">喷嘴</span><b class="mono" id="noz-now">—</b></div>
+    <div class="dock-stat hide-sm"><span class="ds-lab dot-bed">热床</span><b class="mono" id="bed-now">—</b></div>
+
+    <span class="dock-sep"></span>
+
+    <button class="dock-icon" id="btn-monitor" title="监控详情"><span class="bi bi-wave"></span></button>
+  </footer>
+
+  <!-- ══ 监控详情浮层（默认收起） ══ -->
+  <aside id="monitor-pop" class="float-card" hidden>
+    <header class="panel-head">
+      <h2>实时监控</h2>
+      <span class="ph-tag mono"><span id="stat-elapsed">00:00:00</span> · 完成 <span id="stat-eta">—</span></span>
+      <button class="close-btn" id="mon-close" title="收起面板"></button>
+    </header>
+    <div class="panel-body mon-body">
+      <div class="chart-head">
+        <span class="ch-lab">温度曲线</span>
+        <span class="ch-leg"><i class="dot dot-n"></i>喷嘴</span>
+        <span class="ch-leg"><i class="dot dot-b"></i>热床</span>
+      </div>
+      <canvas id="chart-canvas"></canvas>
+
+      <div class="res-grid">
+        <div class="res-block">
+          <div class="rb-head"><span>耗材余量</span><b class="mono" id="mat-grams">1000 g</b></div>
+          <div class="hbar"><div class="hbar-fill fill-ink" id="mat-bar" style="width:100%"></div></div>
+          <div class="rb-sub mono" id="mat-len">已用 0.00 m · 0.0 g</div>
+        </div>
+        <div class="res-block">
+          <div class="rb-head"><span>设备负载</span><b class="mono" id="load-psu">45 W</b></div>
+          <div class="load-row"><span>电机</span><div class="hbar"><div class="hbar-fill fill-ink" id="load-motor"></div></div></div>
+          <div class="load-row"><span>主控</span><div class="hbar"><div class="hbar-fill fill-soft" id="load-mcu"></div></div></div>
+        </div>
+      </div>
+
+      <div class="log-head">
+        <span class="ch-lab">事件日志</span>
+        <label class="mini-check"><input type="checkbox" id="log-autoscroll" checked><span>自动滚动</span></label>
+        <button class="mini-btn" id="log-clear">清空</button>
+      </div>
+      <div class="log-list" id="log-list"></div>
+    </div>
+  </aside>
+
+  <!-- 浮层 -->
+  <div id="toasts"></div>
+  <div id="modal-root"></div>
+  <input type="file" id="file-input" accept="image/png,image/jpeg,image/webp,image/bmp" hidden>
+  <input type="file" id="csv-input" accept=".csv,text/csv" hidden>
+
+  <!-- 兼容性守卫（刻意用 ES3 语法书写）：过老引擎无法运行 ES2017 代码时，
+       后续脚本会整体解析失败而静默黑屏，这里提前给出明确提示 -->
+  <script>
+  window.FX_COMPAT = (function () {
+    try {
+      new Function("class A { constructor() { this.x = `${1}`; } } const f = (a = 1, ...r) => a; for (const v of [1]) {} async function t() {}");
+      if (!window.WebGLRenderingContext) return { ok: false, why: "当前浏览器不支持 WebGL。" };
+      if (!("padStart" in String.prototype)) return { ok: false, why: "当前浏览器内核过旧（缺少 ES2017 支持）。" };
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, why: "当前浏览器内核过旧（不支持 ES2015+ 语法）。" };
+    }
+  })();
+  if (!window.FX_COMPAT.ok) {
+    (function () {
+      var fb = document.getElementById("webgl-fallback");
+      var reason = document.getElementById("fb-reason");
+      if (reason) reason.innerHTML = window.FX_COMPAT.why;
+      if (fb) fb.removeAttribute("hidden");
+    })();
+  }
+  </script>
+
+  <!-- 脚本（经典脚本模式，file:// 直开可用；?v= 版本号用于击穿浏览器缓存） -->
+  <script src="js/vendor/three.min.js?v=152"></script>
+  <script src="js/util.js?v=9"></script>
+  <script src="js/orbit.js?v=8"></script>
+  <script src="js/slicer.js?v=8"></script>
+  <script src="js/models.js?v=8"></script>
+  <script src="js/printer3d.js?v=9"></script>
+  <script src="js/printers.js?v=8"></script>
+  <script src="js/scene.js?v=8"></script>
+  <script src="js/sim.js?v=9"></script>
+  <script src="js/exporter.js?v=9"></script>
+  <script src="js/insight-data.js?v=8"></script>
+  <script src="js/insight-engine.js?v=8"></script>
+  <script src="js/api-client.js?v=8"></script>
+  <script src="js/insight.js?v=9"></script>
+  <script src="js/ui.js?v=9"></script>
+  <script src="js/main.js?v=9"></script>
+</body>
+</html>
