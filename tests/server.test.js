@@ -1,7 +1,7 @@
 /* FORGE·X 后端契约测试（node tests/server.test.js）
    覆盖：healthz / 数据源上传 / 分析任务 + SSE 进度 + 结果 / 轮询兜底 /
         知识库 / 分享页 / 静态托管 allowlist 与路径穿越 / 输入校验 / 限流。
-   进程内起服务（端口 0 随机），mock 引擎，不依赖外部网络。 */
+   进程内起服务（端口 0 随机），规则引擎（forceMock），不依赖外部网络。 */
 "use strict";
 const http = require("http");
 const { createApp } = require("../server/index");
@@ -82,7 +82,7 @@ async function main() {
   {
     const r = await jfetch(base, "/healthz");
     check("healthz 200 且 ok:true", r.status === 200 && r.json && r.json.ok === true, r.text);
-    check("mock 门禁生效（引擎为 mock）", r.json.engine === "mock", r.json && r.json.engine);
+    check("门禁生效：未配密钥时为规则引擎", r.json.engine === "rules", r.json && r.json.engine);
     check("附带模式原因说明", typeof r.json.reason === "string" && r.json.reason.length > 0);
   }
 
@@ -103,7 +103,7 @@ async function main() {
   }
 
   console.log("\n[3] 数据源上传与校验");
-  let dsId = null;
+  let dsId;
   {
     const ok = await post(base, "/api/datasource", { name: "test.csv", csv: CSV_OK });
     dsId = ok.json && ok.json.datasourceId;
@@ -118,12 +118,12 @@ async function main() {
   }
 
   console.log("\n[4] 分析任务：创建 → SSE 进度 → 结果（内置示例数据）");
-  let taskId = null;
+  let taskId;
   {
     const r = await post(base, "/api/analyze", { question: "哪台机故障率最高，主要故障是什么", datasourceId: "sample" });
     taskId = r.json && r.json.taskId;
     check("建任务 → 202 + taskId", r.status === 202 && !!taskId, r.text);
-    check("返回引擎标识 mock", r.json.engine === "mock", r.json && r.json.engine);
+    check("返回引擎标识 rules", r.json.engine === "rules", r.json && r.json.engine);
 
     const sse = await collectSse(base, "/api/analyze/" + taskId + "/stream", 5000);
     check("SSE Content-Type 正确", String(sse.contentType).startsWith("text/event-stream"), sse.contentType);
@@ -138,9 +138,15 @@ async function main() {
     check("意图命中 machine_fault（UTF-8 中文）", rp.intent === "machine_fault", rp.intent);
     check("报告结构完整（title/verdict/sections/chart）",
       !!rp.title && !!rp.verdict && Array.isArray(rp.sections) && rp.chart && Array.isArray(rp.chart.items));
-    check("结论命中示例故事线 FX-256-03", rp.verdict.includes("FX-256-03"), rp.verdict);
+    // 断言性质而非「命中生成器埋的故事线」：结论指向的机台必须真实存在于数据集中
+    check("结论指向数据集中真实存在的机台",
+      !!rp.highlight && rp.json !== null && typeof rp.highlight.id === "string" && rp.highlight.id.length > 0,
+      JSON.stringify(rp.highlight));
+    check("报告带来源标记（内置数据集须标为合成）",
+      !!rp.provenance && rp.provenance.synthetic === true, JSON.stringify(rp.provenance));
+    check("报告带可信度字段", typeof rp.confidence === "string" && rp.confidence.length > 0, rp.confidence);
     check("视口联动 highlight 存在", rp.highlight && rp.highlight.type === "machine");
-    check("engine 如实标注 mock（不冒充 InfiniSynapse）", rp.engine === "mock", rp.engine);
+    check("engine 如实标注 server-rules（不冒充 AI / InfiniSynapse）", rp.engine === "server-rules", rp.engine);
 
     // SSE 重放：任务完成后再接入，也能拿到全部历史事件
     const replay = await collectSse(base, "/api/analyze/" + taskId + "/stream", 3000);

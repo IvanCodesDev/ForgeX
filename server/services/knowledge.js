@@ -1,5 +1,8 @@
 /* 知识库文档存储（内存态）：工艺术语表 / 材料参数 / 设备手册。
-   演示模式仅登记；InfiniSynapse RAG 接口核准后（附录 B-6）在建任务时注入。 */
+
+   ⚠ 现状：**存储管线可用，但没有任何消费方**——all() 目前无人调用，
+   文档不会进入分析提示词。请勿在任何用户可见文案中把它描述成已生效的 RAG。
+   检索接入计划见 doc/优化文档.md §5 P3.10。 */
 "use strict";
 const crypto = require("crypto");
 const { HttpError } = require("../lib/http");

@@ -672,8 +672,17 @@ body.boot #dock { animation-name: dockRise; }
 .ask-btn { padding: 8px 16px; flex: none; }
 .quick-qs .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* 分析进度步骤 */
+/* 分析进度步骤（由真实事件驱动，非固定动画） */
 .ai-steps { padding: 8px 2px 4px; }
+.ai-bar {
+  height: 3px; border-radius: 999px; overflow: hidden; margin: 2px 0 8px;
+  background: rgba(29, 34, 43, 0.1);
+}
+.ai-bar > i {
+  display: block; height: 100%; width: 0;
+  background: linear-gradient(90deg, #ff7c42, #f0561a);
+  transition: width 0.35s ease;
+}
 .ai-step {
   display: flex; align-items: center; gap: 8px; padding: 5px 0;
   font-size: 12px; color: var(--ink-2);
@@ -687,10 +696,37 @@ body.boot #dock { animation-name: dockRise; }
 .ai-step.done { color: var(--ink-1); }
 .ai-step.done .as-dot { background: var(--ok); }
 
+/* 数据来源标记 —— 合成数据必须一眼可辨，不得与真实数据同样式 */
+.ds-badge {
+  font-style: normal; font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
+  padding: 1px 5px; margin-left: 4px; border-radius: 999px;
+  background: rgba(168, 100, 28, 0.16); color: #8a5214;
+}
+.chip.on .ds-badge { background: rgba(255, 255, 255, 0.3); color: #fff; }
+.note.note-synth {
+  border-left-color: #d98324; background: rgba(217, 131, 36, 0.07);
+  color: #7a4d10; border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+
 /* 报告卡 */
 .report-box { padding-top: 4px; }
 .rp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0 6px; }
 .rp-title { font-size: 13px; font-weight: 700; color: var(--ink-0); }
+.rp-prov {
+  font-size: 10.5px; line-height: 1.65; color: var(--ink-1);
+  padding: 5px 8px; margin-bottom: 6px; border-radius: var(--r-sm);
+  background: rgba(29, 34, 43, 0.04);
+}
+.rp-prov.synth { background: rgba(217, 131, 36, 0.1); color: #7a4d10; }
+.rp-prov.warnline { background: rgba(240, 86, 26, 0.1); color: #8f3410; }
+.rp-conf {
+  font-size: 10.5px; font-weight: 600; margin-bottom: 8px;
+  padding: 4px 8px; border-radius: var(--r-sm); display: inline-block;
+}
+.rp-conf.c-high { background: rgba(45, 138, 92, 0.12); color: #1f6b45; }
+.rp-conf.c-medium { background: rgba(79, 131, 224, 0.12); color: #33559b; }
+.rp-conf.c-low { background: rgba(217, 131, 36, 0.14); color: #7a4d10; }
+.rp-conf.c-insufficient-data { background: rgba(240, 86, 26, 0.12); color: #8f3410; }
 .verdict {
   font-size: 12.5px; line-height: 1.75; color: var(--ink-0);
   border-left: 3px solid var(--accent); border-radius: 0 var(--r-sm) var(--r-sm) 0;

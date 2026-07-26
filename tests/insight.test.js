@@ -1,5 +1,12 @@
-/* FORGE·X 智造洞察冒烟测试（node tests/insight.test.js）
-   覆盖：示例数据生成 / CSV 解析与回环 / 成本口径 / 聚合统计 / 相关系数 / 意图识别 / 各意图报告结构 */
+/* FORGE·X 智造洞察测试（node tests/insight.test.js）
+   覆盖：合成数据生成 / CSV 解析与回环 / 成本口径 / 聚合统计 / 相关系数 / 意图识别 /
+        报告结构 / 统计守卫（最小样本量）/ 来源标记（provenance）
+
+   ⚠ 测试原则：断言引擎的**性质**，不断言「生成器埋了什么就挖出什么」。
+   历史教训：本文件曾断言「结论命中示例故事线 FX-256-03」——
+   那只是在验证 generateSample 和 analyze 用了同一套常量（同义反复），
+   把生成器里的 0.2 改成 0.02 测试就红，但引擎的正确性一点没变。
+   现在改为：**自己构造带已知效应的数据集，检验引擎能否正确识别出该效应**。 */
 "use strict";
 const path = require("path");
 const J = (p) => path.join(__dirname, "..", "js", p);
@@ -16,7 +23,31 @@ function check(name, cond, detail) {
   else { failed++; console.error(`  FAIL  ${name}${detail ? " — " + detail : ""}`); }
 }
 
-console.log("\n[1] 示例数据生成");
+/** 构造一批记录：machine 台机器，共 n 单，其中 failN 单失败。用于注入已知效应。 */
+function makeRows(machine, n, failN, opts) {
+  opts = opts || {};
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const failed = i < failN;
+    out.push({
+      job_id: machine + "-" + i,
+      date: opts.date || "2026-07-" + String(10 + (i % 20)).padStart(2, "0"),
+      machine_id: machine,
+      model_name: opts.model || "测试件",
+      material: opts.material || "PLA",
+      layer_height_mm: opts.lh || 0.2,
+      duration_min: opts.dur || 100,
+      filament_g: 30,
+      cost_fen: 300,
+      status: failed ? "fail" : "success",
+      fail_reason: failed ? (opts.reason || "堵料") : "",
+      energy_kwh: 0.4,
+    });
+  }
+  return out;
+}
+
+console.log("\n[1] 合成数据生成（结构与确定性，不断言其内容含义）");
 const rows = D.generateSample();
 {
   check("默认生成 96 条", rows.length === 96, String(rows.length));
@@ -30,10 +61,13 @@ const rows = D.generateSample();
   check("失败行都有故障原因", fails.every((r) => r.fail_reason !== ""));
   check("成功行无故障原因", rows.filter((r) => r.status === "success").every((r) => r.fail_reason === ""));
   check("成本为正整数（分）", rows.every((r) => r.cost_fen > 0 && r.cost_fen === Math.round(r.cost_fen)));
-  const m3 = E.stats(rows.filter((r) => r.machine_id === "FX-256-03"));
-  const m1 = E.stats(rows.filter((r) => r.machine_id === "FX-256-01"));
-  check("故事线：03 号机故障率显著高于 01 号机", m3.failRate > m1.failRate + 0.08,
-    `03=${(m3.failRate * 100).toFixed(1)}% vs 01=${(m1.failRate * 100).toFixed(1)}%`);
+  check("故障类型都在标准词表内", fails.every((r) => D.FAIL_REASONS.indexOf(r.fail_reason) >= 0),
+    [...new Set(fails.map((r) => r.fail_reason))].join(","));
+  // 关键：这份数据必须自我声明是合成的，否则界面无从标记
+  check("声明为合成数据（synthetic=true）", D.PROVENANCE.sample.synthetic === true);
+  check("合成数据带生成器与种子（可复现）",
+    !!(D.PROVENANCE.sample.generator && D.PROVENANCE.sample.generator.seed),
+    JSON.stringify(D.PROVENANCE.sample.generator));
 }
 
 console.log("\n[2] 成本口径");
@@ -78,8 +112,17 @@ console.log("\n[5] 聚合与统计");
   for (const k in g) sum += g[k].length;
   check("groupBy 分组行数守恒", sum === rows.length, String(sum));
   const k = E.kpis(rows);
-  check("KPI 找到重点机台 FX-256-03", k.worstMachine && k.worstMachine.id === "FX-256-03",
-    k.worstMachine && k.worstMachine.id);
+  // 断言 KPI 的**性质**：给出的重点机台必须真实存在、且样本量达标
+  check("KPI 重点机台样本量达标", !k.worstMachine || k.worstMachine.n >= E.MIN_SAMPLE,
+    JSON.stringify(k.worstMachine));
+  check("KPI 重点机台确实是失败率最高者",
+    !k.worstMachine || Object.entries(E.groupBy(rows, "machine_id"))
+      .filter(([, g2]) => g2.length >= E.MIN_SAMPLE)
+      .every(([, g2]) => E.stats(g2).failRate <= k.worstMachine.failRate + 1e-9),
+    JSON.stringify(k.worstMachine));
+  check("KPI 时间跨度按数据实算（不写死「近三周」）",
+    !!(k.dateRange && k.dateRange.from && k.dateRange.to && k.dateRange.days > 0),
+    JSON.stringify(k.dateRange));
 }
 
 console.log("\n[6] 相关系数");
@@ -109,20 +152,100 @@ console.log("\n[8] 报告结构（与后端产物同构）");
     "失败批次共性归因",
     "总体概览",
   ];
-  let allOk = true, chartOk = true;
+  let allOk = true, chartOk = true, badEngine = "";
   for (const q of qs) {
     const r = E.analyze(q, rows);
-    if (!r.title || !r.verdict || !Array.isArray(r.sections) || r.engine !== "local") allOk = false;
+    if (!r.title || !r.verdict || !Array.isArray(r.sections)) allOk = false;
+    if (r.engine !== "local-rules") { allOk = false; badEngine = String(r.engine); }
     if (r.chart && (!r.chart.kind || !Array.isArray(r.chart.items))) chartOk = false;
   }
-  check("六类问题均产出完整报告", allOk);
+  check("六类问题均产出完整报告", allOk, badEngine && "engine=" + badEngine);
   check("图表结构合法", chartOk);
-  const mf = E.analyze("哪台机故障率最高", rows);
-  check("机台分析给出视口联动 highlight", mf.highlight && mf.highlight.type === "machine" && mf.highlight.id === "FX-256-03",
-    JSON.stringify(mf.highlight));
-  check("结论命中 03 号机", mf.verdict.indexOf("FX-256-03") >= 0, mf.verdict);
+  // 引擎标识必须自称规则引擎——不得冒充 AI（界面文案据此渲染）
+  check("引擎如实标注 local-rules（不冒充 AI）", E.analyze("概览", rows).engine === "local-rules");
   const empty = E.analyze("任何问题", []);
   check("空数据集安全返回", empty.title === "无数据" && empty.chart === null);
+  check("空数据集可信度为 insufficient-data", empty.confidence === "insufficient-data", empty.confidence);
+}
+
+console.log("\n[9] 统计守卫：最小样本量（防「1 单 1 失败 = 100% 故障率」登顶）");
+{
+  // 注入已知效应：TINY 只跑 1 单且失败（100%）；BIG 跑 20 单失败 4 次（20%）
+  const mix = makeRows("TINY", 1, 1).concat(makeRows("BIG", 20, 4));
+  const r = E.analyze("哪台机故障率最高", mix);
+  check("样本不足的机台不被评为最差", r.highlight && r.highlight.id === "BIG",
+    JSON.stringify(r.highlight));
+  check("结论不指向 1 单样本的机台", r.verdict.indexOf("TINY") < 0, r.verdict);
+  check("图表仍展示样本不足的机台但标记 weak",
+    r.chart.items.some((it) => it.label === "TINY" && it.weak === true),
+    JSON.stringify(r.chart.items));
+  check("样本不足的机台在报告中被列出",
+    JSON.stringify(r.sections).indexOf("TINY") >= 0);
+
+  // 全部机台都样本不足时，必须明说无法排名，而不是硬挑一个
+  const allTiny = makeRows("A", 2, 2).concat(makeRows("B", 1, 0));
+  const r2 = E.analyze("哪台机故障率最高", allTiny);
+  check("全员样本不足 → 拒绝排名", r2.highlight === null, JSON.stringify(r2.highlight));
+  check("全员样本不足 → 可信度 insufficient-data", r2.confidence === "insufficient-data", r2.confidence);
+  check("全员样本不足 → 结论明说样本不足", r2.verdict.indexOf("样本不足") >= 0, r2.verdict);
+}
+
+console.log("\n[10] 已知效应识别（构造数据 → 引擎能否找出来）");
+{
+  // 注入：BAD 失败率 40%（n=20），OK 失败率 5%（n=20）——两者样本量都达标
+  const ds = makeRows("BAD", 20, 8).concat(makeRows("OK", 20, 1));
+  const r = E.analyze("哪台机故障率最高", ds);
+  check("识别出注入的高故障机台", r.highlight && r.highlight.id === "BAD", JSON.stringify(r.highlight));
+  check("结论中报出真实失败率 40%", r.verdict.indexOf("40.0%") >= 0, r.verdict);
+  check("结论中报出样本量", r.verdict.indexOf("8/20") >= 0, r.verdict);
+
+  // 反向注入：把效应调转，引擎必须跟着变（证明它在算数据，不是在读常量）
+  const flipped = makeRows("BAD", 20, 1).concat(makeRows("OK", 20, 8));
+  const r2 = E.analyze("哪台机故障率最高", flipped);
+  check("效应调转后结论随之调转", r2.highlight && r2.highlight.id === "OK", JSON.stringify(r2.highlight));
+}
+
+console.log("\n[11] 诚实性：来源标记 / 未识别问题 / 机台 ID");
+{
+  const r = E.analyze("概览", rows, { provenance: D.PROVENANCE.sample });
+  check("报告携带 provenance", !!r.provenance && r.provenance.synthetic === true, JSON.stringify(r.provenance));
+
+  const unknown = E.analyze("今天天气怎么样", rows);
+  check("未匹配到分析维度时如实标注", unknown.intentMatched === false, String(unknown.intentMatched));
+  check("未匹配时标题写明「未识别」", unknown.title.indexOf("未识别") >= 0, unknown.title);
+  check("未匹配时列出支持的维度",
+    JSON.stringify(unknown.sections).indexOf(E.SUPPORTED[0]) >= 0);
+  const matched = E.analyze("哪台机故障率最高", rows);
+  check("匹配到维度时 intentMatched=true", matched.intentMatched === true);
+
+  // 机台 ID 必须来自仿真器实际装载的机型，不再写死 FX-256-01
+  check("机台 ID 取自当前机型（FX-500）",
+    D.machineIdFromSim({ printer: { MODEL_TAG: "FX-500" } }) === "FX-500-01",
+    D.machineIdFromSim({ printer: { MODEL_TAG: "FX-500" } }));
+  check("机台 ID 取自当前机型（FX-Δ260）",
+    D.machineIdFromSim({ printer: { MODEL_TAG: "FX-Δ260" } }) === "FX-Δ260-01");
+  check("无机型信息时不冒充具体机台",
+    D.machineIdFromSim({}) === "UNKNOWN-01", D.machineIdFromSim({}));
+
+  // 故障词表：仿真器可产出的子集必须是全量词表的真子集，且「未知」不在词表内
+  check("仿真可产故障是全量词表子集",
+    D.SIM_FAULTS.every((f) => D.FAIL_REASONS.indexOf(f) >= 0) && D.SIM_FAULTS.length < D.FAIL_REASONS.length,
+    D.SIM_FAULTS.join(","));
+  check("未知故障有独立取值，不并入任何具体故障",
+    D.FAIL_REASONS.indexOf(D.FAULT_UNKNOWN) < 0, D.FAULT_UNKNOWN);
+}
+
+console.log("\n[12] 计价口径可溯与可替换");
+{
+  check("计价口径带出处说明", !!(D.COST_PROFILE.source && D.COST_PROFILE.id), D.COST_PROFILE.id);
+  const before = D.costFen("PLA", 1000, 0, 0);
+  D.setCostProfile({ id: "test", material: { PLA: 10000 } });
+  const after = D.costFen("PLA", 1000, 0, 0);
+  check("替换计价口径后金额随之变化", before === 6900 && after === 10000, `${before} → ${after}`);
+  check("未覆盖的字段沿用原值", D.COST_PROFILE.powerFenPerKwh === 60, String(D.COST_PROFILE.powerFenPerKwh));
+  // 还原，避免影响后续用例
+  D.setCostProfile({ id: "cn-retail-2026q3", material: { PLA: 6900, PETG: 8900, ABS: 7900, TPU: 15900 } });
+  check("未知材料落到兜底单价", D.costFen("UNOBTAINIUM", 1000, 0, 0) === D.COST_PROFILE.materialDefaultFen);
 }
 
 console.log(`\n═══ 结果：${passed} 通过 / ${failed} 失败 ═══`);

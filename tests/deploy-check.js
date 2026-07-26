@@ -90,7 +90,7 @@ async function collectSse(path, timeoutMs) {
   check("GET / → 200 且含品牌", home.status === 200 && home.text.includes("FORGE·X"), "HTTP " + home.status);
   const jsOk = await jfetch("/js/util.js");
   check("GET /js/util.js → 200", jsOk.status === 200, "HTTP " + jsOk.status);
-  const csvOk = await jfetch("/doc/samples/print_jobs_sample.csv");
+  const csvOk = await jfetch("/doc/samples/print_jobs_synthetic.csv");
   check("示例 CSV 可下载", csvOk.status === 200 && csvOk.text.includes("job_id"), "HTTP " + csvOk.status);
   const envHidden = await jfetch("/server/.env");
   check("server/.env 不可达", envHidden.status === 404, "HTTP " + envHidden.status);
@@ -123,7 +123,7 @@ async function collectSse(path, timeoutMs) {
   }
 
   console.log(`\n═══ 结果：${passed} 通过 / ${failed} 失败 ═══`);
-  if (engine === "mock") console.log("提示：当前为演示引擎。配置 INFINI_API_KEY + INFINI_VERIFIED=1 后切云端真实分析（doc/开发文档.md 附录 B）。");
+  if (engine === "rules") console.log("提示：当前为规则引擎（非 AI）。配置 INFINI_API_KEY + INFINI_VERIFIED=1 后切云端 AI 分析。");
   process.exit(failed ? 1 : 0);
 })().catch((err) => {
   console.error("冒烟中断：", err.message);

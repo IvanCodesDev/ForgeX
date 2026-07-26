@@ -1,4 +1,4 @@
-/* 分析任务编排：任务存储 + 进度事件（SSE 订阅/重放）+ 引擎路由（mock / InfiniSynapse）。
+/* 分析任务编排：任务存储 + 进度事件（SSE 订阅/重放）+ 引擎路由（rules / InfiniSynapse）。
    事件全量缓存后重放，SSE 晚接入或断线重连都不丢进度；任务终态后连接自动收口。 */
 "use strict";
 const crypto = require("crypto");
@@ -43,7 +43,7 @@ class TaskStore {
       id: "t_" + crypto.randomBytes(8).toString("hex"),
       question,
       datasourceId: ds.id,
-      engine: this.cfg.mode,           // "mock" | "infinisynapse"
+      engine: this.cfg.mode,           // "rules"（规则引擎，非 AI）| "infinisynapse"（云端 AI）
       status: "running",
       events: [],
       evSeq: 0,
@@ -58,7 +58,7 @@ class TaskStore {
     this.map.set(task.id, task);
     this.log.info("task created", { reqId, taskId: task.id, engine: task.engine, datasourceId: ds.id, rows: ds.rows.length });
 
-    const run = task.engine === "infinisynapse" ? this._runInfini(task, ds) : this._runMock(task, ds);
+    const run = task.engine === "infinisynapse" ? this._runInfini(task, ds) : this._runRules(task, ds);
     run.catch((err) => this._fail(task, err));
     return task;
   }
@@ -96,9 +96,11 @@ class TaskStore {
     task.subscribers.clear();
   }
 
-  /* ── mock 引擎（复用前端本地分析引擎，产物同构） ── */
+  /* ── 规则引擎（复用前端规则引擎模块，产物同构） ── */
 
-  async _runMock(task, ds) {
+  async _runRules(task, ds) {
+    // 这三步对应引擎内部真实执行的阶段；mockDelayMs 默认 0（不插人造延时）。
+    // 需要演示慢速进度条时可用 MOCK_DELAY_MS 显式打开——默认不骗用户。
     const d = this.cfg.mockDelayMs;
     const steps = [
       ["intent", "解析问题意图", 0.2],
@@ -107,10 +109,10 @@ class TaskStore {
     ];
     for (const [stage, message, progress] of steps) {
       this.emit(task, { stage, message, progress });
-      await sleep(d);
+      if (d > 0) await sleep(d);
     }
-    const report = engine.analyze(task.question, ds.rows);
-    report.engine = "mock";
+    const report = engine.analyze(task.question, ds.rows, { provenance: ds.provenance || null });
+    report.engine = "server-rules";     // 规则引擎，不是 AI，也不是编造的结果
     report.taskId = task.id;
     this._finish(task, report);
   }
@@ -139,34 +141,57 @@ class TaskStore {
     this._finish(task, report);
   }
 
-  /** 云端结论 → 前端同构报告。优先解析约定 JSON；解析不出时如实按纯文本呈现（绝不编造结构） */
+  /** 云端结论 → 前端同构报告。优先解析约定 JSON；解析不出时如实按纯文本呈现（绝不编造结构）。
+   *
+   *  ⚠ 已知能力缺口：云端通道目前只返回文字，不产出 chart / highlight，
+   *  因此接上真 AI 后反而**没有图表、没有视口联动**——功能弱于规则引擎。
+   *  正确解法是让 LLM 只负责 planner + narrator，图表与 highlight 由本地统计核生成
+   *  （doc/优化文档.md §5 P3.6）。在那之前，这里必须把缺口如实写进报告，不能让用户以为是数据没算出来。 */
   _mapCloudReport(resultText, task, ds, upstreamId) {
+    const gapNote = {
+      h: "本报告的已知局限",
+      lines: [
+        "云端通道当前只返回文字结论，不产出图表与 3D 视口联动（规则引擎有这两项）。",
+        "结论中的数字由云端自行计算，本服务未做二次校验。",
+        "上游任务 ID：" + (upstreamId || "未知") + "（可在 InfiniSynapse 后台核对）。",
+      ],
+    };
     const base = {
-      chart: null,
+      schemaVersion: 1,
+      chart: null,          // 缺口已在 gapNote 中如实披露
+      highlight: null,
+      confidence: "low",    // 未经本服务校验的外部结论，不给高可信度
       intent: "cloud",
+      intentMatched: true,
       rowCount: ds.rows.length,
+      provenance: ds.provenance || null,
       engine: "infinisynapse",
       taskId: task.id,
       upstreamTaskId: upstreamId,
     };
     const j = extractJson(String(resultText || ""));
     if (j && j.title && j.verdict) {
+      const sections = Array.isArray(j.sections)
+        ? j.sections.slice(0, 8).map((s) => ({
+            h: String(s.h || "").slice(0, 32),
+            lines: (Array.isArray(s.lines) ? s.lines : []).slice(0, 12).map((l) => String(l).slice(0, 300)),
+          }))
+        : [];
       return Object.assign(base, {
         title: String(j.title).slice(0, 32),
         verdict: String(j.verdict).slice(0, 200),
-        sections: Array.isArray(j.sections)
-          ? j.sections.slice(0, 8).map((s) => ({
-              h: String(s.h || "").slice(0, 32),
-              lines: (Array.isArray(s.lines) ? s.lines : []).slice(0, 12).map((l) => String(l).slice(0, 300)),
-            }))
-          : [],
+        sections: sections.concat([gapNote]),
       });
     }
     this.log.warn("cloud result not in agreed JSON, fallback to plain text", { taskId: task.id });
     return Object.assign(base, {
       title: "InfiniSynapse 分析",
       verdict: String(resultText).slice(0, 200),
-      sections: [{ h: "云端结论", lines: String(resultText).split(/\n+/).filter(Boolean).slice(0, 20).map((l) => l.slice(0, 300)) }],
+      sections: [
+        { h: "云端结论", lines: String(resultText).split(/\n+/).filter(Boolean).slice(0, 20).map((l) => l.slice(0, 300)) },
+        { h: "格式说明", lines: ["云端未按约定 JSON 结构返回，以上为原文透传，未做结构化解析。"] },
+        gapNote,
+      ],
     });
   }
 

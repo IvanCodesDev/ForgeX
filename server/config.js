@@ -34,7 +34,9 @@ function getConfig(overrides) {
     allowOrigins: (env.ALLOW_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean),
     trustProxy: env.TRUST_PROXY === "1",
     rateLimitMs: num(env.RATE_LIMIT_MS, 5000),
-    mockDelayMs: num(env.MOCK_DELAY_MS, 350),
+    // 规则引擎每阶段的人造延时。默认 0：规则引擎本就是毫秒级，
+    // 拖慢进度条只是为了「看起来在思考」，属于欺骗性 UI。仅演示录屏时才显式打开。
+    mockDelayMs: num(env.MOCK_DELAY_MS, 0),
     taskTtlMs: num(env.TASK_TTL_MS, 60 * 60 * 1000),
     logLevel: env.LOG_LEVEL || "info",
     infiniKey: env.INFINI_API_KEY || "",
@@ -45,12 +47,14 @@ function getConfig(overrides) {
     forceMock: env.INFINI_MOCK === "1",
   }, overrides || {});
 
-  // 真实调用需同时满足：有 key + 附录 B 端点核准（INFINI_VERIFIED=1）+ 未强制演示
-  cfg.mode = (!cfg.forceMock && cfg.infiniKey && cfg.infiniVerified) ? "infinisynapse" : "mock";
-  cfg.modeReason = cfg.forceMock ? "INFINI_MOCK=1 强制演示"
-    : !cfg.infiniKey ? "未配置 INFINI_API_KEY"
-    : !cfg.infiniVerified ? "端点未核准（INFINI_VERIFIED≠1，见 doc/开发文档.md 附录B）"
-    : "密钥就绪且端点已核准";
+  // 真实调用需同时满足：有 key + 端点核准（INFINI_VERIFIED=1）+ 未强制降级
+  // mode="rules" 指后端规则引擎（确定性聚合统计，不是 AI，也不是假数据——
+  // 旧名 "mock" 会让人误以为结果是编的，实际是真实计算，只是没有 AI 参与）。
+  cfg.mode = (!cfg.forceMock && cfg.infiniKey && cfg.infiniVerified) ? "infinisynapse" : "rules";
+  cfg.modeReason = cfg.forceMock ? "INFINI_MOCK=1 强制使用规则引擎"
+    : !cfg.infiniKey ? "未配置 INFINI_API_KEY，使用规则引擎"
+    : !cfg.infiniVerified ? "端点未核准（INFINI_VERIFIED≠1），使用规则引擎"
+    : "密钥就绪且端点已核准，使用 InfiniSynapse 云端 AI";
   return cfg;
 }
 

@@ -14,32 +14,82 @@
     "status", "fail_reason", "energy_kwh",
   ];
 
-  /** 材料单价（分/kg）· 电价（分/kWh）· 机时折旧（分/小时）——演示口径 */
-  D.PRICE = {
+  /**
+   * 计价口径（可替换）。材料单价（分/kg）· 电价（分/kWh）· 机时折旧（分/小时）。
+   *
+   * ⚠ 这是估算值，不是权威数据。任何用它算出的金额在报告中都必须连同 `source` 一起披露，
+   * 用户换成自己的采购价后结论可能变化。通过 D.setCostProfile() 覆盖。
+   */
+  D.COST_PROFILE = {
+    id: "cn-retail-2026q3",
+    label: "中国大陆零售参考价（2026Q3）",
+    source: "主流电商耗材零售均价 + 民用商业电价的量级估算，非权威数据；请按自己的采购成本替换",
     material: { PLA: 6900, PETG: 8900, ABS: 7900, TPU: 15900 },
+    materialDefaultFen: 8000,       // 未知材料的兜底单价（分/kg）
     powerFenPerKwh: 60,
     machineFenPerHour: 12,
   };
+  /** 兼容旧引用（js/insight-engine.js 曾直接读 D.PRICE.material） */
+  D.PRICE = D.COST_PROFILE;
+
+  /** 替换计价口径；缺省字段沿用当前值。返回生效后的 profile。 */
+  D.setCostProfile = function (p) {
+    if (!p || typeof p !== "object") return D.COST_PROFILE;
+    var next = {};
+    for (var k in D.COST_PROFILE) next[k] = D.COST_PROFILE[k];
+    for (var j in p) next[j] = p[j];
+    D.COST_PROFILE = D.PRICE = next;
+    return next;
+  };
 
   D.MACHINES = ["FX-256-01", "FX-256-02", "FX-256-03", "FX-256-04"];
-  D.FAIL_REASONS = ["翘边", "堵料", "断料", "热失控", "悬垂塌陷"];
+
+  /**
+   * 故障词表（单一真源）。`sim` 标记该类故障当前的仿真器能否真实产生——
+   * 仿真器只实现了断料/堵料/热失控三种物理故障链，翘边与悬垂塌陷尚无对应模型。
+   * 两侧词表不一致会造出错误数据（历史上未识别故障被兜底写成「热失控」）。
+   * 统一到同一份枚举是 P2 的任务，见 doc/优化文档.md §5 P2.4。
+   */
+  D.FAULT_TAXONOMY = [
+    { name: "翘边", sim: false },
+    { name: "堵料", sim: true },
+    { name: "断料", sim: true },
+    { name: "热失控", sim: true },
+    { name: "悬垂塌陷", sim: false },
+  ];
+  D.FAIL_REASONS = D.FAULT_TAXONOMY.map(function (f) { return f.name; });
+  /** 仿真器可真实产出的故障类型子集 */
+  D.SIM_FAULTS = D.FAULT_TAXONOMY.filter(function (f) { return f.sim; }).map(function (f) { return f.name; });
+  /** 无法归类时的取值——绝不允许兜底猜成某个具体故障 */
+  D.FAULT_UNKNOWN = "未知";
 
   D.costFen = function (material, filamentG, energyKwh, durationMin) {
-    var price = D.PRICE.material[material] || 8000;
+    var p = D.COST_PROFILE;
+    var price = p.material[material] || p.materialDefaultFen;
     return Math.round(
       (filamentG / 1000) * price +
-      energyKwh * D.PRICE.powerFenPerKwh +
-      (durationMin / 60) * D.PRICE.machineFenPerHour
+      energyKwh * p.powerFenPerKwh +
+      (durationMin / 60) * p.machineFenPerHour
     );
   };
 
-  /* ── 示例数据生成（确定性，种子固定） ───────── */
+  /* ── 合成基准数据（确定性，种子固定） ───────── */
 
   /**
-   * 生成三周 96 条真实感生产记录。内置「故事线」保证分析结论有意义：
-   * - FX-256-03 故障率显著偏高（送料系统老化 → 堵料/断料多）
-   * - ABS × 传感器支架（悬垂件）翘边/塌陷失败率高
-   * - 层高越大时长越短、TPU 明显慢
+   * ⚠⚠ 这是**合成数据，不是真实产线数据**。⚠⚠
+   *
+   * 它按下列**预先写死的概率**生成，因此从它得出的任何「发现」都是本函数事先埋进去的，
+   * 不构成对任何真实设备、材料或工艺的结论：
+   *   - FX-256-03 的故障率被写死为 0.20，其余机台 0.04–0.06；
+   *   - 「ABS × 传感器支架」组合被写死额外 +0.22 失败率；
+   *   - 打印时长按 `baseMin × (0.2 / 层高)` 直接计算，所谓「层高与时长负相关」
+   *     是这行公式的定义，不是数据中发现的规律。
+   *
+   * 用途仅限：① UI 演示；② 回归测试的确定性输入。
+   * 任何展示它的界面都必须显示 D.PROVENANCE.sample 的合成标记。
+   *
+   * 真实数据请用：用户上传 CSV，或 P2 的虚拟机群仿真（物理过程涌现故障，
+   * 而非概率抽样）——见 doc/优化文档.md §5 P2。
    */
   D.generateSample = function (count) {
     var rnd = FXU.mulberry32(20260721);
@@ -207,22 +257,62 @@
     return out.join("\n");
   };
 
+  /* ── 数据来源标记（provenance 契约） ──────────
+     契约见 doc/优化文档.md §4.3 ①。规则：
+       synthetic:true 的数据集，在数据接入区、报告头、分享页都必须显示合成标记，
+       任何界面都不得让合成数据看起来像真实产线数据。 */
+
+  D.PROVENANCE = {
+    sample: {
+      source: "synthetic",
+      synthetic: true,
+      badge: "合成",
+      note: "概率生成的演示数据，含预先写死的故事线（03 号机高故障率、ABS×悬垂件高失败）。" +
+            "从中得出的结论只是生成参数的回显，不适用于任何真实设备。",
+      generator: { name: "FXInsightData.generateSample", version: 1, seed: 20260721 },
+    },
+    upload: {
+      source: "user-upload",
+      synthetic: false,
+      badge: "",
+      note: "用户上传的 CSV。",
+      generator: null,
+    },
+    sim: {
+      source: "simulator",
+      synthetic: true,
+      badge: "仿真",
+      note: "由本机仿真器的物理过程（温控惯性、床面误差场、故障链）产出，" +
+            "是真实计算结果但非真实产线数据。仿真器目前只能产生 " + D.SIM_FAULTS.join("/") + " 三类故障。",
+      generator: { name: "FXSim", version: 1, seed: null },
+    },
+  };
+
   /* ── 数据集管理（浏览器态） ───────────────── */
 
   /**
-   * 三个数据集槽位：sample（内置示例）/ upload（用户 CSV）/ sim（模拟器采集）。
+   * 三个数据集槽位：sample（合成基准）/ upload（用户 CSV）/ sim（仿真采集）。
    * bus 事件：insight-data（数据集变更）。
    */
   D.Store = function (bus) {
     this.bus = bus;
     this.sets = {
-      sample: { label: "示例数据", rows: D.generateSample() },
-      upload: { label: "我的上传", rows: [] },
-      sim:    { label: "模拟采集", rows: [] },
+      sample: { label: "合成示例", rows: D.generateSample(), provenance: D.PROVENANCE.sample },
+      upload: { label: "我的上传", rows: [], provenance: D.PROVENANCE.upload },
+      sim:    { label: "仿真采集", rows: [], provenance: D.PROVENANCE.sim },
     };
     this.active = "sample";
   };
   D.Store.prototype.rows = function () { return this.sets[this.active].rows; };
+  /** 当前数据集的来源标记（随报告一起流转） */
+  D.Store.prototype.provenance = function () {
+    var s = this.sets[this.active];
+    var p = s.provenance || D.PROVENANCE.upload;
+    return {
+      source: p.source, synthetic: p.synthetic, badge: p.badge, note: p.note,
+      generator: p.generator, datasetKey: this.active, rowCount: s.rows.length,
+    };
+  };
   D.Store.prototype.use = function (key) {
     if (!this.sets[key]) return;
     this.active = key;
@@ -238,6 +328,15 @@
     if (this.bus) this.bus.emit("insight-data", { set: "sim", appended: true });
   };
 
+  /** 当前在跑的机型 → 机台编号。取仿真器实际装载的机型，不写死。
+      单机仿真固定为 -01 实例；P2 的虚拟机群会给出真实的多实例编号。 */
+  D.machineIdFromSim = function (sim) {
+    var p = sim && sim.printer;
+    var tag = (p && (p.MODEL_TAG || p.MODEL_NAME)) || "";
+    tag = String(tag).trim();
+    return tag ? tag + "-01" : "UNKNOWN-01";
+  };
+
   /** 由模拟器状态构造一条生产记录（sim 完成/中止/故障时调用） */
   D.recordFromSim = function (sim, status, failReason) {
     var mat = sim.settings.material;
@@ -247,7 +346,7 @@
     return {
       job_id: "SIM-" + String(Date.now()).slice(-6),
       date: new Date().toISOString().slice(0, 10),
-      machine_id: "FX-256-01",
+      machine_id: D.machineIdFromSim(sim),   // 曾写死 "FX-256-01"：跑 FX-500 也记成 FX-256
       model_name: sim.model ? sim.model.name : "未知模型",
       material: mat,
       layer_height_mm: sim.settings.layerHeight,

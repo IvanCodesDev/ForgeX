@@ -1,5 +1,6 @@
-/* FORGE·X 智造洞察 — 面板层：数据接入 / KPI 看板 / 自然语言提问 / 报告与图表 / 3D 视口联动
-   引擎路由：后端（InfiniSynapse 代理）可用走云端，否则本地演示引擎（FXInsightEngine）。 */
+/* FORGE·X 智造洞察 — 面板层：数据接入 / KPI 看板 / 提问 / 报告与图表 / 3D 视口联动
+   引擎路由：后端可用走后端（规则引擎或云端 provider），否则走浏览器内的本地规则引擎。
+   ⚠ 本地与后端的默认引擎都是**规则引擎，不是 AI**，界面文案不得混淆二者。 */
 (function (root) {
   "use strict";
 
@@ -7,15 +8,34 @@
 
   var QUICK_QUESTIONS = [
     "哪台机故障率最高，主要故障是什么",
-    "PLA 和 PETG 在悬垂件上的失败率差多少",
+    "各材料的失败率对比",
     "层高与打印时长的相关性",
-    "本月成本趋势与拆解",
-    "失败批次有没有共性，哪台机该保养了",
+    "成本趋势与拆解",
+    "失败批次有没有共性",
   ];
 
+  /* 仿真器故障名 → 标准故障词表（FXInsightData.FAULT_TAXONOMY）。
+     未命中一律记为「未知」——历史上这里兜底猜成「热失控」，会往数据集里写入错误的故障类型。 */
   var FAULT_MAP = [
     ["断料", "断料"], ["堵", "堵料"], ["热失控", "热失控"],
   ];
+
+  var CONFIDENCE_LABEL = {
+    high: "可信度：高",
+    medium: "可信度：中",
+    low: "可信度：低",
+    "insufficient-data": "样本不足",
+  };
+
+  /** 引擎标识 → 界面文案。规则引擎必须自称规则引擎，只有真 AI provider 才能带「AI」字样。 */
+  function ENGINE_LABEL(id) {
+    switch (id) {
+      case "infinisynapse": return "InfiniSynapse 云端 AI";
+      case "server-rules": return "后端规则引擎（无 AI）";
+      case "local-rules": return "本地规则引擎（无 AI）";
+      default: return id ? String(id) : "未知引擎";
+    }
+  }
 
   class FXInsight {
     constructor(sim, fx, bus, ui) {
@@ -84,17 +104,22 @@
       var dsRow = el("div", "chip-row");
       this._dsRow = dsRow;
       b.appendChild(dsRow);
+      /* 当前数据集来源说明（合成数据的显著提示位） */
+      this._provNote = el("div", "note");
+      this._provNote.hidden = true;
+      b.appendChild(this._provNote);
       var btnRow = el("div", "prow ins-actions");
       var upBtn = el("button", "mini-btn", "上传 CSV");
       upBtn.addEventListener("click", function () { $("#csv-input").click(); });
-      var dlBtn = el("button", "mini-btn", "下载示例 CSV");
+      var dlBtn = el("button", "mini-btn", "下载合成示例");
+      dlBtn.title = "合成演示数据，不是真实产线数据";
       dlBtn.addEventListener("click", function () {
-        FXInsightData.downloadCsv(this.store.sets.sample.rows, "print_jobs_sample.csv");
+        FXInsightData.downloadCsv(this.store.sets.sample.rows, "print_jobs_synthetic_sample.csv");
       }.bind(this));
-      var simBtn = el("button", "mini-btn", "导出模拟采集");
+      var simBtn = el("button", "mini-btn", "导出仿真采集");
       simBtn.addEventListener("click", function () {
         var rows = this.store.sets.sim.rows;
-        if (!rows.length) return this.ui.toast("暂无模拟采集数据 — 先跑一次打印任务", "warn");
+        if (!rows.length) return this.ui.toast("暂无仿真采集数据 — 先跑一次打印任务", "warn");
         FXInsightData.downloadCsv(rows, "sim_jobs.csv");
       }.bind(this));
       btnRow.append(upBtn, dlBtn, simBtn);
@@ -148,22 +173,35 @@
     /* ── 数据集 ───────────────────────────── */
 
     _refreshData() {
-      // 数据集 chips
+      // 数据集 chips —— 合成数据必须带可见标记
       var row = this._dsRow;
       row.innerHTML = "";
       var sets = this.store.sets;
       for (var key in sets) {
         (function (k, self) {
           var s = sets[k];
-          var c = el("div", "chip sm" + (self.store.active === k ? " on" : ""),
-            s.label + " · " + s.rows.length);
+          var p = s.provenance || {};
+          var c = el("div", "chip sm" + (self.store.active === k ? " on" : "") + (p.synthetic ? " synth" : ""),
+            esc(s.label) + " · " + s.rows.length + (p.badge ? ' <i class="ds-badge">' + esc(p.badge) + "</i>" : ""));
+          if (p.note) c.title = p.note;
           c.addEventListener("click", function () {
-            if (!s.rows.length) return self.ui.toast(k === "sim" ? "还没有模拟采集数据，先完成一次打印" : "该数据集为空，请先上传", "warn");
+            if (!s.rows.length) return self.ui.toast(k === "sim" ? "还没有仿真采集数据，先完成一次打印" : "该数据集为空，请先上传", "warn");
             self.store.use(k);
           });
           row.appendChild(c);
         })(key, this);
       }
+
+      // 当前数据集的来源说明（合成数据在这里必须说清楚）
+      var prov = this.store.provenance();
+      if (this._provNote) {
+        this._provNote.hidden = false;
+        this._provNote.className = "note" + (prov.synthetic ? " note-synth" : "");
+        this._provNote.innerHTML = prov.synthetic
+          ? "⚠ <b>" + esc(prov.badge) + "数据</b>：" + esc(prov.note)
+          : "数据来源：" + esc(prov.note);
+      }
+
       // KPI
       var rows = this.store.rows();
       var g = this._kpiGrid;
@@ -173,12 +211,18 @@
         return;
       }
       var k = FXInsightEngine.kpis(rows);
+      var MIN_N = FXInsightEngine.MIN_SAMPLE;
       var tiles = [
-        { lab: "任务总数", val: String(k.total), sub: "近三周" },
+        // 时间跨度按数据实际计算，不再无条件写「近三周」
+        { lab: "任务总数", val: String(k.total), sub: k.dateRange ? k.dateRange.label : "无日期列" },
         { lab: "综合良率", val: (k.yield * 100).toFixed(1) + "%", sub: "良品 " + Math.round(k.yield * k.total) + " 件", cls: k.yield >= 0.9 ? "good" : k.yield >= 0.8 ? "mid" : "bad" },
-        { lab: "良品均本", val: "¥" + (k.avgCostFen / 100).toFixed(2), sub: "耗材+能耗+机时" },
-        { lab: "重点关注", val: k.worstMachine ? k.worstMachine.id.replace("FX-256-", "") + " 号机" : "—",
-          sub: k.worstMachine ? "故障率 " + (k.worstMachine.failRate * 100).toFixed(0) + "% · " + (k.topReason ? k.topReason.name : "") : "无异常", cls: k.worstMachine && k.worstMachine.failRate > 0.15 ? "bad" : "" },
+        { lab: "良品均本", val: "¥" + (k.avgCostFen / 100).toFixed(2), sub: "耗材+能耗+机时（估算口径）" },
+        // 机台 ID 原样显示（旧代码写死 .replace("FX-256-","")，别的编号体系会显示错乱）
+        k.worstMachine
+          ? { lab: "失败率最高", val: k.worstMachine.id,
+              sub: (k.worstMachine.failRate * 100).toFixed(0) + "% · n=" + k.worstMachine.n + (k.topReason ? " · " + k.topReason.name : ""),
+              cls: k.worstMachine.failRate > 0.15 ? "bad" : "" }
+          : { lab: "失败率最高", val: "—", sub: "无机台达到 " + MIN_N + " 个任务的最小样本量" },
       ];
       for (var i = 0; i < tiles.length; i++) {
         var t = tiles[i];
@@ -210,11 +254,13 @@
       if (d.status === "fail" && d.fault) {
         for (var i = 0; i < FAULT_MAP.length; i++)
           if (d.fault.indexOf(FAULT_MAP[i][0]) >= 0) { reason = FAULT_MAP[i][1]; break; }
-        if (!reason) reason = "热失控";
+        // 归不了类就如实写「未知」，不猜——猜错会污染整个数据集的故障归因
+        if (!reason) reason = FXInsightData.FAULT_UNKNOWN;
       }
       var rec = FXInsightData.recordFromSim(this.sim, d.status, reason);
       this.store.addSimRecord(rec);
-      this.ui.toast("运行数据已采集 → 模拟采集（共 " + this.store.sets.sim.rows.length + " 条）", "info");
+      this.ui.toast("运行数据已采集 → 仿真采集 " + rec.machine_id +
+        "（共 " + this.store.sets.sim.rows.length + " 条）", "info");
     }
 
     /* ── 提问 → 分析 ──────────────────────── */
@@ -229,50 +275,59 @@
       this._busy = true;
       this._askBtn.disabled = true;
       this._reportBox.innerHTML = "";
-      this._showProgress(["解析问题意图", "聚合生产数据", "生成结论与建议"]);
+      this._resetProgress();
 
-      if (FXApiClient.available) {
-        this._askRemote(question, rows);
-      } else {
-        // 本地演示引擎：分步推进进度，保持与云端一致的节奏感
-        var self = this;
-        this._stepTo(1, 320, function () {
-          self._stepTo(2, 620, function () {
-            var report;
-            try { report = FXInsightEngine.analyze(question, rows); }
-            catch (err) {
-              console.error("[insight]", err);
-              self._finishAsk();
-              self.ui.toast("分析出错：" + err.message, "err");
-              return;
-            }
-            self._stepTo(3, 900, function () {
-              self._finishAsk();
-              self._pushHistory(question);
-              self._renderReport(report);
-            });
-          });
-        });
+      if (FXApiClient.available) this._askRemote(question, rows);
+      else this._askLocal(question, rows);
+    }
+
+    /** 本地规则引擎：同步计算，毫秒级返回。不插入任何人造延时或假分步。 */
+    _askLocal(question, rows) {
+      var t0 = Date.now();
+      var report;
+      try {
+        report = FXInsightEngine.analyze(question, rows, { provenance: this.store.provenance() });
+      } catch (err) {
+        console.error("[insight]", err);
+        this._finishAsk();
+        this.ui.toast("分析出错：" + err.message, "err");
+        return;
       }
+      report.elapsedMs = Date.now() - t0;
+      this._finishAsk();
+      this._pushHistory(question);
+      this._renderReport(report);
     }
 
     _askRemote(question, rows) {
       var self = this;
-      // 后端可用：上传当前数据集 → 建任务 → SSE 进度 → 拉结果（三步映射到进度条）
+      var t0 = Date.now();
+      this._pushStage("上传数据集（" + rows.length + " 行）", 0.05);
       FXApiClient.uploadDatasource(FXInsightData.toCsv(rows), "print_jobs.csv")
         .then(function (ds) {
-          self._stepDone(0);
+          self._pushStage("提交分析任务", 0.12);
           return FXApiClient.analyze(question, ds.datasourceId);
         })
         .then(function (t) {
-          self._stepDone(1);
           return new Promise(function (resolve, reject) {
-            FXApiClient.stream(t.taskId, function () {}, function () { resolve(t.taskId); }, reject);
+            // 渲染后端真实推送的阶段事件（旧实现这里传的是空函数，进度全丢）
+            FXApiClient.stream(
+              t.taskId,
+              function (ev) { self._pushStage(ev.message || ev.stage || "处理中…", ev.progress); },
+              function () { resolve(t.taskId); },
+              reject
+            );
           });
         })
-        .then(function (taskId) { return FXApiClient.result(taskId); })
+        .then(function (taskId) {
+          self._pushStage("拉取分析结果", 0.97);
+          return FXApiClient.result(taskId);
+        })
         .then(function (report) {
-          self._stepDone(2);
+          self._pushStage("完成 · 耗时 " + ((Date.now() - t0) / 1000).toFixed(1) + "s", 1);
+          report.elapsedMs = Date.now() - t0;
+          // 后端不知道浏览器侧数据集的来源标记，这里补齐，保证报告始终带 provenance
+          if (!report.provenance) report.provenance = self.store.provenance();
           self._finishAsk();
           self._pushHistory(question);
           self._renderReport(report);
@@ -280,43 +335,51 @@
         .catch(function (err) {
           console.error("[insight remote]", err);
           self._finishAsk();
-          self.ui.toast("云端分析失败，已回退本地引擎", "warn");
-          var report = FXInsightEngine.analyze(question, rows);
+          self.ui.toast("后端分析失败（" + err.message + "），已回退浏览器本地规则引擎", "warn");
+          var report = FXInsightEngine.analyze(question, rows, { provenance: self.store.provenance() });
+          report.fallbackFrom = "backend";
           self._pushHistory(question);
           self._renderReport(report);
         });
     }
 
-    /* ── 进度视觉 ─────────────────────────── */
+    /* ── 进度：由真实事件驱动 ──────────────────
+       原实现用三个 setTimeout 播固定动画、同时丢弃后端推来的真实事件，
+       现改为每条阶段都对应一次真实的后端事件或本地状态变化。 */
 
-    _showProgress(steps) {
+    _resetProgress() {
       var p = this._progress;
       p.innerHTML = "";
-      p.hidden = false;
-      this._steps = [];
-      for (var i = 0; i < steps.length; i++) {
-        var s = el("div", "ai-step", '<span class="as-dot"></span><span>' + esc(steps[i]) + "</span>");
-        p.appendChild(s);
-        this._steps.push(s);
+      p.hidden = true;
+      this._stageEls = [];
+      this._bar = null;
+    }
+
+    _pushStage(message, progress) {
+      var p = this._progress;
+      if (p.hidden) {
+        p.hidden = false;
+        this._bar = el("div", "ai-bar", "<i></i>");
+        p.appendChild(this._bar);
       }
-      this._steps[0].classList.add("run");
+      if (this._stageEls.length) {
+        var prev = this._stageEls[this._stageEls.length - 1];
+        prev.classList.remove("run");
+        prev.classList.add("done");
+      }
+      var s = el("div", "ai-step run", '<span class="as-dot"></span><span>' + esc(message) + "</span>");
+      p.appendChild(s);
+      this._stageEls.push(s);
+      if (this._bar && typeof progress === "number" && isFinite(progress)) {
+        this._bar.firstChild.style.width = (Math.max(0, Math.min(1, progress)) * 100).toFixed(1) + "%";
+      }
+      // 云端任务事件很多，只保留最近 8 条，避免面板被撑爆
+      while (this._stageEls.length > 8) {
+        var old = this._stageEls.shift();
+        if (old.parentNode) old.parentNode.removeChild(old);
+      }
     }
-    _stepTo(n, delayMs, then) {
-      var self = this;
-      setTimeout(function () {
-        for (var i = 0; i < self._steps.length; i++) {
-          self._steps[i].classList.toggle("done", i < n);
-          self._steps[i].classList.toggle("run", i === n);
-        }
-        then();
-      }, delayMs);
-    }
-    _stepDone(i) {
-      if (!this._steps || !this._steps[i]) return;
-      this._steps[i].classList.remove("run");
-      this._steps[i].classList.add("done");
-      if (this._steps[i + 1]) this._steps[i + 1].classList.add("run");
-    }
+
     _finishAsk() {
       this._busy = false;
       this._askBtn.disabled = false;
@@ -331,15 +394,32 @@
       box.innerHTML = "";
       if (!report) return;
 
-      // 引擎标注必须如实：mock 后端绝不冒充 InfiniSynapse
-      var engineLabel = report.engine === "infinisynapse" ? "InfiniSynapse"
-        : report.engine === "mock" ? "后端演示引擎" : "本地演示引擎";
+      // 引擎标注必须如实：规则引擎绝不冒充 AI，后端规则引擎绝不冒充 InfiniSynapse
       var head = el("div", "rp-head",
         '<span class="rp-title">' + esc(report.title || "分析报告") + '</span>' +
-        '<span class="ph-tag mono">' + engineLabel + " · " + (report.rowCount || 0) + " 行</span>");
+        '<span class="ph-tag mono">' + esc(ENGINE_LABEL(report.engine)) + " · " + (report.rowCount || 0) + " 行" +
+        (report.elapsedMs != null ? " · " + (report.elapsedMs / 1000).toFixed(report.elapsedMs < 1000 ? 2 : 1) + "s" : "") + "</span>");
       box.appendChild(head);
 
+      // 数据来源：合成数据必须在报告里也标出来，不能只在数据接入区标一次
+      var prov = report.provenance;
+      if (prov) {
+        box.appendChild(el("div", "rp-prov" + (prov.synthetic ? " synth" : ""),
+          (prov.synthetic ? "⚠ 基于<b>" + esc(prov.badge) + "数据</b>：" : "数据来源：") + esc(prov.note || prov.source || "")));
+      }
+      if (report.fallbackFrom === "backend") {
+        box.appendChild(el("div", "rp-prov warnline", "后端不可用，本报告由浏览器本地规则引擎计算。"));
+      }
+
       box.appendChild(el("div", "verdict", esc(report.verdict || "")));
+
+      // 可信度：低于「中」时明确提示，避免用户把弱证据当结论
+      if (report.confidence && CONFIDENCE_LABEL[report.confidence]) {
+        box.appendChild(el("div", "rp-conf c-" + report.confidence,
+          esc(CONFIDENCE_LABEL[report.confidence]) +
+          (report.confidence === "high" || report.confidence === "medium" ? ""
+            : " — 该结论证据不足，请补充数据后再据此决策")));
+      }
 
       if (report.chart && report.chart.items && report.chart.items.length) {
         var wrap = el("div", "rp-chart");
@@ -359,10 +439,20 @@
         box.appendChild(sec);
       }
 
+      // 视口联动：3D 场景当前只装载一台打印机，只有结论指向的正是这台机型时才谈得上「定位」。
+      // 机群视图（多机台排布 + 真实映射）尚未实现，见 doc/优化文档.md §5 P3.9——
+      // 在此之前不得让按钮暗示视口里有多台机器可供切换。
       if (report.highlight && report.highlight.type === "machine") {
-        var btn = el("button", "btn btn-ghost btn-block", "在 3D 视口中定位 " + report.highlight.id);
-        btn.addEventListener("click", this._highlightMachine.bind(this, report.highlight.id));
-        box.appendChild(btn);
+        var P = this.sim && this.sim.printer;
+        if (this._viewportMatches(report.highlight.id)) {
+          var btn = el("button", "btn btn-ghost btn-block", "在 3D 视口中高亮 " + report.highlight.id);
+          btn.addEventListener("click", this._highlightMachine.bind(this, report.highlight.id));
+          box.appendChild(btn);
+        } else {
+          box.appendChild(el("div", "note",
+            "3D 视口当前只装载一台「" + esc((P && P.MODEL_NAME) || "打印机") + "」，与结论指向的 " +
+            esc(report.highlight.id) + " 不是同一台；机群视图尚未实现，因此这里不提供视口定位。"));
+        }
       }
 
       // 后端产出的报告可生成公开分享页（doc §3.3-6）
@@ -451,6 +541,13 @@
 
     /* ── 3D 视口联动 ──────────────────────── */
 
+    /** 结论指向的机台，是否就是视口里当前装载的这台机型 */
+    _viewportMatches(machineId) {
+      var P = this.sim && this.sim.printer;
+      var tag = P && (P.MODEL_TAG || P.MODEL_NAME);
+      return !!(tag && String(machineId || "").indexOf(String(tag)) === 0);
+    }
+
     _highlightMachine(id) {
       var P = this.fx.printer;
       this.fx.setCameraPreset("overview");
@@ -461,7 +558,7 @@
         P.setStateLED(n % 2 ? origin : 0xff5f52);
         if (++n >= 9) { clearInterval(this._blinkT); P.setStateLED(origin); }
       }.bind(this), 240);
-      this.ui.toast("已在 3D 视口中定位 " + id + "（演示环境映射至当前机台）", "ok");
+      this.ui.toast("已高亮 " + id + " 的状态灯", "ok");
     }
 
     /* ── 历史 ─────────────────────────────── */
@@ -492,18 +589,22 @@
 
     _refreshEngineTag() {
       var tag = $("#insight-engine-tag");
-      if (!tag) return;
-      tag.textContent = !FXApiClient.available ? "本地演示"
-        : FXApiClient.engineMode === "infinisynapse" ? "云端 AI" : "后端演示";
-      if (this._engineNote) {
-        this._engineNote.hidden = false;
-        this._engineNote.innerHTML = !FXApiClient.available
-          ? "当前为<b>本地演示引擎</b>（file:// 直开或后端未启动）：KPI 与报告由浏览器对所选数据集<b>真实聚合</b>产出，非预置文案。" +
-            "要启用 InfiniSynapse <b>云端真实 AI 分析</b>：命令行运行 <span class=\"mono\">node server/index.js</span>，改用 <span class=\"mono\">http://127.0.0.1:8787</span> 打开本页。"
-          : FXApiClient.engineMode === "infinisynapse"
-          ? "已连接 <b>InfiniSynapse 云端真实分析</b>：每次提问都会创建真实云端任务（SSE 实时进度，约 2–4 分钟），任务记录可在 app.infinisynapse.cn/tasks 后台核对。"
-          : "后端已连接（<b>演示引擎</b>：未配置云端密钥或未核准）。配好 server/.env 的 INFINI_API_KEY 并置 INFINI_VERIFIED=1 后自动切云端真实分析。";
+      var cloud = FXApiClient.engineMode === "infinisynapse";
+      if (tag) {
+        tag.textContent = !FXApiClient.available ? "本地规则" : cloud ? "云端 AI" : "后端规则";
       }
+      if (!this._engineNote) return;
+      this._engineNote.hidden = false;
+      this._engineNote.innerHTML = !FXApiClient.available
+        ? "当前是<b>本地规则引擎</b>（file:// 直开或后端未启动）。<b>它不是 AI</b>：" +
+          "报告由固定的关键词路由 + 聚合统计产出，只覆盖有限几个分析维度。" +
+          "要用 InfiniSynapse 云端 AI：运行 <span class=\"mono\">node server/index.js</span>，" +
+          "改用 <span class=\"mono\">http://127.0.0.1:8787</span> 打开本页。"
+        : cloud
+        ? "已连接 <b>InfiniSynapse 云端 AI</b>：每次提问创建一个真实云端任务（实时进度，通常 2–4 分钟）。" +
+          "注意云端报告目前<b>不含图表与视口联动</b>（结构化产物待补，见 Roadmap）。"
+        : "后端已连接，运行的是<b>后端规则引擎</b>（未配置云端密钥）。<b>它不是 AI</b>，" +
+          "与本地规则引擎同源同产物。配好 <span class=\"mono\">server/.env</span> 的 INFINI_API_KEY 后可切云端 AI。";
     }
   }
 

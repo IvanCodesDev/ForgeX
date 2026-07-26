@@ -14,4 +14,7 @@ services:
       # 经 Render 反代，限流需读 X-Forwarded-For 才能区分真实访客
       - key: TRUST_PROXY
         value: "1"
-      # InfiniSynapse 密钥到手后在 Render 控制台补：INFINI_API_KEY / INFINI_VERIFIED=1
+      # ⚠️ 公网部署不建议配置 INFINI_API_KEY：本服务目前没有鉴权、没有配额、没有并发上限，
+      # 任何访问者都能持续触发真实云端任务（单次 160–230s），费用记在你的账上。
+      # 详见 SECURITY.md「已知的安全边界」。不配密钥时自动使用规则引擎，无任何外部计费。
+      # 确需启用时在 Render 控制台补：INFINI_API_KEY / INFINI_VERIFIED=1

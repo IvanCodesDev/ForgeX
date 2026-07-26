@@ -1,175 +1,242 @@
-# FORGE·X Insight — 3D-Printing Simulation & Data Analysis
+# FORGE·X Insight — 3D Printing Simulation × Production Data Analysis
 
 [简体中文](./README.md) · **English**
 
-A dual-engine application for additive manufacturing — **"FORGE·X Simulation × Data Analysis"**:
+A **physics-driven** additive manufacturing tool: a 3D printer simulator that really slices,
+really models thermal inertia, and emits real G-code — paired with an insight panel that
+aggregates production data.
 
-- **FORGE·X Simulation**: a structurally faithful, industrial-grade 3D printer sits at the center of a dark blue-grey engineering-grid space, with four switchable machine models — FX-256 (enclosed CoreXY, triple-leadscrew drop bed) / FX-220 (i3 gantry, Y-moving bed) / FX-Δ260 (Delta parallel arms, inverse kinematics) / FX-500 (large-format industrial gantry, four-corner leadscrew lift). Switch from the "Model" panel and watch slice-path planning, nozzle motion along toolpaths, layer-by-layer deposition, support structures and infill logic in real time;
-- **Manufacturing Insight**: natural-language analysis over production data — machine-fault attribution, material failure-rate comparison, layer-height correlation, cost-trend breakdown — with a KPI dashboard, charts and actionable advice; a finding can be pinpointed back into the 3D viewport in one click (viewport linkage).
+> **Status: 0.x, under refactor.** This project started as a contest entry and is being
+> rebuilt into an open-source project following the roadmap in `doc/优化文档.md`.
+> Everything described below maps to capability that exists in the code today —
+> **nothing aspirational is listed as shipped**. Planned work lives in the Roadmap section.
 
-The UI uses light frosted-glass floating cards — the 3D viewport is the stage; panels expand on demand and collapse when done.
+---
 
-## Quick Start
-
-**Zero-dependency, just open it**: double-click `index.html` (no server, no network required); the Insight panel uses the local demo analysis engine.
-
-**Run with the backend (recommended, still zero-dependency)**:
-
-```bash
-node server/index.js        # or: npm start
-# open http://127.0.0.1:8787 — front & back are same-origin, the Insight panel
-# switches to the backend engine automatically and unlocks the "share page".
-# No npm install required.
-```
-
-**Deploy**: the repo ships `render.yaml` (Render Blueprint, one-click) and `Dockerfile` (Fly.io / Railway / Zeabur / self-hosted). After deployment, run `node tests/deploy-check.js https://your-domain` to verify the whole chain (health check / static assets / analysis SSE / share page).
-
-**Backend dual engine**: with no InfiniSynapse key it runs the **backend demo engine** (reuses the local analysis logic, isomorphic output); set `INFINI_API_KEY` and `INFINI_VERIFIED=1` in `server/.env` (see `server/.env.example`) and it switches to **real InfiniSynapse cloud analysis** (contract verified 2026-07: SSE event stream + multi-step SQL aggregation + structured report + workspace files) — with zero frontend changes.
-
-**Browser support**: Chrome / Edge / Firefox / Safari, plus Chinese dual-core browsers (360 / QQ / Sogou, "speed mode"):
-
-- Rendering is based on three.js r152; falls back from WebGL2 to WebGL1 automatically (old iGPUs / VMs / remote desktops all open, identical visuals, slightly lower performance);
-- Declares `renderer=webkit` for dual-core browsers to avoid the IE-compatible kernel;
-- Renderer creation retries "antialias → no-antialias → conservative params" to maximize startup on old GPUs;
-- Rough floor: Chromium 58+ / Firefox 54+ / Safari 11+ (ES2017 baseline). Older kernels get a clear upgrade page instead of a blank screen.
-
-You can also use a local server:
+## Quick start
 
 ```bash
-python -m http.server 8080
-# open http://localhost:8080
+# Option 1: zero dependencies, open directly (no Node, no network)
+open index.html
+
+# Option 2: with backend (still zero npm dependencies, no npm install needed)
+node server/index.js     # or: npm start
+# then open http://127.0.0.1:8787
 ```
 
-## Feature Overview
+Run the tests:
 
-| Area | Content |
-|---|---|
-| Top step pills | Model (incl. transforms) · Slice · Calibrate · Quality · **Insight**; click to expand the left floating card, click again to collapse |
-| Manufacturing Insight panel | Data intake (sample / upload CSV / sim capture), KPI dashboard (jobs / yield / avg. good-part cost / key machine), natural-language questions, report & charts, analysis history, 3D viewport-linked locate |
-| Parameters overlay (top-right) | Process presets (fine/standard/draft/strong), material system (PLA/PETG/ABS/TPU), layer height, perimeters, infill, temps, speed, retraction, fan, supports |
-| Bottom control dock | Progress ring, start/pause/stop, current layer, ETA, nozzle/bed temperature at a glance |
-| Monitor overlay (waveform button) | Live temperature curves, filament level, machine load, event log, fault-drill injection |
-| Fullscreen 3D viewport | FORGE·X printer simulation + layer-by-layer animation; LMB orbit / RMB pan / wheel zoom; three camera presets (overview / nozzle / top) |
+```bash
+npm test        # 210 assertions, zero dependencies
+```
 
-### Manufacturing Insight · Production Data Analysis (core feature)
+---
 
-Open the "Insight" panel, ask in natural language, and get "verdict + charts + advice" in seconds:
+## What is real here
 
-- **Typical questions**: which machine fails most and why / PLA vs PETG failure rate on overhangs / layer-height vs print-time correlation / this month's cost trend / common causes across failed batches;
-- **Three data channels**: 96 built-in sample rows out of the box; upload your own CSV (loose CN/EN header matching, automatic yuan↔cent cost conversion); every completed/aborted simulated print is auto-captured as a "sim capture" dataset (**self-contained loop**: the full analysis chain works without any external data);
-- **Viewport linkage**: after locating a problem machine, pinpoint it in the 3D viewport in one click (camera switch + status-LED blink);
-- **Three engine tiers**: `file://` → local demo engine (zero-dep); `node server/index.js` → backend demo engine (isomorphic output + SSE progress + share page); InfiniSynapse key + verified endpoints → real cloud AI analysis. Progressive, with zero frontend change (see `js/api-client.js`);
-- **Report sharing**: in backend mode a report can generate a public share page (server-rendered, valid for 24h);
-- All amounts are stored as integer cents and displayed in yuan, to avoid floating-point error.
+Credibility matters most for an open-source project, so let's be precise.
 
-### Image → 3D Print (core feature)
+### ✅ Real
 
-The "Model Import" panel accepts drag-and-drop PNG / JPG / WebP:
+| Capability                    | Why it's trustworthy                                                                                                                                                                                                                 |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Slicing engine**            | Perimeter offsetting → even-odd scanline infill → top/bottom solid layers → overhang support → skirt. Real algorithms (`js/slicer.js`, 32 assertions)                                                                                |
+| **Thermal physics**           | First-order lag + overshoot + noise thermal model. Thermal-runaway protection discovers the fault from measured deviation (Marlin-like semantics), not from a scripted trigger                                                       |
+| **Bed leveling data chain**   | Per-model deterministic bed error field → 9-point probing → fitted 5×5 compensation mesh → real-time bilinear-interpolated Z compensation during printing. Printing without leveling yields a genuine first-layer unevenness warning |
+| **Four kinematics**           | CoreXY enclosed / i3 gantry / Delta parallel-arm inverse kinematics / large-format gantry — separately implemented, not reskins (`js/printers.js`)                                                                                   |
+| **G-code export**             | Generated from actual slice paths; extrusion computed for ⌀1.75 filament; ΣE is conserved against slice statistics (asserted). Loads in Cura / PrusaSlicer                                                                           |
+| **Post-print quality report** | Temperature deviation integral, leveling residual, speed-variance fraction and fault log all come from this run's real telemetry — not a preset score                                                                                |
 
-- **Relief mode**: image brightness maps to surface height (Lithophane-like), good for photos and patterns;
-- **Silhouette mode**: extract the subject outline by a brightness threshold and extrude it, good for logos and icons;
-- Adjustable output width (40–140mm), max height and invert; it re-slices automatically and is ready to print.
+### ⚠️ Things you should know
 
-### Simulation Details
+| Item                                     | Reality                                                                                                                                                                                                                                                                                                         |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The "analysis engine" is not AI**      | The default engine (local and backend) is a **rules engine**: keyword intent routing + deterministic aggregation, covering 5 dimensions. The UI labels it "rules engine (no AI)". For questions outside those dimensions it **says so explicitly** and lists what it supports, rather than pretending to answer |
+| **The bundled sample data is synthetic** | `doc/samples/print_jobs_synthetic.csv` is seeded-random and has a **storyline baked in** (one machine's failure rate is hardcoded to 0.20, etc.). Any "finding" from it is just the generator's parameters echoed back. It carries a "synthetic" badge in the UI and in reports. See `doc/samples/README.md`    |
+| **Cloud AI mode has _fewer_ features**   | With InfiniSynapse connected, you get text conclusions only — **no charts, no viewport linkage** (the rules engine has both). Reports state this gap explicitly. Fix is roadmap P3                                                                                                                              |
+| **Viewport linkage is single-machine**   | The 3D scene holds exactly one printer. Highlighting is offered only when the conclusion points at that same model; otherwise the UI says fleet view isn't implemented                                                                                                                                          |
+| **In-memory only**                       | Datasources, tasks and share pages live in memory; a restart clears everything. "Share valid for 24h" means within the process lifetime                                                                                                                                                                         |
+| **No auth, no quota**                    | Read the Deployment section before exposing this publicly                                                                                                                                                                                                                                                       |
 
-- Real slicing pipeline: perimeter offset → even-odd scanline infill (45°/135° alternating) → top/bottom solid layers → overhang supports → first-layer skirt; the slice-panel slider **previews any layer's real extrusion toolpath directly in the 3D viewport** (same data source as the 2D preview);
-- Thermal inertia model (first-order lag + overshoot + noise): preheat → 3×3 auto-level → layer-by-layer print → done, a full state machine;
-- **Calibration is a real data chain**: each machine model has an intrinsic (deterministic) bed-error field → 9-point probe (logged values are the samples) → fit a 5×5 compensation mesh → bilinear Z compensation by nozzle position at print time (full on the first layer, fading out within 6mm); printing un-leveled yields a genuine first-layer unevenness warning;
-- Temperature / speed / fan are adjustable mid-print; geometry is locked mid-print (matching real slicer behavior);
-- Fault drills with a real detection chain: filament runout / clog are sensor-reported; **the thermal-runaway drill injects a "heater failure" physical disturbance** — temperature truly drops by thermal inertia and the runaway monitor (deviation >15°C, no recovery, sustained 3s, Marlin-like semantics) discovers it from measured deviation and cuts the heater; no false alarms during recovery;
-- Dual quality view: pre-print **parameter estimate** (derived live from parameters) + post-print **measured report** — temperature-deviation integral, leveling residual, fault/pause/tuning records, and variable-speed time share, all from this print's real telemetry.
+### ❌ Not present
 
-### Result Export (core feature)
+- **Knowledge base / RAG** — `/api/knowledge` has storage but **no retrieval**; uploaded documents never enter any prompt. The endpoint is kept to reuse the storage plumbing when RAG lands, and it honestly reports `retrievalEnabled: false`
+- **Multi-machine fleet view**
+- **Connecting to physical printers** (you can export G-code / STL / OBJ into a real workflow)
 
-The "Model" panel's "Export" supports three formats:
+---
 
-| Format | Content |
-|---|---|
-| STL (binary) | Result triangle mesh with current scale, Z-up; ready for Cura / PrusaSlicer re-slicing |
-| OBJ (ASCII) | Generic 3D format; opens directly in modeling/rendering tools |
-| **G-code** (Marlin-style) | Generated from the real slice toolpaths: temps, homing, leveling, per-layer XY/E/F, retraction/prime, fan control; extrusion computed for ⌀1.75 filament (ΣE conserved vs. slice stats, verified by test assertions) |
+## Features
 
-## Built-in Models
+| Area              | Contents                                                                                                                            |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Top flow pills    | Model (with transform) · Slice · Calibrate · Quality · **Insight**                                                                  |
+| Insight panel     | Data sources (synthetic sample / CSV upload / simulator capture), KPI board, questions, reports & charts, history                   |
+| Parameter overlay | Process presets, material system (PLA/PETG/ABS/TPU), layer height, perimeters, infill, temperature, speed, retraction, fan, support |
+| Bottom dock       | Progress ring, start/pause/stop, current layer, ETA, nozzle/bed temperature                                                         |
+| Monitor overlay   | Live temperature curves, filament remaining, load, event log, fault injection                                                       |
+| 3D viewport       | Printer simulation + layer-by-layer animation; LMB orbit / RMB pan / wheel zoom; three camera presets                               |
 
-| Model | Highlights |
-|---|---|
-| Planetary gear | 26 teeth + center bore + 4 lightening holes, two-stage profile (gear body + hub boss) |
-| Turbine impeller | 7 continuously twisting blades (per-layer cross-section computed), showcases complex-part slicing |
-| Sensor bracket | Top flange overhanging >60°, demonstrates support generation and its effect |
+### Simulation details
+
+- The slice panel slider previews **any layer's real extrusion paths directly in the 3D viewport** (same data as the 2D preview);
+- Full state machine: preheat → 3×3 auto bed leveling → layer-by-layer printing → done;
+- Temperature / speed / fan adjustable mid-print; geometry parameters locked during printing (matching real slicer behavior);
+- Fault drills: runout and clog are reported by sensors; **the thermal-runaway drill injects a heater failure** — temperature falls per thermal inertia and the runaway monitor discovers it from measured deviation.
+
+### Image to 3D print
+
+Drag in PNG / JPG / WebP:
+
+- **Relief mode** — luminance mapped to surface height (lithophane-like);
+- **Silhouette mode** — threshold extraction and extrusion;
+- Adjustable width (40–140mm), max height, invert. Re-slices automatically.
+
+### Data analysis
+
+Five supported dimensions (anything else is explicitly declined):
+
+1. Machine failure-rate ranking and attribution
+2. Material failure-rate comparison
+3. Layer height vs. print duration
+4. Cost trend and breakdown
+5. Failed-batch attribution
+
+Statistical discipline:
+
+- **Minimum sample guard** — a group needs ≥ 5 jobs to be ranked, so a machine with one failed job can't top the chart at "100% failure rate";
+- **Confidence labeling** — every report carries a `confidence`; when evidence is thin it refuses to conclude rather than picking something;
+- **Confounder disclosure** — correlation analysis states that material/model differences are not controlled for, and never presents correlation as causation;
+- **Cost basis disclosed with the report** — the price table is an **estimate, not authoritative data**; it ships with its provenance and can be replaced via `FXInsightData.setCostProfile()`.
+
+### Export
+
+| Format                    | Contents                                                     |
+| ------------------------- | ------------------------------------------------------------ |
+| STL (binary)              | Triangle mesh with current scale, Z-up                       |
+| OBJ (ASCII)               | Generic 3D format                                            |
+| **G-code** (Marlin style) | From real slice paths; ΣE conserved against slice statistics |
+
+---
 
 ## Architecture
 
-Pure frontend, zero build: `three.js r152` (localized under `js/vendor/`, UMD build guarantees file:// use; r152 is the last version with full official WebGL1 auto-fallback, widest compatibility) + vanilla JS classic scripts.
+Zero-build frontend: `three.js r152` (vendored in `js/vendor/`; the UMD build keeps `file://`
+working. r152 is the last release with full official WebGL1 auto-fallback, maximizing
+compatibility) + vanilla JS classic scripts.
+
+Backend: Node ≥18 native `http`, **zero npm dependencies**.
 
 ```
-index.html            layout skeleton
-css/style.css         design system "Blueprint Glass" (dark blue-grey grid + light frosted cards + orange accents)
-js/util.js            utilities (thermal inertia model, noise, event bus, etc.)
-js/orbit.js           in-house orbit controller
-js/slicer.js          slicing engine (polygon offset / scanline infill / Marching Squares, pure & testable)
-js/models.js          built-in parametric models + image→heightfield model
-js/printer3d.js       printer procedural modeling & print animation (progressive tube reveal + clip-plane freeze + 3D toolpath preview)
-js/scene.js           renderer / neutral studio lighting / dark blue-grey engineering-grid floor
-js/sim.js             simulation state machine (motion / thermal / bed-error field & leveling compensation / filament / faults / run telemetry / quality estimate & measured)
-js/exporter.js        result export engine (binary STL / OBJ / Marlin G-code, pure & testable)
-js/insight-data.js    insight data layer (sample generation / CSV parse-export / dataset management, pure & testable)
-js/insight-engine.js  local demo analysis engine (intent detection / aggregation / report generation, isomorphic with backend output)
-js/api-client.js      own-backend API client (healthz probe / analysis task / SSE; switches to cloud once the backend is up)
-js/insight.js         Manufacturing Insight panel (data intake / KPI dashboard / questions / report charts / viewport linkage / share)
-js/ui.js              step pills / floating panels / bottom dock / monitor overlay & interactions
+index.html            layout
+css/style.css         "blueprint glass" design system
+js/util.js            utilities (thermal model, noise, event bus)
+js/orbit.js           custom orbit controller
+js/slicer.js          slicing engine (pure logic, testable)
+js/models.js          parametric models + image→heightfield
+js/printer3d.js       procedural printer modeling and print animation
+js/printers.js        extended machine library (three more kinematics)
+js/scene.js           renderer / lighting / engineering grid floor
+js/sim.js             simulation state machine (motion / thermal / leveling / filament / faults / telemetry / quality)
+js/exporter.js        export engine (STL / OBJ / G-code, pure logic, testable)
+js/insight-data.js    data layer (synthetic generation / CSV / provenance / dataset management)
+js/insight-engine.js  rules analysis engine (intent routing / aggregation / statistical guards)
+js/api-client.js      backend API client
+js/insight.js         insight panel
+js/ui.js              flow pills / floating panels / dock / monitor
 js/main.js            bootstrap
-server/               own thin backend (Node ≥18 native http, zero npm deps)
-  index.js            startup / routing / CORS / rate limit / static hosting (node server/index.js)
-  routes/…            analyze (SSE progress) / datasource / knowledge / share
-  services/…          infini (the only key holder) / local-engine / analysis / storage
-  .env.example        env-var reference (the key lives only in server/.env, excluded by .gitignore)
-doc/samples/print_jobs_sample.csv  sample production data (96 rows, upload to try directly)
-tests/smoke.js        slicing engine smoke test (32 assertions)
-tests/sim-calib.test.js simulation core: leveling data chain / telemetry / measured quality (33 assertions)
-tests/exporter.test.js  export engine: STL/OBJ structure / G-code semantics & extrusion conservation (24 assertions)
-tests/insight.test.js insight data & analysis engine test (35 assertions)
-tests/server.test.js  backend contract test (44 assertions)
-tests/check-refs.js   HTML ↔ JS DOM-id cross-check
-tests/deploy-check.js post-deploy online smoke (node tests/deploy-check.js <public URL>, 10 assertions)
-tests/infini-smoke.js InfiniSynapse connectivity/task smoke (--task fires a real cloud task and prints the event sequence)
-package.json          npm start / npm test unified entry (still zero npm deps)
-render.yaml           Render Blueprint one-click deploy config
-Dockerfile            containerized deploy (Fly.io / Railway / Zeabur / self-hosted)
+server/               thin backend (zero npm dependencies)
+doc/优化文档.md        current-state audit + refactor roadmap (Chinese)
+doc/samples/          synthetic sample data and its documentation
+tests/                5 suites, 210 assertions total
 ```
+
+---
 
 ## Tests
 
 ```bash
-npm test                     # runs the six local suites below (zero-dep, no install)
-node tests/smoke.js          # slicing engine: geometry/infill/isolines/three-model slicing/transforms, 32 assertions
-node tests/sim-calib.test.js # simulation core: bed-error field/leveling data-chain consistency/full state machine/telemetry & measured quality, 33 assertions
-node tests/exporter.test.js  # export engine: triangle extraction/binary STL structure/OBJ/G-code semantics & extrusion conservation, 24 assertions
-node tests/insight.test.js   # insight: sample data/CSV parse round-trip/aggregation/intent detection/report structure, 35 assertions
-node tests/server.test.js    # backend contract: healthz/datasource/analysis+SSE/knowledge/share/rate limit/path traversal, 44 assertions
-node tests/check-refs.js     # HTML ↔ JS DOM-id cross-check
+npm test                     # run all local suites
 
-node tests/deploy-check.js https://your-domain   # post-deploy online smoke: health/assets/analysis end-to-end/share page
+node tests/smoke.js          # slicer: geometry / infill / contours / models / transforms (32)
+node tests/sim-calib.test.js # sim core: bed error field / leveling chain / state machine / telemetry (44)
+node tests/exporter.test.js  # export: STL / OBJ / G-code semantics and extrusion conservation (24)
+node tests/insight.test.js   # insight: data / parsing / stats / guards / provenance / honesty (64)
+node tests/server.test.js    # backend contract: healthz / datasource / analyze+SSE / share / rate limit / traversal (46)
+node tests/check-refs.js     # HTML ↔ JS DOM id cross-check
+
+node tests/deploy-check.js https://your-domain   # post-deploy smoke test
 ```
 
-## InfiniSynapse Integration (summary)
+**Testing principle**: assert the engine's _properties_, never "the generator planted X so
+the analyzer found X". The failure-ranking tests construct datasets with a known injected
+effect and check the engine finds it — then **invert the effect and require the conclusion
+to invert too**, proving it computes rather than echoes constants.
 
-The frontend only talks to our own thin backend; the backend is the **only holder of the `sk-` key** and proxies the InfiniSynapse Server API (official best practice: backend proxy + Server API). The analysis flow:
+---
 
-1. The backend generates a `connId` and subscribes to the SSE event stream first (`GET {server}/api/ai/events?connId=…`) — subscribe before creating the task, or early events are lost;
-2. Create the task (`POST {server}/api/ai/message`, `{type:"newTask", connId, text, chatSettings:{mode:"act"}}`); the `taskId` comes back via SSE, not in the response body;
-3. The cloud runs multiple steps autonomously (inline JSON → Infinity SQL aggregation → conclusion); completion is signaled by `completion_result` with `partial:false`;
-4. Fetch workspace artifacts (`GET {server}/api/ai_task/getTaskWorkspace/<taskId>`) and map the cloud result into the frontend-isomorphic report.
+## Deployment
 
-Every call logs its `taskId`; reviewers can cross-check the same `taskId` in the platform console at `app.infinisynapse.cn/tasks`.
+⚠️ **Read before exposing publicly.**
 
-## Known Limitations
+There is currently **no authentication, no quota, and no concurrency cap**. If you configure
+an InfiniSynapse key and expose the service, anyone can trigger real cloud tasks
+**billed to you**.
 
-- This platform is a **simulator**: it does not connect to a physical printer (it can export real G-code / STL / OBJ into a physical slicing & printing workflow);
-- The honeycomb infill pattern is rendered visually as a diagonal grid;
-- Desktop ≥1280px width is recommended (16:9 layout is best);
-- It cannot run where WebGL is disabled by system policy (e.g. enterprise control, no GPU driver with software rendering disabled) — a clear notice is shown;
-- On Chromium <84 kernels some spacing degrades slightly (no flex-gap support); functionality is unaffected.
+For public deployment either:
 
-## License
+- **don't** configure `INFINI_API_KEY` (rules engine only), or
+- add access control at your reverse proxy, or
+- wait for the cost gate in roadmap P4.
 
-UNLICENSED — for the InfiniSynapse × CSDN "Vibe Coding" data-analysis contest submission.
+`render.yaml` (Render Blueprint) and `Dockerfile` (Fly.io / Railway / Zeabur / self-hosted)
+are included. After deploying, run `node tests/deploy-check.js https://your-domain`.
+
+Environment variables: see `server/.env.example`. Secrets go only in `server/.env`
+(git-ignored).
+
+---
+
+## Browser support
+
+Chrome / Edge / Firefox / Safari, plus Chinese dual-core browsers in fast mode.
+
+- Falls back to WebGL1 when WebGL2 is unavailable;
+- Renderer creation retries with progressively conservative parameters;
+- Approximate floor: Chromium 58+ / Firefox 54+ / Safari 11+ (ES2017 baseline). Older engines get an explicit upgrade notice instead of a blank page.
+
+---
+
+## Roadmap
+
+Full version in `doc/优化文档.md`. Summary:
+
+| Phase                        | Contents                                                                                                                                                                                                                    |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P0 Honesty** ✅            | Remove everything claimed-but-not-implemented; statistical guards; provenance; real progress events                                                                                                                         |
+| **P1 Open-source readiness** | LICENSE, CI, lint, community files, English-first code, DOM-level tests                                                                                                                                                     |
+| **P2 Real data**             | **Virtual print farm**: give each machine intrinsic physical characteristics so failures _emerge from physics_ instead of probability sampling; pipe simulator telemetry into the analysis layer                            |
+| **P3 Real analysis**         | Stats kernel (confidence intervals + significance tests + partial correlation), QueryPlan layer, provider abstraction (InfiniSynapse / OpenAI-compatible / local), cloud output isomorphic with local, fleet view, real RAG |
+| **P4 Productionization**     | SQLite persistence, auth, quotas and cost gate, observability                                                                                                                                                               |
+| **P5 Ecosystem**             | Machine/material profile plugins, real G-code import & replay, community datasets                                                                                                                                           |
+
+---
+
+## Known limitations
+
+- This is a **simulator**: it does not drive physical printers;
+- Honeycomb infill renders visually as a diagonal grid;
+- Desktop ≥1280px recommended;
+- Cannot run when WebGL is disabled by policy (an explicit notice is shown);
+- Minor spacing degradation on Chromium <84 (no flex gap); functionality unaffected.
+
+---
+
+## Contributing
+
+The project is in a 0.x refactor; see the roadmap above. One **hard rule**:
+
+> Any PR that introduces text, comments, or documentation claiming capability that isn't
+> implemented **will be rejected**.
+
+This is the dividing line between a demo and an engineering product. No exceptions.

@@ -14,8 +14,10 @@ const E = globalThis.FXInsightEngine;
 
 module.exports = {
   FIELDS: D.FIELDS,
+  PROVENANCE: D.PROVENANCE,
+  MIN_SAMPLE: E.MIN_SAMPLE,
   parseCsv: (text) => D.parseCsv(text),
   toCsv: (rows) => D.toCsv(rows),
   generateSample: (n) => D.generateSample(n),
-  analyze: (question, rows) => E.analyze(question, rows),
+  analyze: (question, rows, opts) => E.analyze(question, rows, opts),
 };

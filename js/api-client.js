@@ -1,6 +1,6 @@
 /* FORGE·X 智造洞察 — 后端 API 客户端（对接自有薄后端 → InfiniSynapse Server API）
    设计见 doc/开发文档.md §8.3。当前后端未部署时 available=false，
-   insight 面板自动落到本地演示引擎（FXInsightEngine），后端上线后零改动切换。 */
+   insight 面板自动落到浏览器内的本地规则引擎（FXInsightEngine），后端上线后零改动切换。 */
 (function (root) {
   "use strict";
 
@@ -8,7 +8,7 @@
     /** 后端地址：同源部署留空；分离部署在此处或 window.FX_API_BASE 配置 */
     base: (typeof window !== "undefined" && window.FX_API_BASE) || "",
     available: false,       // healthz 探测结果
-    engineMode: "",         // 后端引擎："mock"（演示）| "infinisynapse"（真实云端）
+    engineMode: "",         // 后端引擎："rules"（规则引擎，非 AI）| "infinisynapse"（云端 AI）
     _probed: false,
   };
 

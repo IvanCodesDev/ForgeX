@@ -3,7 +3,7 @@
    1. /api/* 业务接口（分析任务 / SSE 进度 / 数据源 / 知识库 / 分享）
    2. /share/:token 公开分享页（服务端渲染）
    3. 静态托管前端（allowlist，server/ 与 .env 永不可达）→ 同源部署零 CORS
-   引擎双模：mock（复用前端本地分析引擎）/ infinisynapse（key + 附录 B 核准后启用）。
+   引擎双模：rules（复用前端规则引擎，确定性统计、非 AI）/ infinisynapse（key 核准后启用的云端 AI）。
    零依赖动机：评委 clone 后 `node server/index.js` 即起，无 install、无供应链风险；
    若后续需要 Fastify 生态，services/* 与框架无关，仅需替换本文件与 routes/*。 */
 "use strict";
@@ -49,7 +49,11 @@ function createApp(overrides) {
   const knowledge = new KnowledgeStore(cfg);
   const shares = new ShareStore();
 
-  // 同 IP 冷却限流（仅分析接口调用）
+  // 同 IP 冷却限流（仅分析接口调用）。
+  // Map 迭代序 = 插入序，每次命中先 delete 再 set，插入序即等于「最近使用序」，
+  // 超容量时从队首淘汰最久未用的条目——旧实现是 size>10000 时 clear()，
+  // 会把**所有人**的冷却窗口一次性清空，攻击者只要灌满 Map 就能绕过限流。
+  const RATE_MAX_ENTRIES = 10000;
   const lastHit = new Map();
   function rateLimit(ip) {
     if (cfg.rateLimitMs <= 0) return;
@@ -58,8 +62,13 @@ function createApp(overrides) {
     if (now - last < cfg.rateLimitMs) {
       throw new HttpError(429, "请求过于频繁，请 " + Math.ceil((cfg.rateLimitMs - (now - last)) / 1000) + " 秒后重试");
     }
+    lastHit.delete(ip);
     lastHit.set(ip, now);
-    if (lastHit.size > 10000) lastHit.clear();   // 防 Map 无界增长
+    while (lastHit.size > RATE_MAX_ENTRIES) {
+      const oldest = lastHit.keys().next();
+      if (oldest.done) break;
+      lastHit.delete(oldest.value);
+    }
   }
 
   const ctx = { cfg, log, infini, datasources, tasks, knowledge, shares, rateLimit };
