@@ -723,6 +723,23 @@ body.boot #dock { animation-name: dockRise; }
   font-size: 10.5px; font-weight: 600; margin-bottom: 8px;
   padding: 4px 8px; border-radius: var(--r-sm); display: inline-block;
 }
+/* 证据链：默认折叠，追问「凭什么」时展开 */
+.rp-evi {
+  margin: 8px 0 4px; border: 1px solid var(--stroke); border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.45); padding: 6px 9px;
+}
+.rp-evi > summary {
+  cursor: pointer; font-size: 11px; font-weight: 700; color: var(--ink-1);
+  letter-spacing: 0.04em; list-style: none; user-select: none;
+}
+.rp-evi > summary::-webkit-details-marker { display: none; }
+.rp-evi > summary::before { content: "▸ "; color: var(--ink-2); }
+.rp-evi[open] > summary::before { content: "▾ "; }
+.rp-evi > summary:hover { color: var(--ink-0); }
+.evi-item { margin-top: 7px; padding-left: 10px; border-left: 2px solid rgba(79, 131, 224, 0.35); }
+.evi-claim { font-size: 11.5px; color: var(--ink-0); line-height: 1.55; }
+.evi-meta { font-size: 10px; color: var(--ink-2); margin-top: 2px; line-height: 1.5; }
+
 .rp-conf.c-high { background: rgba(45, 138, 92, 0.12); color: #1f6b45; }
 .rp-conf.c-medium { background: rgba(79, 131, 224, 0.12); color: #33559b; }
 .rp-conf.c-low { background: rgba(217, 131, 36, 0.14); color: #7a4d10; }

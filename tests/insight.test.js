@@ -13,6 +13,7 @@ const J = (p) => path.join(__dirname, "..", "js", p);
 
 require(J("util.js"));
 require(J("insight-data.js"));
+require(J("stats-kernel.js"));
 require(J("insight-engine.js"));
 
 const D = globalThis.FXInsightData, E = globalThis.FXInsightEngine;
@@ -249,6 +250,73 @@ console.log("\n[12] 计价口径可溯与可替换");
   // 还原，避免影响后续用例
   D.setCostProfile({ id: "cn-retail-2026q3", material: { PLA: 6900, PETG: 8900, ABS: 7900, TPU: 15900 } });
   check("未知材料落到兜底单价", D.costFen("UNOBTAINIUM", 1000, 0, 0) === D.COST_PROFILE.materialDefaultFen);
+}
+
+console.log("\n[13] 统计严谨性：结论必须带证据，不显著必须明说");
+{
+  // 真差异：8/20 vs 1/20，Fisher p≈0.02
+  const strong = E.analyze("哪台机故障率最高", makeRows("BAD", 20, 8).concat(makeRows("OK", 20, 1)));
+  check("显著差异 → 结论断言「显著高于」", strong.verdict.indexOf("显著高于") >= 0, strong.verdict);
+  check("显著差异 → 结论带 p 值", /p[<=]/.test(strong.verdict), strong.verdict);
+  check("显著差异 → 结论带置信区间", strong.verdict.indexOf("95%CI") >= 0, strong.verdict);
+  check("显著差异 → 可信度不为 low", strong.confidence !== "low", strong.confidence);
+
+  // 噪声差异：5/20 vs 4/20，不应被当成结论
+  const weak = E.analyze("哪台机故障率最高", makeRows("A", 20, 5).concat(makeRows("B", 20, 4)));
+  check("噪声差异 → 结论明说「未达统计显著」", weak.verdict.indexOf("未达统计显著") >= 0, weak.verdict);
+  check("噪声差异 → 可信度降为 low", weak.confidence === "low", weak.confidence);
+  check("噪声差异 → 不出现「显著高于」这类断言", weak.verdict.indexOf("显著高于") < 0, weak.verdict);
+  // 仍给出定位入口，但措辞不得让用户以为已定论
+  check("噪声差异 → 仍提供 highlight 供排查", !!weak.highlight, JSON.stringify(weak.highlight));
+
+  // evidence 契约
+  check("报告带 evidence 数组", Array.isArray(strong.evidence) && strong.evidence.length > 0,
+    JSON.stringify(strong.evidence && strong.evidence.length));
+  const ev = strong.evidence[0];
+  check("evidence 含 claim / method / n / pValue",
+    !!(ev.claim && ev.method && typeof ev.n === "number" && typeof ev.pValue === "number"), JSON.stringify(ev));
+  check("evidence 的 method 写明具体检验", /Fisher/.test(ev.method), ev.method);
+  check("空数据集也有 evidence 字段（哪怕为空）", Array.isArray(E.analyze("x", []).evidence));
+}
+
+console.log("\n[14] 混杂因素：层高分析必须给出两个口径");
+{
+  // 构造辛普森结构：组内层高↑时长↓，但 TPU 组整体又慢又用大层高 → 粗相关为正
+  const ds = [];
+  const push = (mat, lh, dur, n) => {
+    for (let i = 0; i < n; i++) ds.push({
+      job_id: `${mat}-${lh}-${i}`, date: "2026-07-01", machine_id: "M1",
+      model_name: "件A", material: mat, layer_height_mm: lh,
+      duration_min: dur + i, filament_g: 30, cost_fen: 300,
+      status: "success", fail_reason: "", energy_kwh: 0.4,
+    });
+  };
+  push("PLA", 0.12, 60, 6); push("PLA", 0.28, 40, 6);     // 组内：层高↑ 时长↓
+  push("TPU", 0.12, 200, 6); push("TPU", 0.28, 180, 6);   // 同上，但整体慢得多
+
+  const r = E.analyze("层高与打印时长的相关性", ds);
+  check("同时给出未控制与已控制两个口径",
+    JSON.stringify(r.sections).indexOf("未控制混杂") >= 0 &&
+    JSON.stringify(r.sections).indexOf("控制材料与模型后") >= 0);
+  check("结论以偏相关为主口径", r.verdict.indexOf("控制材料与模型后") >= 0, r.verdict);
+  check("偏相关识别出真实的负向关系", /r=-/.test(r.verdict), r.verdict);
+  check("明确声明相关不等于因果",
+    JSON.stringify(r.sections).indexOf("相关不等于因果") >= 0);
+  check("evidence 记录了两个口径", r.evidence.length >= 2, String(r.evidence.length));
+  check("偏相关的 evidence 写明控制了哪些变量",
+    r.evidence.some((e) => /控制材料与模型/.test(e.claim)), JSON.stringify(r.evidence.map((e) => e.claim)));
+}
+
+console.log("\n[15] KPI 与分析器口径一致（不再各自为政）");
+{
+  const ds = makeRows("BAD", 20, 8).concat(makeRows("OK", 20, 1)).concat(makeRows("TINY", 2, 2));
+  const k = E.kpis(ds);
+  const r = E.analyze("哪台机故障率最高", ds);
+  check("KPI 与分析器指向同一台机器", k.worstMachine.id === r.highlight.id,
+    `${k.worstMachine.id} vs ${r.highlight.id}`);
+  check("KPI 的 worstMachine 带置信区间", !!(k.worstMachine.ci && k.worstMachine.ci.lo >= 0));
+  check("KPI 的 worstMachine 带显著性标记", typeof k.worstMachine.significant === "boolean");
+  check("样本不足的机台不进 KPI", k.worstMachine.id !== "TINY", k.worstMachine.id);
 }
 
 console.log(`\n═══ 结果：${passed} 通过 / ${failed} 失败 ═══`);

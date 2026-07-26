@@ -99,6 +99,24 @@ jobs:
             console.log('OK: 内置数据集已声明为合成，seed =', p.generator.seed);
           "
 
+      - name: 统计结论必须带证据
+        run: |
+          node -e "
+            require('./js/util.js'); require('./js/stats-kernel.js');
+            require('./js/insight-data.js'); require('./js/insight-engine.js');
+            const E = globalThis.FXInsightEngine;
+            const mk = (m,n,f) => Array.from({length:n},(_,i)=>({machine_id:m,status:i<f?'fail':'success',
+              fail_reason:i<f?'堵料':'',date:'2026-07-01',duration_min:100,layer_height_mm:0.2,
+              material:'PLA',model_name:'X',cost_fen:300,filament_g:30,energy_kwh:0.4}));
+            const r = E.analyze('哪台机故障率最高', mk('BAD',20,8).concat(mk('OK',20,1)));
+            if (!Array.isArray(r.evidence) || !r.evidence.length) { console.error('结论未附计算依据'); process.exit(1); }
+            if (!r.evidence.every(e => e.method && e.n != null)) { console.error('evidence 缺 method 或 n'); process.exit(1); }
+            const weak = E.analyze('哪台机故障率最高', mk('A',20,5).concat(mk('B',20,4)));
+            if (weak.verdict.indexOf('未达统计显著') < 0) { console.error('噪声差异未如实标注为不显著'); process.exit(1); }
+            if (weak.confidence !== 'low') { console.error('噪声差异的可信度未降级'); process.exit(1); }
+            console.log('OK: 结论带证据，不显著时如实告知');
+          "
+
       - name: 内置数据集不得由概率抽样产生
         run: |
           node -e "

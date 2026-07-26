@@ -432,6 +432,27 @@
         box.appendChild(sec);
       }
 
+      // 证据链：每条结论是怎么算出来的。默认折叠——
+      // 不想看的人不受打扰，想追问「凭什么」的人一定找得到。
+      if (report.evidence && report.evidence.length) {
+        var det = el("details", "rp-evi");
+        var sum = el("summary", "", "计算依据（" + report.evidence.length + " 条）");
+        det.appendChild(sum);
+        for (var e = 0; e < report.evidence.length; e++) {
+          var ev = report.evidence[e];
+          var parts = [];
+          if (ev.method) parts.push(esc(ev.method));
+          if (ev.n != null) parts.push("n=" + ev.n);
+          if (ev.statistic != null) parts.push("统计量=" + Number(ev.statistic).toFixed(3));
+          if (ev.ci95) parts.push("95%CI " + Number(ev.ci95[0]).toFixed(3) + "–" + Number(ev.ci95[1]).toFixed(3));
+          if (ev.pValue != null) parts.push(FXStats.fmtP(ev.pValue));
+          det.appendChild(el("div", "evi-item",
+            '<div class="evi-claim">' + esc(ev.claim) + "</div>" +
+            '<div class="evi-meta mono">' + parts.join(" · ") + "</div>"));
+        }
+        box.appendChild(det);
+      }
+
       // 视口联动：3D 场景当前只装载一台打印机，只有结论指向的正是这台机型时才谈得上「定位」。
       // 机群视图（多机台排布 + 真实映射）尚未实现，见 doc/优化文档.md §5 P3.9——
       // 在此之前不得让按钮暗示视口里有多台机器可供切换。
@@ -510,25 +531,44 @@
 
       var isRate = chart.kind === "bar-rate";
       c.font = "11px 'Segoe UI', 'Microsoft YaHei UI', sans-serif";
+      var bx = 84, trackW = W - 150;
       for (var k = 0; k < items.length; k++) {
         var it = items[k];
         var y = 8 + k * 30;
         var frac = isRate ? Math.min(1, it.value) : it.value / maxV;
-        var barW = Math.max(2, frac * (W - 150));
+        var barW = Math.max(2, frac * trackW);
         var hot = isRate ? it.value >= 0.15 : k === 0;
+        // 样本不足的条目整体压暗：视觉上就不该和有证据的条目等量齐观
+        c.globalAlpha = it.weak ? 0.42 : 1;
         c.fillStyle = "#1d222b";
         c.textAlign = "left";
         c.fillText(it.label, 0, y + 13);
         // 条底槽 + 数据条
         c.fillStyle = "rgba(29,34,43,0.08)";
-        var bx = 84;
-        c.fillRect(bx, y + 4, W - 150, 12);
+        c.fillRect(bx, y + 4, trackW, 12);
         c.fillStyle = hot ? "#f0561a" : "rgba(79,131,224,0.6)";
         c.fillRect(bx, y + 4, barW, 12);
+
+        // 95% 置信区间误差线：让「证据强度」变成看得见的东西——
+        // 两条点估计接近但区间宽度差一倍时，光看柱子长度会得出错误印象。
+        if (isRate && it.ciLo != null && it.ciHi != null) {
+          var xLo = bx + Math.min(1, it.ciLo) * trackW;
+          var xHi = bx + Math.min(1, it.ciHi) * trackW;
+          var cy = y + 10;
+          c.strokeStyle = "rgba(29,34,43,0.55)";
+          c.lineWidth = 1;
+          c.beginPath();
+          c.moveTo(xLo, cy); c.lineTo(xHi, cy);          // 横线
+          c.moveTo(xLo, cy - 4); c.lineTo(xLo, cy + 4);  // 左端帽
+          c.moveTo(xHi, cy - 4); c.lineTo(xHi, cy + 4);  // 右端帽
+          c.stroke();
+        }
+
         c.fillStyle = "#5a6270";
         c.font = "10px Consolas";
-        c.fillText(isRate ? (it.value * 100).toFixed(1) + "%" : String(Math.round(it.value)), bx + (W - 150) + 6, y + 14);
+        c.fillText(isRate ? (it.value * 100).toFixed(1) + "%" : String(Math.round(it.value)), bx + trackW + 6, y + 14);
         c.font = "11px 'Segoe UI', 'Microsoft YaHei UI', sans-serif";
+        c.globalAlpha = 1;
       }
     }
 
