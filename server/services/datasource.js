@@ -5,17 +5,22 @@
 const crypto = require("crypto");
 const engine = require("./local-engine");
 const { HttpError } = require("../lib/http");
+const { FileStore } = require("../lib/store");
 
 const MAX_SETS = 200;
 
 class DatasourceStore {
-  constructor(cfg) {
+  constructor(cfg, log) {
     this.cfg = cfg;
-    this.map = new Map();
+    // 落盘：重启后用户上传的数据源仍在（此前重启即全丢，分享出去的链接也就废了）
+    this.map = new FileStore({
+      dir: cfg.dataDir, name: "datasources", ttlMs: cfg.taskTtlMs, max: MAX_SETS, log: log,
+    });
     // 内置数据源是**物理仿真产出**的机群数据，不是概率合成——
     // 开箱即用的那份数据，其结论必须是能被证伪的。
     const rows = engine.farmRows();
-    this.map.set("sample", {
+    // 内置数据集每次启动都重建（它由代码决定，不该被旧盘数据固化）
+    this.map.set({
       id: "sample", name: "内置机群仿真数据", rows, csv: engine.farmCsv(),
       builtin: true, createdAt: Date.now(),
       provenance: engine.PROVENANCE.farm,
@@ -26,13 +31,6 @@ class DatasourceStore {
     const out = engine.parseCsv(csvText);
     if (!out.rows.length) {
       throw new HttpError(400, "CSV 解析失败：" + (out.errors[0] || "无有效数据"));
-    }
-    if (this.map.size >= MAX_SETS) {
-      let oldest = null;
-      for (const ds of this.map.values()) {
-        if (!ds.builtin && (!oldest || ds.createdAt < oldest.createdAt)) oldest = ds;
-      }
-      if (oldest) this.map.delete(oldest.id);
     }
     const id = "ds_" + crypto.randomBytes(8).toString("hex");
     const ds = {
@@ -45,18 +43,20 @@ class DatasourceStore {
       warnings: out.errors,
       provenance: engine.PROVENANCE.upload,
     };
-    this.map.set(id, ds);
+    this.map.set(ds);          // FileStore 自带容量淘汰
     return ds;
   }
 
   get(id) {
-    return this.map.get(String(id || "")) || null;
+    return this.map.get(id);
   }
 
   sweep(now) {
-    for (const [id, ds] of this.map) {
-      if (!ds.builtin && now - ds.createdAt > this.cfg.taskTtlMs) this.map.delete(id);
-    }
+    this.map.sweep(now);
+  }
+
+  get size() {
+    return this.map.size;
   }
 }
 

@@ -99,6 +99,31 @@ jobs:
             console.log('OK: 内置数据集已声明为合成，seed =', p.generator.seed);
           "
 
+      - name: 成本闸门必须真的能拦下超额调用
+        run: |
+          node -e "
+            const os = require('os'), fs = require('fs'), path = require('path');
+            const { CostGate } = require('./server/lib/quota.js');
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-gate-'));
+            const quiet = { info(){}, warn(){}, error(){} };
+            const g = new CostGate({ dataDir: dir, aiConcurrency: 1, aiQueueMax: 1, dailyPerCaller: 2, dailyGlobal: 3 }, quiet);
+            if (!g.check('ip:1').ok) { console.error('初始应有额度'); process.exit(1); }
+            g.consume('ip:1'); g.consume('ip:1');
+            if (g.check('ip:1').ok) { console.error('额度用尽后仍放行 —— 闸门失效'); process.exit(1); }
+            const g2 = new CostGate({ dataDir: dir, aiConcurrency: 1, aiQueueMax: 1, dailyPerCaller: 2, dailyGlobal: 3 }, quiet);
+            if (g2.usedBy('ip:1') !== 2) { console.error('用量未跨重启保留 —— 重启即可重置额度'); process.exit(1); }
+            fs.rmSync(dir, { recursive: true, force: true });
+            console.log('OK: 闸门可拦截，用量跨重启保留');
+          "
+
+      - name: 运行时数据不得入库
+        run: |
+          if git ls-files | grep -E '^data/'; then
+            echo "::error::data/ 是用户运行时数据，不该提交"
+            exit 1
+          fi
+          echo "OK: 无运行时数据入库"
+
       - name: 统计结论必须带证据
         run: |
           node -e "

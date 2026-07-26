@@ -18,6 +18,8 @@ const { TaskStore } = require("./services/analysis");
 const { KnowledgeStore } = require("./services/knowledge");
 const { ShareStore } = require("./services/share");
 const { InfiniClient } = require("./services/infini");
+const { CostGate } = require("./lib/quota");
+const { Auth } = require("./lib/auth");
 
 /* ── 极简路由器 ─────────────────────────────── */
 
@@ -44,10 +46,18 @@ function createApp(overrides) {
   const cfg = getConfig(overrides);
   const log = createLogger(cfg.logLevel);
   const infini = new InfiniClient(cfg, log);
-  const datasources = new DatasourceStore(cfg);
-  const knowledge = new KnowledgeStore(cfg);
-  const tasks = new TaskStore(cfg, log, infini, knowledge);
-  const shares = new ShareStore();
+  const gate = new CostGate(cfg, log);
+  const auth = new Auth(cfg, log);
+  const datasources = new DatasourceStore(cfg, log);
+  const knowledge = new KnowledgeStore(cfg, log);
+  const tasks = new TaskStore(cfg, log, infini, knowledge, gate);
+  const shares = new ShareStore(cfg, log);
+
+  /* 运行指标。不引依赖，就是几个计数器——够 /metrics 用，也够排查线上问题。 */
+  const metrics = {
+    tasks: 0, failed: 0, degraded: 0, cached: 0, requests: 0, lastDurationMs: 0,
+    snapshot() { return { ...this }; },
+  };
 
   // 同 IP 冷却限流（仅分析接口调用）。
   // Map 迭代序 = 插入序，每次命中先 delete 再 set，插入序即等于「最近使用序」，
@@ -71,7 +81,7 @@ function createApp(overrides) {
     }
   }
 
-  const ctx = { cfg, log, infini, datasources, tasks, knowledge, shares, rateLimit };
+  const ctx = { cfg, log, infini, datasources, tasks, knowledge, shares, rateLimit, gate, auth, metrics };
   const router = new Router();
 
   router.add("GET", /^\/healthz$/, (req, res) => {
@@ -84,8 +94,46 @@ function createApp(overrides) {
       label: p.label,
       capabilities: p.capabilities,
       reason: cfg.providerReason,
+      // 公网访问者有权知道自己面对的是什么限制，而不是撞上 429 才发现
+      quota: p.capabilities.ai ? gate.snapshot() : null,
+      auth: { enabled: auth.enabled, required: auth.required },
+      persistence: cfg.dataDir ? "file" : "memory",
       now: Date.now(),
     });
+  });
+
+  /* Prometheus 文本格式指标。不引入依赖——格式本身就是几行字符串拼接。
+     暴露的是运维需要的量：任务数、失败率、时延、配额用量、存储规模。 */
+  router.add("GET", /^\/metrics$/, (req, res) => {
+    const q = gate.snapshot();
+    const m = metrics.snapshot();
+    const L = [];
+    const g = (name, help, value, labels) => {
+      L.push("# HELP " + name + " " + help);
+      L.push("# TYPE " + name + " gauge");
+      L.push(name + (labels || "") + " " + value);
+    };
+    const c = (name, help, value, labels) => {
+      L.push("# HELP " + name + " " + help);
+      L.push("# TYPE " + name + " counter");
+      L.push(name + (labels || "") + " " + value);
+    };
+    c("forgex_tasks_total", "分析任务总数", m.tasks);
+    c("forgex_tasks_failed_total", "失败的分析任务数", m.failed);
+    c("forgex_tasks_degraded_total", "因额度/队列降级为规则引擎的任务数", m.degraded);
+    c("forgex_tasks_cached_total", "命中结果缓存的任务数", m.cached);
+    c("forgex_http_requests_total", "HTTP 请求总数", m.requests);
+    g("forgex_task_duration_ms", "最近一次分析任务耗时（毫秒）", m.lastDurationMs);
+    g("forgex_ai_running", "正在执行的 AI 任务数", q.running);
+    g("forgex_ai_queued", "排队中的 AI 任务数", q.queued);
+    g("forgex_ai_concurrency_limit", "AI 并发上限", q.concurrencyLimit);
+    g("forgex_ai_daily_used", "今日已用 AI 额度", q.globalUsed);
+    g("forgex_ai_daily_limit", "每日 AI 额度上限（0=不限）", q.globalLimit || 0);
+    g("forgex_datasources", "已存数据源数", datasources.size);
+    g("forgex_knowledge_docs", "已存知识文档数", knowledge.size);
+    g("forgex_shares", "有效分享页数", shares.size);
+    res.writeHead(200, { "Content-Type": "text/plain; version=0.0.4; charset=utf-8" });
+    res.end(L.join("\n") + "\n");
   });
   require("./routes/analyze").register(router, ctx);
   require("./routes/datasource").register(router, ctx);
@@ -116,6 +164,7 @@ function createApp(overrides) {
     applyCors(req, res);
     if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
 
+    metrics.requests++;
     res.on("finish", () => {
       // SSE 长连接结束时也会走到这，一并计入访问日志
       log.info("http", { reqId, ip, method: req.method, path: pathname, status: res.statusCode, ms: Date.now() - started });
@@ -153,6 +202,7 @@ function createApp(overrides) {
 
   function close() {
     clearInterval(sweeper);
+    gate.state.save();          // 用量计数落盘，避免停机丢掉当日额度记录
     tasks.closeAll();
     return new Promise((resolve) => server.close(resolve));
   }
@@ -165,12 +215,15 @@ function createApp(overrides) {
 if (require.main === module) {
   const app = createApp();
   const { cfg, log } = app;
-  app.server.listen(cfg.port, cfg.host, () => {
+  app.server.listen(cfg.port, cfg.host, async () => {
     log.info("FORGE·X server started", {
       url: "http://" + cfg.host + ":" + cfg.port,
-      engine: cfg.mode,
-      reason: cfg.modeReason,
+      provider: cfg.provider,
+      reason: cfg.providerReason,
+      persistence: cfg.dataDir ? cfg.dataDir : "memory-only",
     });
+    // 探活放在 listen 之后：服务先可用，AI 通道慢一拍确认，不阻塞启动
+    if (cfg.probeProvider) await app.ctx.tasks.probeProvider();
   });
   let closing = false;
   const shutdown = (sig) => {

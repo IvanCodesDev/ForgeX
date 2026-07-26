@@ -5,7 +5,23 @@
 "use strict";
 const http = require("http");
 const path = require("path");
+const fs = require("fs");
+const os = require("os");
 const { createApp } = require("../server/index");
+
+/* 测试必须与真实数据完全隔离：每个实例一个临时目录，跑完删掉。
+   否则测试会往仓库的 data/ 里写文件，还会读到上一次跑的残留。 */
+const TMP_DIRS = [];
+function tmpDataDir() {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "forgex-test-"));
+  TMP_DIRS.push(d);
+  return d;
+}
+function cleanupTmp() {
+  for (const d of TMP_DIRS) {
+    try { fs.rmSync(d, { recursive: true, force: true }); } catch (e) { /* 清不掉就算了 */ }
+  }
+}
 
 let passed = 0, failed = 0;
 function check(name, cond, detail) {
@@ -75,7 +91,7 @@ const CSV_OK = [
 
 async function main() {
   // forceMock：契约测试必须确定性、零外部网络——即使开发机 .env 已配真实 key 也绝不外呼
-  const app = createApp({ rateLimitMs: 0, mockDelayMs: 5, logLevel: "error", forceMock: true });
+  const app = createApp({ rateLimitMs: 0, mockDelayMs: 5, logLevel: "error", forceMock: true, dataDir: tmpDataDir() });
   const port = await listen(app);
   const base = "http://127.0.0.1:" + port;
 
@@ -208,7 +224,7 @@ async function main() {
 
   console.log("\n[9] 限流（独立实例，冷却 60s）");
   {
-    const app2 = createApp({ rateLimitMs: 60000, mockDelayMs: 5, logLevel: "error", forceMock: true });
+    const app2 = createApp({ rateLimitMs: 60000, mockDelayMs: 5, logLevel: "error", forceMock: true, dataDir: tmpDataDir() });
     const port2 = await listen(app2);
     const base2 = "http://127.0.0.1:" + port2;
     const a = await post(base2, "/api/analyze", { question: "成本趋势", datasourceId: "sample" });
@@ -324,7 +340,7 @@ console.log("\n[12] 统计简报：token 成本与数据量解耦");
 
 console.log("\n[13] 结果缓存：同一问题不重复烧钱");
 {
-  const app = createApp({ logLevel: "error", forceMock: true, rateLimitMs: 0 });
+  const app = createApp({ logLevel: "error", forceMock: true, rateLimitMs: 0, dataDir: tmpDataDir() });
   const tasks = app.ctx.tasks;
   const k1 = tasks.cache.key("哪台机故障率最高", "sample", "openai-compatible");
   const k2 = tasks.cache.key("哪台机故障率最高", "sample", "openai-compatible");
@@ -374,7 +390,7 @@ console.log("\n[14] 知识检索（RAG 的 R）");
 
 console.log("\n[15] 知识库接口：能力标记必须与实际 provider 一致");
 {
-  const app = createApp({ logLevel: "error", forceMock: true, rateLimitMs: 0 });
+  const app = createApp({ logLevel: "error", forceMock: true, rateLimitMs: 0, dataDir: tmpDataDir() });
   const base = "http://127.0.0.1:" + (await listen(app));
   const ok = await post(base, "/api/knowledge", { name: "术语表.md", text: "翘边：首层附着失效。" });
   check("规则引擎下如实标注检索不生效", ok.json.retrievalEnabled === false, JSON.stringify(ok.json));
@@ -390,11 +406,247 @@ console.log("\n[15] 知识库接口：能力标记必须与实际 provider 一�
   await app.close();
 }
 
+console.log("\n[16] 持久化：重启不再丢一切");
+{
+  const dir = tmpDataDir();
+  const a1 = createApp({ logLevel: "error", forceMock: true, rateLimitMs: 0, dataDir: dir });
+  const b1 = "http://127.0.0.1:" + (await listen(a1));
+
+  const up = await post(b1, "/api/datasource", { name: "persist.csv", csv: CSV_OK });
+  const dsId = up.json.datasourceId;
+  const kb = await post(b1, "/api/knowledge", { name: "术语.md", text: "翘边：首层附着失效。" });
+  const t = await post(b1, "/api/analyze", { question: "哪台机故障率最高", datasourceId: dsId });
+  await new Promise((r) => setTimeout(r, 300));
+  const sh = await post(b1, "/api/share/" + t.json.taskId, {});
+  await a1.close();
+
+  // 换一个进程内实例，指向同一个数据目录——等价于「重启」
+  const a2 = createApp({ logLevel: "error", forceMock: true, rateLimitMs: 0, dataDir: dir });
+  const b2 = "http://127.0.0.1:" + (await listen(a2));
+
+  const again = await post(b2, "/api/analyze", { question: "哪台机故障率最高", datasourceId: dsId });
+  check("重启后上传的数据源仍可用", again.status === 202, again.text);
+  check("重启后知识文档仍在", a2.ctx.knowledge.all().some((d) => d.id === kb.json.knowledgeId),
+    String(a2.ctx.knowledge.all().length));
+
+  const page = await jfetch(b2, "/share/" + sh.json.token);
+  check("重启后分享页仍可打开（此前重启即失效）", page.status === 200 && page.text.includes("FORGE·X"),
+    String(page.status));
+
+  check("持久化状态在 healthz 中可见",
+    (await jfetch(b2, "/healthz")).json.persistence === "file");
+  await a2.close();
+
+  // 显式关闭持久化 → 回到纯内存，且如实标注
+  const a3 = createApp({ logLevel: "error", forceMock: true, rateLimitMs: 0, dataDir: "" });
+  const b3 = "http://127.0.0.1:" + (await listen(a3));
+  check("dataDir 为空时退回纯内存并如实标注",
+    (await jfetch(b3, "/healthz")).json.persistence === "memory");
+  await a3.close();
+}
+
+console.log("\n[17] 文件存储层：原子写 / TTL / 容量淘汰 / 损坏容错");
+{
+  const { FileStore } = require(path.join(__dirname, "..", "server", "lib", "store.js"));
+  const dir = tmpDataDir();
+  const quiet = { info() {}, warn() {}, error() {} };
+
+  const s1 = new FileStore({ dir, name: "t1", ttlMs: 0, max: 0, log: quiet });
+  s1.set({ id: "a", v: 1 });
+  s1.set({ id: "b", v: 2 });
+  check("写入后可读", s1.get("a").v === 1 && s1.get("b").v === 2);
+
+  const s1b = new FileStore({ dir, name: "t1", ttlMs: 0, max: 0, log: quiet });
+  check("新实例能从盘上恢复", s1b.get("a").v === 1 && s1b.size === 2, String(s1b.size));
+
+  s1b.delete("a");
+  const s1c = new FileStore({ dir, name: "t1", ttlMs: 0, max: 0, log: quiet });
+  check("删除会落盘（不会复活）", s1c.get("a") === null && s1c.size === 1);
+
+  // 容量淘汰：builtin 项豁免
+  const s2 = new FileStore({ dir, name: "t2", ttlMs: 0, max: 2, log: quiet });
+  s2.set({ id: "builtin", builtin: true, createdAt: 1 });
+  s2.set({ id: "x", createdAt: 2 });
+  s2.set({ id: "y", createdAt: 3 });
+  s2.set({ id: "z", createdAt: 4 });
+  check("超容量淘汰最旧的非 builtin 项", s2.get("x") === null && !!s2.get("z"));
+  check("builtin 项豁免淘汰", !!s2.get("builtin"));
+
+  // TTL
+  const s3 = new FileStore({ dir, name: "t3", ttlMs: 1, max: 0, log: quiet });
+  s3.set({ id: "old", createdAt: Date.now() - 10000 });
+  check("过期记录读不到", s3.get("old") === null);
+  const s3b = new FileStore({ dir, name: "t3", ttlMs: 1, max: 0, log: quiet });
+  check("过期记录不会在重启后复活", s3b.size === 0, String(s3b.size));
+
+  // 损坏文件不能拖垮整个加载
+  const s4 = new FileStore({ dir, name: "t4", ttlMs: 0, max: 0, log: quiet });
+  s4.set({ id: "good", v: 1 });
+  fs.writeFileSync(path.join(dir, "t4", "broken.json"), "{ 这不是 JSON", "utf8");
+  const s4b = new FileStore({ dir, name: "t4", ttlMs: 0, max: 0, log: quiet });
+  check("损坏的单条记录不影响其余加载", s4b.get("good") && s4b.get("good").v === 1, String(s4b.size));
+
+  // 关闭持久化必须是真的关闭，而不是「换个地方生效」。
+  // 曾经 path.join("", name) 得到相对路径，于是跑一次测试就往仓库根目录写文件。
+  const off = new FileStore({ dir: "", name: "nowhere", ttlMs: 0, max: 0, log: quiet });
+  off.set({ id: "x", v: 1 });
+  check("dataDir 为空时不落盘", off.enabled === false && !fs.existsSync("nowhere"));
+  check("关闭持久化后内存仍可用", off.get("x").v === 1);
+
+  // id 里的路径分隔符必须被消解，不能写到目录外
+  const s5 = new FileStore({ dir, name: "t5", ttlMs: 0, max: 0, log: quiet });
+  s5.set({ id: "../../evil", v: 1 });
+  check("id 中的路径穿越被消解", fs.existsSync(path.join(dir, "t5")) &&
+    fs.readdirSync(path.join(dir, "t5")).every((f) => !f.includes("..")),
+    fs.readdirSync(path.join(dir, "t5")).join(","));
+}
+
+console.log("\n[18] 成本闸门：额度用尽降级而不是罢工");
+{
+  const { CostGate } = require(path.join(__dirname, "..", "server", "lib", "quota.js"));
+  const quiet = { info() {}, warn() {}, error() {} };
+  const mk = (over) => new CostGate(Object.assign({
+    dataDir: tmpDataDir(), aiConcurrency: 2, aiQueueMax: 2, dailyPerCaller: 3, dailyGlobal: 5,
+  }, over), quiet);
+
+  const g = mk();
+  check("初始有额度", g.check("ip:1").ok === true);
+  g.consume("ip:1"); g.consume("ip:1"); g.consume("ip:1");
+  const ex = g.check("ip:1");
+  check("单调用方额度用尽被拦下", ex.ok === false && ex.code === "caller_daily_exhausted", JSON.stringify(ex));
+  check("拒绝理由指向自带 key 的出路", /自己的 API key/.test(ex.reason), ex.reason);
+  check("换一个调用方仍有额度（按人计费而非全局）", g.check("ip:2").ok === true);
+
+  // 全局兜底：即使换 IP 也烧不过全局上限
+  g.consume("ip:2"); g.consume("ip:2");
+  const gex = g.check("ip:3");
+  check("全局日上限兜底生效", gex.ok === false && gex.code === "global_daily_exhausted", JSON.stringify(gex));
+
+  // 并发与排队
+  const g2 = mk({ aiConcurrency: 1, aiQueueMax: 1 });
+  const r1 = await g2.acquire();
+  check("取得第一个槽位", typeof r1 === "function");
+  let queuedInfo = null;
+  const p2 = g2.acquire((q) => { queuedInfo = q; });
+  check("并发满时进入排队而不是报错", queuedInfo && queuedInfo.position === 1, JSON.stringify(queuedInfo));
+  let rejected = null;
+  try { await g2.acquire(); } catch (e) { rejected = e; }
+  check("队列也满时才拒绝", rejected && rejected.code === "queue_full", rejected && rejected.message);
+  r1();                                  // 释放 → 队列里那个应当拿到槽位
+  const r2 = await p2;
+  check("释放后队列中的任务拿到槽位", typeof r2 === "function");
+  r2();
+  check("全部释放后并发归零", g2.snapshot().running === 0 && g2.snapshot().queued === 0,
+    JSON.stringify(g2.snapshot()));
+
+  // 用量跨重启保留——否则重启就等于重置额度，闸门形同虚设
+  const dir = tmpDataDir();
+  const ga = new CostGate({ dataDir: dir, aiConcurrency: 1, aiQueueMax: 1, dailyPerCaller: 5, dailyGlobal: 9 }, quiet);
+  ga.consume("ip:9"); ga.consume("ip:9");
+  const gb = new CostGate({ dataDir: dir, aiConcurrency: 1, aiQueueMax: 1, dailyPerCaller: 5, dailyGlobal: 9 }, quiet);
+  check("用量跨重启保留（重启不等于重置额度）", gb.usedBy("ip:9") === 2, String(gb.usedBy("ip:9")));
+
+  check("不限额配置下永远放行", mk({ dailyPerCaller: 0, dailyGlobal: 0 }).check("ip:x").ok === true);
+}
+
+console.log("\n[19] 鉴权：默认不挡路，配了 key 才生效");
+{
+  const { Auth, safeEqual } = require(path.join(__dirname, "..", "server", "lib", "auth.js"));
+  const quiet = { info() {}, warn() {}, error() {} };
+
+  const off = new Auth({ apiKeys: "", requireAuth: false }, quiet);
+  check("未配置 key 时鉴权关闭", off.enabled === false);
+  check("关闭时按 IP 识别身份", off.identify({ headers: {} }, "1.2.3.4").caller === "ip:1.2.3.4");
+  check("关闭时不拦截", off.guard(off.identify({ headers: {} }, "1.2.3.4")) === null);
+
+  const on = new Auth({ apiKeys: "k-alpha, k-beta", requireAuth: true }, quiet);
+  const idA = on.identify({ headers: { authorization: "Bearer k-alpha" } }, "1.1.1.1");
+  check("Bearer 头识别成功", idA.authenticated === true && idA.caller.startsWith("key:"), idA.caller);
+  const idX = on.identify({ headers: { "x-api-key": "k-beta" } }, "1.1.1.1");
+  check("X-API-Key 头同样识别", idX.authenticated === true);
+  check("不同 key → 不同计费主体", idA.caller !== idX.caller);
+  check("完整 key 不出现在 caller 标识里", !idA.caller.includes("k-alpha"), idA.caller);
+
+  const bad = on.identify({ headers: { authorization: "Bearer wrong" } }, "1.1.1.1");
+  check("错误 key 不通过", bad.authenticated === false);
+  check("requireAuth 下拦截未认证请求", on.guard(bad) && on.guard(bad).status === 401);
+
+  // 配置矛盾必须被响亮地纠正，否则会以为自己受保护
+  const contradictory = new Auth({ apiKeys: "", requireAuth: true }, quiet);
+  check("REQUIRE_AUTH=1 但无 key 时降级为不启用", contradictory.required === false);
+
+  check("常数时间比较对等长/不等长都可用",
+    safeEqual("abc", "abc") === true && safeEqual("abc", "abcd") === false && safeEqual("abc", "abd") === false);
+}
+
+console.log("\n[20] 额度用尽时的端到端行为：降级而非报错");
+{
+  // 把 AI 额度设为 0，但 provider 仍是规则引擎——验证降级路径本身
+  const app = createApp({
+    logLevel: "error", forceMock: true, rateLimitMs: 0, dataDir: tmpDataDir(),
+    dailyPerCaller: 0, dailyGlobal: 0,
+  });
+  const base = "http://127.0.0.1:" + (await listen(app));
+  const r = await post(base, "/api/analyze", { question: "哪台机故障率最高" });
+  check("建任务返回配额信息", r.status === 202 && "willUseAi" in r.json, r.text);
+  check("规则引擎模式下 willUseAi 为 false", r.json.willUseAi === false);
+  check("规则引擎模式下不返回配额（不该给用不上的限制）", r.json.quota === null);
+  await app.close();
+}
+
+console.log("\n[21] /metrics：Prometheus 文本格式");
+{
+  const app = createApp({ logLevel: "error", forceMock: true, rateLimitMs: 0, dataDir: tmpDataDir() });
+  const base = "http://127.0.0.1:" + (await listen(app));
+  await post(base, "/api/analyze", { question: "成本趋势" });
+  const m = await jfetch(base, "/metrics");
+  check("/metrics 可访问", m.status === 200, String(m.status));
+  check("Content-Type 为 Prometheus 文本格式",
+    /text\/plain/.test(m.headers.get("content-type") || ""), m.headers.get("content-type"));
+  check("含任务计数", /forgex_tasks_total \d+/.test(m.text), m.text.slice(0, 120));
+  check("含 HELP/TYPE 注释（Prometheus 规范）",
+    /# HELP forgex_tasks_total/.test(m.text) && /# TYPE forgex_tasks_total counter/.test(m.text));
+  check("含配额与存储指标",
+    /forgex_ai_daily_limit/.test(m.text) && /forgex_datasources/.test(m.text));
+  await app.close();
+}
+
+console.log("\n[22] 分享页：可撤销 + 披露可信度与数据来源");
+{
+  const app = createApp({ logLevel: "error", forceMock: true, rateLimitMs: 0, dataDir: tmpDataDir() });
+  const base = "http://127.0.0.1:" + (await listen(app));
+  const t = await post(base, "/api/analyze", { question: "哪台机故障率最高" });
+  await new Promise((r) => setTimeout(r, 300));
+  const sh = await post(base, "/api/share/" + t.json.taskId, {});
+  check("创建分享返回撤销密钥与有效期",
+    !!sh.json.revokeKey && sh.json.expiresAt > Date.now(), sh.text);
+
+  const page = await jfetch(base, "/share/" + sh.json.token);
+  check("分享页披露可信度", /可信度/.test(page.text));
+  check("分享页披露合成数据来源（分享出去的更要说清楚）", /非真实产线数据/.test(page.text));
+  check("分享页引擎标注不冒充 AI", /规则引擎/.test(page.text) && !/云端 AI/.test(page.text));
+
+  const badRevoke = await post(base, "/api/share/" + sh.json.token + "/revoke", { revokeKey: "wrong" });
+  check("错误撤销密钥 → 403", badRevoke.status === 403, String(badRevoke.status));
+  const stillThere = await jfetch(base, "/share/" + sh.json.token);
+  check("撤销失败后分享页仍可访问", stillThere.status === 200);
+
+  const ok = await post(base, "/api/share/" + sh.json.token + "/revoke", { revokeKey: sh.json.revokeKey });
+  check("正确密钥可撤销", ok.status === 200 && ok.json.revoked === true, ok.text);
+  const gone = await jfetch(base, "/share/" + sh.json.token);
+  check("撤销后分享页立即失效", gone.status === 404, String(gone.status));
+  await app.close();
+}
+
+  cleanupTmp();
+
   console.log(`\n═══ 结果：${passed} 通过 / ${failed} 失败 ═══`);
   process.exit(failed ? 1 : 0);
 }
 
 main().catch((e) => {
+
+  cleanupTmp();
   console.error("测试框架异常：", e);
   process.exit(1);
 });

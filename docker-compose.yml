@@ -1,0 +1,82 @@
+# FORGE·X Insight — 容器部署
+#
+#   docker compose up -d
+#   docker compose logs -f
+#
+# ⚠️ 公网部署前请读 SECURITY.md。默认配置是**安全的**：不带 AI 密钥，
+# 只跑规则引擎（确定性统计 + 假设检验，无外部计费）。要接 AI 请看下面的注释。
+
+services:
+  forgex:
+    build: .
+    image: forgex-insight:local
+    container_name: forgex-insight
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+
+    volumes:
+      # 持久化卷：数据源 / 分享页 / 知识库 / 用量计数。
+      # 不挂这个卷的话，容器一重建，用户上传的数据与分享链接就全没了，
+      # 每日额度计数也会跟着重置——那等于闸门形同虚设。
+      - forgex-data:/app/data
+
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8787"
+      # 经反向代理时置 1，让限流能读到真实客户端 IP
+      TRUST_PROXY: "0"
+      # 分享链接的公网前缀。不设的话生成的链接会退化成相对路径。
+      # PUBLIC_BASE: "https://forgex.example.com"
+      DATA_DIR: "/app/data"
+      LOG_LEVEL: "info"
+
+      # ── AI provider（默认全部留空 = 只跑规则引擎，零外部计费）──
+      #
+      # 配置任意一个即可启用 AI 叙述。注意：**数字始终由本地统计核算**，
+      # AI 只负责把已核验的事实组织成叙述——所以即使不配 AI，
+      # 置信区间、显著性检验、图表、视口联动也全都在。
+      #
+      # ANALYSIS_PROVIDER: "auto"
+      # INFINI_API_KEY: ""
+      # INFINI_VERIFIED: "1"
+      # OPENAI_API_KEY: ""
+      # OPENAI_BASE_URL: "https://api.openai.com/v1"
+      # OPENAI_MODEL: "gpt-4o-mini"
+
+      # ── 成本闸门（配了 AI 密钥后这几项才有意义）──
+      # 一次 AI 分析要花钱。公开访问且配了密钥时，这些是你的钱包护栏。
+      AI_CONCURRENCY: "2" # 同时最多几个 AI 任务
+      AI_QUEUE_MAX: "8" # 排队上限，超出才拒绝
+      AI_DAILY_PER_CALLER: "20" # 单个 key/IP 每日上限
+      AI_DAILY_GLOBAL: "200" # 整个实例每日上限（兜底）
+
+      # ── 鉴权（默认关闭；公网部署强烈建议开）──
+      # 配了 API_KEYS 之后，带 key 的调用方按 key 计费，其余按 IP。
+      # REQUIRE_AUTH=1 则未带合法 key 直接 401。
+      # API_KEYS: "your-key-1,your-key-2"
+      # REQUIRE_AUTH: "0"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8787/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # 最小权限：只读根文件系统 + 非 root（Dockerfile 里已切用户）。
+    # data 卷是唯一可写的地方。
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  forgex-data:

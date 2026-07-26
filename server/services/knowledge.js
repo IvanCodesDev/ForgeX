@@ -6,38 +6,39 @@
 "use strict";
 const crypto = require("crypto");
 const { HttpError } = require("../lib/http");
+const { FileStore } = require("../lib/store");
 
 const MAX_DOCS = 50;
 const MAX_TEXT = 512 * 1024;
 
 class KnowledgeStore {
-  constructor(cfg) {
+  constructor(cfg, log) {
     this.cfg = cfg;
-    this.map = new Map();
+    this.map = new FileStore({
+      dir: cfg.dataDir, name: "knowledge", ttlMs: cfg.taskTtlMs, max: MAX_DOCS, log: log,
+    });
   }
 
   create(name, text) {
     const body = String(text || "");
     if (!body.trim()) throw new HttpError(400, "知识文档内容为空");
     if (body.length > MAX_TEXT) throw new HttpError(413, "知识文档超过 512KB");
-    if (this.map.size >= MAX_DOCS) {
-      const oldestKey = this.map.keys().next().value;   // Map 迭代序 = 插入序
-      this.map.delete(oldestKey);
-    }
     const id = "kb_" + crypto.randomBytes(8).toString("hex");
     const doc = { id, name: String(name || "knowledge.md").slice(0, 80), text: body, createdAt: Date.now() };
-    this.map.set(id, doc);
+    this.map.set(doc);        // FileStore 自带容量淘汰
     return doc;
   }
 
   all() {
-    return [...this.map.values()];
+    return this.map.all();
   }
 
   sweep(now) {
-    for (const [id, doc] of this.map) {
-      if (now - doc.createdAt > this.cfg.taskTtlMs) this.map.delete(id);
-    }
+    this.map.sweep(now);
+  }
+
+  get size() {
+    return this.map.size;
   }
 }
 

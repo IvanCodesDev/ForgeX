@@ -58,6 +58,24 @@ function getConfig(overrides) {
     // 结果缓存：同一「问题 + 数据集 + provider」不重复调用 AI（省钱也省等待）
     cacheTtlMs: num(env.RESULT_CACHE_TTL_MS, 30 * 60 * 1000),
     cacheMax: num(env.RESULT_CACHE_MAX, 200),
+
+    // ── 持久化 ──────────────────────────────
+    // 重启不再丢一切。设为空字符串可显式关闭（回到纯内存）。
+    dataDir: env.DATA_DIR === "" ? "" : (env.DATA_DIR || path.resolve(__dirname, "..", "data")),
+
+    // ── 成本闸门（公网部署的生死线，见 server/lib/quota.js）──
+    // 规则引擎不受任何闸门限制——它不花钱。这里限的只有 AI provider 调用。
+    aiConcurrency: num(env.AI_CONCURRENCY, 2),
+    aiQueueMax: num(env.AI_QUEUE_MAX, 8),
+    dailyPerCaller: num(env.AI_DAILY_PER_CALLER, 20),
+    dailyGlobal: num(env.AI_DAILY_GLOBAL, 200),
+
+    // ── 鉴权（默认关闭；配了 API_KEYS 才启用）──
+    apiKeys: env.API_KEYS || "",
+    requireAuth: env.REQUIRE_AUTH === "1",
+
+    // 启动时探活 provider，失败自动降级为规则引擎（取代人工 INFINI_VERIFIED 门禁的下一步）
+    probeProvider: env.PROBE_PROVIDER !== "0",
   }, overrides || {});
 
   /* ── provider 选择 ──────────────────────────

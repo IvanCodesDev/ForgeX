@@ -1,23 +1,48 @@
 /* 分享路由：为已完成任务生成公开分享页（服务端渲染，零脚本零依赖）。
    POST /api/share/:taskId → {publicUrl}；GET /share/:token → HTML。 */
 "use strict";
-const { HttpError, sendJson, escapeHtml } = require("../lib/http");
+const { HttpError, readJson, sendJson, escapeHtml } = require("../lib/http");
 
 function register(router, ctx) {
-  const { tasks, shares, cfg } = ctx;
+  const { tasks, shares, cfg, log } = ctx;
 
   router.add("POST", /^\/api\/share\/([A-Za-z0-9_]+)$/, (req, res, m, rc) => {
     const task = tasks.get(m[1]);
     if (!task) throw new HttpError(404, "任务不存在或已过期");
     if (task.status !== "done") throw new HttpError(409, "任务尚未完成，无法分享");
-    const token = shares.create(task);
-    const base = cfg.publicBase || (rc.origin || "");
-    sendJson(res, 201, { publicUrl: (base || "") + "/share/" + token, token });
+    const out = shares.create(task);
+    const base = cfg.publicBase || rc.origin || "";
+    if (!base) {
+      // 没有可用的公网前缀时给相对路径，并明确告知——
+      // 悄悄拼出一个打不开的链接比报错更糟
+      log.warn("share created without PUBLIC_BASE or Origin", { token: out.token });
+    }
+    sendJson(res, 201, {
+      publicUrl: base + "/share/" + out.token,
+      token: out.token,
+      // 撤销密钥只在创建时返回这一次，服务端只存哈希
+      revokeKey: out.revokeKey,
+      expiresAt: out.expiresAt,
+      note: base
+        ? undefined
+        : "未配置 PUBLIC_BASE 且请求无 Origin，返回的是相对路径；部署时请设置 PUBLIC_BASE。",
+    });
+  });
+
+  /* 撤销分享。分享出去的东西必须能收回来，这是分享功能的基本义务。 */
+  router.add("POST", /^\/api\/share\/([a-f0-9]+)\/revoke$/, async (req, res, m) => {
+    const body = await readJson(req, 4 * 1024);
+    const out = shares.revoke(m[1], body.revokeKey);
+    if (!out.ok) {
+      throw new HttpError(out.reason === "not_found" ? 404 : 403,
+        out.reason === "not_found" ? "分享不存在或已过期" : "撤销密钥不正确");
+    }
+    sendJson(res, 200, { revoked: true });
   });
 
   router.add("GET", /^\/share\/([a-f0-9]+)$/, (req, res, m) => {
     const s = shares.get(m[1]);
-    if (!s) throw new HttpError(404, "分享页不存在或已过期（有效期 24 小时）");
+    if (!s) throw new HttpError(404, "分享页不存在、已过期或已被撤销");
     const html = renderShareHtml(s);
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });
     res.end(html);
@@ -48,7 +73,9 @@ function renderShareHtml(s) {
   const sections = (r.sections || []).map((sec) =>
     '<div class="sec"><h3>' + escapeHtml(sec.h) + "</h3>" +
     (sec.lines || []).map((l) => "<p>" + escapeHtml(l) + "</p>").join("") + "</div>").join("");
-  const engineLabel = r.engine === "infinisynapse" ? "InfiniSynapse 云端分析" : "演示分析引擎";
+  const engineLabel = r.engine === "infinisynapse" ? "InfiniSynapse 云端 AI"
+    : r.engine === "openai-compatible" ? "OpenAI 兼容 AI"
+    : "规则引擎（统计，无 AI）";
   const upstream = s.upstreamTaskId
     ? '<p class="meta">InfiniSynapse taskId：<code>' + escapeHtml(s.upstreamTaskId) + "</code></p>" : "";
   return "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\">" +
@@ -66,6 +93,7 @@ function renderShareHtml(s) {
     ".track{flex:1;height:12px;background:rgba(29,34,43,.08);border-radius:6px;overflow:hidden}" +
     ".track i{display:block;height:100%;background:rgba(79,131,224,.65);border-radius:6px}" +
     ".track i.hot{background:#f0561a}.val{width:64px;font-size:12px;color:#5a6270;flex:none}" +
+    ".meta.warn{color:#8a5214;background:rgba(217,131,36,.12);padding:6px 10px;border-radius:6px}" +
     ".foot{text-align:center;color:#8a93a2;font-size:12px;margin:18px 0}" +
     "</style></head><body><div class=\"wrap\"><div class=\"card\">" +
     '<div class="brand">FORGE·X 智造洞察</div>' +
@@ -73,6 +101,10 @@ function renderShareHtml(s) {
     '<p class="meta">提问：' + escapeHtml(s.question || "—") + " · 引擎：" + engineLabel +
     " · 样本 " + escapeHtml(String(r.rowCount || 0)) + " 行</p>" + upstream +
     '<div class="verdict">' + escapeHtml(r.verdict || "") + "</div>" +
+    (r.confidence ? '<p class="meta">可信度：' + escapeHtml(r.confidence) + "</p>" : "") +
+    (r.provenance && r.provenance.synthetic
+      ? '<p class="meta warn">⚠ 本报告基于' + escapeHtml(r.provenance.badge || "合成") +
+        "数据，非真实产线数据。</p>" : "") +
     chartHtml(r.chart) + sections +
     "</div><div class=\"foot\">由 FORGE·X 智造洞察生成 · 工业 3D 打印仿真 × 数据分析</div></div></body></html>";
 }

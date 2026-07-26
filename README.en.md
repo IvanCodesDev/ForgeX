@@ -27,7 +27,7 @@ node server/index.js     # or: npm start
 Run the tests:
 
 ```bash
-npm test        # 409 assertions, zero dependencies
+npm test        # 462 assertions, zero dependencies
 ```
 
 ---
@@ -157,7 +157,7 @@ tools/farm-sim.js     virtual print farm: physics-generated datasets
 datasets/             farm datasets and companion telemetry
 doc/优化文档.md        current-state audit + refactor roadmap (Chinese)
 doc/samples/          legacy probability-synthesized data (regression input only)
-tests/                7 suites, 409 assertions total
+tests/                7 suites, 462 assertions total
 ```
 
 ---

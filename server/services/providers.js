@@ -34,6 +34,11 @@ function localProvider(cfg) {
     label: "后端规则引擎（无 AI）",
     capabilities: { ai: false, streaming: false, structuredOutput: true },
 
+    /** 本地引擎永远可用，无需探活 */
+    async probe() {
+      return { ok: true, detail: "本地统计，无外部依赖" };
+    },
+
     async analyze({ question, dataset, onProgress }) {
       const steps = [
         ["intent", "解析问题意图", 0.2],
@@ -147,6 +152,16 @@ function infiniProvider(cfg, log, infini) {
     label: "InfiniSynapse 云端 AI",
     capabilities: { ai: true, streaming: true, structuredOutput: false },
 
+    /** 启动探活：只读一次 profile，失败即降级——不等到用户提问才发现密钥是错的 */
+    async probe() {
+      try {
+        const out = await infini.profile();
+        return { ok: true, detail: "userId=" + ((out && out.data && out.data.userId) || "?") };
+      } catch (e) {
+        return { ok: false, detail: e.message };
+      }
+    },
+
     async analyze({ question, dataset, knowledge, onProgress }) {
       onProgress({ stage: "stats", message: "本地统计核计算中（置信区间与显著性检验）", progress: 0.15 });
       const local = engine.analyze(question, dataset.rows, { provenance: dataset.provenance || null });
@@ -198,6 +213,20 @@ function openaiProvider(cfg, log) {
     id: "openai-compatible",
     label: "OpenAI 兼容 AI（" + (cfg.openaiModel || "未指定模型") + "）",
     capabilities: { ai: true, streaming: false, structuredOutput: true },
+
+    /** 启动探活：列一次模型，验证 base URL 与 key 都对 */
+    async probe() {
+      try {
+        const res = await fetch(cfg.openaiBaseUrl.replace(/\/$/, "") + "/models", {
+          headers: { Authorization: "Bearer " + cfg.openaiKey },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!res.ok) return { ok: false, detail: "HTTP " + res.status };
+        return { ok: true, detail: cfg.openaiModel };
+      } catch (e) {
+        return { ok: false, detail: e.message };
+      }
+    },
 
     async analyze({ question, dataset, knowledge, onProgress }) {
       onProgress({ stage: "stats", message: "本地统计核计算中（置信区间与显著性检验）", progress: 0.2 });

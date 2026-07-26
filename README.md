@@ -21,7 +21,7 @@ node server/index.js     # 或 npm start
 跑测试：
 
 ```bash
-npm test        # 409 项断言，零依赖，无需 install
+npm test        # 462 项断言，零依赖，无需 install
 ```
 
 ---
@@ -145,6 +145,7 @@ js/main.js            启动引导
 server/               薄后端（零 npm 依赖）
   index.js            启动 / 路由 / CORS / 限流 / 静态托管
   routes/…            analyze（SSE 进度）/ datasource / knowledge / share
+  lib/…               store（文件持久化）/ quota（成本闸门）/ auth（API Key）/ http / logger
   services/…          providers（local/infinisynapse/openai 兼容）/ brief（统计简报）
                       retrieval（BM25 检索）/ infini（唯一持密钥处）/ analysis / 存储
 tools/headless-sim.js 无头仿真驱动（node 中跑完整状态机）
@@ -152,7 +153,7 @@ tools/farm-sim.js     虚拟机群：物理仿真批量产出数据集
 datasets/             机群仿真数据集与配套遥测
 doc/优化文档.md        现状体检 + 重构路线图
 doc/samples/          旧的概率合成数据（仅回归测试用）
-tests/                7 个测试套件，共 409 项断言
+tests/                7 个测试套件，共 462 项断言
 ```
 
 ---
@@ -168,7 +169,7 @@ node tests/exporter.test.js  # 导出引擎：STL/OBJ/G-code 语义与挤出量�
 node tests/stats.test.js     # 统计核：Wilson/Fisher/偏相关/Mann-Kendall，对照 R 参考值（75 项）
 node tests/insight.test.js   # 洞察：数据/解析/统计守卫/来源标记/统计严谨性（88 项）
 node tests/farm.test.js      # 虚拟机群：物理特征确定性/涌现区分度/效应可调转/证据自洽（48 项）
-node tests/server.test.js    # 后端契约 + provider 抽象 + 简报 + 缓存 + 检索（98 项）
+node tests/server.test.js    # 后端契约 + provider + 持久化 + 成本闸门 + 鉴权 + 指标（151 项）
 node tests/check-refs.js     # HTML ↔ JS 的 DOM id 引用交叉校验
 
 node tests/deploy-check.js https://你的域名   # 部署后线上冒烟
@@ -180,21 +181,41 @@ node tests/deploy-check.js https://你的域名   # 部署后线上冒烟
 
 ---
 
-## 部署注意
+## 部署
 
-⚠️ **在公网部署前必读**：
+```bash
+docker compose up -d          # 默认配置是安全的：不带 AI 密钥，只跑规则引擎
+```
 
-当前**没有鉴权、没有配额、没有并发上限**。若配置了 InfiniSynapse 密钥并公开访问，
-任何人都能持续触发真实云端任务，**费用记在你的账上**。
+也可用 `render.yaml`（Render Blueprint）或直接 `node server/index.js`。
+上线后跑 `node tests/deploy-check.js https://你的域名` 做全链路冒烟。
 
-公网部署建议：
+### 成本防护
 
-- **不配置** `INFINI_API_KEY`（只跑规则引擎），或
-- 自行在反向代理层加访问控制，或
-- 等待路线图 P4 的成本闸门。
+配了 AI 密钥再公开访问，一次分析就是一次真实计费。默认已有四道闸：
 
-仓库已备 `render.yaml`（Render Blueprint）与 `Dockerfile`（Fly.io / Railway / Zeabur / 自建）。
-上线后可用 `node tests/deploy-check.js https://你的域名` 做全链路冒烟。
+| 防护                   | 默认 | 环境变量              |
+| ---------------------- | ---- | --------------------- |
+| AI 并发上限            | 2    | `AI_CONCURRENCY`      |
+| 排队上限（超出才拒绝） | 8    | `AI_QUEUE_MAX`        |
+| 单调用方每日额度       | 20   | `AI_DAILY_PER_CALLER` |
+| 全实例每日额度（兜底） | 200  | `AI_DAILY_GLOBAL`     |
+
+**额度用尽不等于服务不可用**：规则引擎不花钱，所以额度耗尽时自动降级为规则引擎
+继续给结论——统计口径、置信区间、显著性检验与 AI 模式完全一致，少的只是自然语言叙述，
+并且报告里会说明为什么降级。用量跨重启保留，否则重启就等于重置额度。
+
+可选 API Key 鉴权（`API_KEYS` / `REQUIRE_AUTH`）：带 key 按 key 计配额，其余按 IP。
+`/healthz` 会把当前配额状态摆在明面上，访问者不必撞上限制才知道有限制。
+
+不确定要不要配 AI？**不配就是最省心的选择**——规则引擎零外部计费，
+结论依然带置信区间与显著性检验。详见 [SECURITY.md](./SECURITY.md)。
+
+### 持久化
+
+数据源、知识文档、分享页与用量计数落盘到 `DATA_DIR`（默认 `data/`）。
+**容器部署务必挂卷**，否则重建容器仍会丢数据（`docker-compose.yml` 已配好）。
+`DATA_DIR=` 留空可显式退回纯内存，`/healthz` 会如实报告 `persistence`。
 
 环境变量见 `server/.env.example`。密钥只进 `server/.env`（已被 `.gitignore` 排除）。
 
