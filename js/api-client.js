@@ -8,7 +8,9 @@
     /** 后端地址：同源部署留空；分离部署在此处或 window.FX_API_BASE 配置 */
     base: (typeof window !== "undefined" && window.FX_API_BASE) || "",
     available: false,       // healthz 探测结果
-    engineMode: "",         // 后端引擎："rules"（规则引擎，非 AI）| "infinisynapse"（云端 AI）
+    engineMode: "",         // 后端引擎 id（server-rules / infinisynapse / openai-compatible）
+    providerLabel: "",      // 人类可读的 provider 名称
+    capabilities: null,     // {ai, streaming, structuredOutput}
     _probed: false,
   };
 
@@ -25,6 +27,9 @@
       .then(function (j) {
         C.available = !!(j && j.ok);
         C.engineMode = (j && j.engine) || "";
+        C.providerLabel = (j && j.label) || "";
+        // 能力标记决定前端展示哪些入口：知识库只对 AI provider 有意义
+        C.capabilities = (j && j.capabilities) || { ai: false, streaming: false, structuredOutput: false };
         C._probed = true;
         return C.available;
       })
@@ -87,6 +92,30 @@
         if (!r.ok) throw new Error("分享生成失败（HTTP " + r.status + "）");
         return r.json();
       });
+  };
+
+  /** 上传知识文档（工艺术语表 / 材料参数 / 设备手册）：POST /api/knowledge */
+  C.uploadKnowledge = function (name, text) {
+    return fetch(join("/api/knowledge"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name, text: text }),
+    }).then(function (r) {
+      if (!r.ok) throw new Error("知识文档上传失败（HTTP " + r.status + "）");
+      return r.json();
+    });
+  };
+
+  /** 检索预览：让用户自己验证「问这个问题会检索到什么」，而不是盲信 */
+  C.searchKnowledge = function (question) {
+    return fetch(join("/api/knowledge/search"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: question }),
+    }).then(function (r) {
+      if (!r.ok) throw new Error("检索失败（HTTP " + r.status + "）");
+      return r.json();
+    });
   };
 
   root.FXApiClient = C;

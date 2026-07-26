@@ -27,7 +27,7 @@ node server/index.js     # or: npm start
 Run the tests:
 
 ```bash
-npm test        # 260 assertions, zero dependencies
+npm test        # 409 assertions, zero dependencies
 ```
 
 ---
@@ -51,14 +51,14 @@ Credibility matters most for an open-source project, so let's be precise.
 
 ### ⚠️ Things you should know
 
-| Item                                    | Reality                                                                                                                                                                                                                                                                                                         |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **The "analysis engine" is not AI**     | The default engine (local and backend) is a **rules engine**: keyword intent routing + deterministic aggregation, covering 5 dimensions. The UI labels it "rules engine (no AI)". For questions outside those dimensions it **says so explicitly** and lists what it supports, rather than pretending to answer |
-| **The default data is still simulated** | The default dataset comes from the virtual print farm — **not probability sampling** — so its conclusions are falsifiable: change the process parameters and the fault distribution changes with them. It is still not real production data and is badged accordingly. See `datasets/README.md`                 |
-| **Cloud AI mode has _fewer_ features**  | With InfiniSynapse connected, you get text conclusions only — **no charts, no viewport linkage** (the rules engine has both). Reports state this gap explicitly. Fix is roadmap P3                                                                                                                              |
-| **Viewport linkage is single-machine**  | The 3D scene holds exactly one printer. Highlighting is offered only when the conclusion points at that same model; otherwise the UI says fleet view isn't implemented                                                                                                                                          |
-| **In-memory only**                      | Datasources, tasks and share pages live in memory; a restart clears everything. "Share valid for 24h" means within the process lifetime                                                                                                                                                                         |
-| **No auth, no quota**                   | Read the Deployment section before exposing this publicly                                                                                                                                                                                                                                                       |
+| Item                                    | Reality                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The "analysis engine" is not AI**     | The default engine (local and backend) is a **rules engine**: keyword intent routing + deterministic aggregation, covering 5 dimensions. The UI labels it "rules engine (no AI)". For questions outside those dimensions it **says so explicitly** and lists what it supports, rather than pretending to answer                                                                                                   |
+| **The default data is still simulated** | The default dataset comes from the virtual print farm — **not probability sampling** — so its conclusions are falsifiable: change the process parameters and the fault distribution changes with them. It is still not real production data and is badged accordingly. See `datasets/README.md`                                                                                                                   |
+| **AI only writes the narrative**        | With an AI provider connected, **the numbers are still computed by the local stats kernel**; the model only turns verified facts into prose. That is a design choice, not a limitation: LLMs are poor at running hypothesis tests in-context, so having one restate correctly computed numbers is far safer than letting it compute. Charts, viewport linkage and confidence intervals are present in AI mode too |
+| **Fleet view is low-poly**              | The fleet is drawn as simple cabinets; the detailed printer model is reserved for the selected machine. Fleet view is for seeing _which machine is bad_, not what its nozzle looks like                                                                                                                                                                                                                           |
+| **In-memory only**                      | Datasources, tasks and share pages live in memory; a restart clears everything. "Share valid for 24h" means within the process lifetime                                                                                                                                                                                                                                                                           |
+| **No auth, no quota**                   | Read the Deployment section before exposing this publicly                                                                                                                                                                                                                                                                                                                                                         |
 
 ### ❌ Not present
 
@@ -141,6 +141,8 @@ js/printers.js        extended machine library (three more kinematics)
 js/scene.js           renderer / lighting / engineering grid floor
 js/sim.js             simulation state machine (motion / thermal / leveling / filament / faults / telemetry / quality)
 js/exporter.js        export engine (STL / OBJ / G-code, pure logic, testable)
+js/stats-kernel.js    statistics kernel (Wilson CI / Fisher exact / partial correlation / Mann-Kendall)
+js/fleet-view.js      fleet view (findings → 3D machines; opacity encodes evidence strength)
 js/machine-profile.js machine intrinsic characteristics + fault mechanism models (pure logic)
 js/farm-dataset.js    bundled farm dataset (generated; do not hand-edit)
 js/insight-data.js    data layer (CSV / provenance / fault taxonomy / dataset management)
@@ -155,7 +157,7 @@ tools/farm-sim.js     virtual print farm: physics-generated datasets
 datasets/             farm datasets and companion telemetry
 doc/优化文档.md        current-state audit + refactor roadmap (Chinese)
 doc/samples/          legacy probability-synthesized data (regression input only)
-tests/                6 suites, 260 assertions total
+tests/                7 suites, 409 assertions total
 ```
 
 ---
@@ -168,9 +170,10 @@ npm test                     # run all local suites
 node tests/smoke.js          # slicer: geometry / infill / contours / models / transforms (32)
 node tests/sim-calib.test.js # sim core: bed error field / leveling chain / state machine / telemetry (44)
 node tests/exporter.test.js  # export: STL / OBJ / G-code semantics and extrusion conservation (24)
-node tests/insight.test.js   # insight: data / parsing / stats / guards / provenance / honesty (66)
+node tests/stats.test.js     # stats kernel: Wilson / Fisher / partial correlation / Mann-Kendall, checked against R (75)
+node tests/insight.test.js   # insight: data / parsing / guards / provenance / statistical rigor (88)
 node tests/farm.test.js      # virtual farm: determinism / emergent discrimination / effect inversion (48)
-node tests/server.test.js    # backend contract: healthz / datasource / analyze+SSE / share / rate limit / traversal (46)
+node tests/server.test.js    # backend contract + provider abstraction + brief + cache + retrieval (98)
 node tests/check-refs.js     # HTML ↔ JS DOM id cross-check
 
 node tests/deploy-check.js https://your-domain   # post-deploy smoke test
@@ -219,14 +222,14 @@ Chrome / Edge / Firefox / Safari, plus Chinese dual-core browsers in fast mode.
 
 Full version in `doc/优化文档.md`. Summary:
 
-| Phase                        | Contents                                                                                                                                                                                                                             |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **P0 Honesty** ✅            | Remove everything claimed-but-not-implemented; statistical guards; provenance; real progress events                                                                                                                                  |
-| **P1 Open-source readiness** | LICENSE, CI, lint, community files, English-first code, DOM-level tests                                                                                                                                                              |
-| **P2 Real data** ✅          | **Virtual print farm** shipped: each machine has deterministic intrinsic characteristics, all five fault types emerge from physics, simulator telemetry reaches the analysis layer, and the default dataset is now physics-generated |
-| **P3 Real analysis**         | Stats kernel (confidence intervals + significance tests + partial correlation), QueryPlan layer, provider abstraction (InfiniSynapse / OpenAI-compatible / local), cloud output isomorphic with local, fleet view, real RAG          |
-| **P4 Productionization**     | SQLite persistence, auth, quotas and cost gate, observability                                                                                                                                                                        |
-| **P5 Ecosystem**             | Machine/material profile plugins, real G-code import & replay, community datasets                                                                                                                                                    |
+| Phase                        | Contents                                                                                                                                                                                                                                                                    |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P0 Honesty** ✅            | Remove everything claimed-but-not-implemented; statistical guards; provenance; real progress events                                                                                                                                                                         |
+| **P1 Open-source readiness** | LICENSE, CI, lint, community files, English-first code, DOM-level tests                                                                                                                                                                                                     |
+| **P2 Real data** ✅          | **Virtual print farm** shipped: each machine has deterministic intrinsic characteristics, all five fault types emerge from physics, simulator telemetry reaches the analysis layer, and the default dataset is now physics-generated                                        |
+| **P3 Real analysis** ✅      | Stats kernel (Wilson CI, Fisher exact test, partial correlation, Mann-Kendall), QueryPlan-free rules routing with honest refusals, provider abstraction (InfiniSynapse / OpenAI-compatible / local), cloud output isomorphic with local, fleet view, BM25 retrieval for RAG |
+| **P4 Productionization**     | SQLite persistence, auth, quotas and cost gate, observability                                                                                                                                                                                                               |
+| **P5 Ecosystem**             | Machine/material profile plugins, real G-code import & replay, community datasets                                                                                                                                                                                           |
 
 ---
 

@@ -38,6 +38,9 @@
       this.printer = FXPrinters.create("corexy");
       this.scene.add(this.printer.group);
 
+      // 机群视图：与详细打印机模型互斥显示（见 js/fleet-view.js 的设计取舍）
+      this.fleet = new FXFleetView.View(this.scene);
+
       this.camMode = "overview";
       this.setCameraPreset("overview", true);
 
@@ -53,6 +56,7 @@
         const dt = Math.min(0.05, this._clock.getDelta());
         const t = this._clock.elapsedTime;
         if (this.onTick) this.onTick(dt, t);
+        if (this.fleet) this.fleet.tick(dt);
         // 喷头特写跟随
         if (this.camMode === "nozzle") {
           const tip = this.printer.getNozzleTip(this._tmpV);

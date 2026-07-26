@@ -453,19 +453,19 @@
         box.appendChild(det);
       }
 
-      // 视口联动：3D 场景当前只装载一台打印机，只有结论指向的正是这台机型时才谈得上「定位」。
-      // 机群视图（多机台排布 + 真实映射）尚未实现，见 doc/优化文档.md §5 P3.9——
-      // 在此之前不得让按钮暗示视口里有多台机器可供切换。
+      // 视口联动：分析结论 → 3D 空间里的具体机台。
+      // 数据里有多台机器时进机群视图；只有一台且就是视口里那台时，直接高亮它。
       if (report.highlight && report.highlight.type === "machine") {
-        var P = this.sim && this.sim.printer;
-        if (this._viewportMatches(report.highlight.id)) {
+        var machines = report.chart && report.chart.kind === "bar-rate" ? report.chart.items : null;
+        if (machines && machines.length > 1) {
+          var fbtn = el("button", "btn btn-ghost btn-block",
+            "在机群视图中定位 " + report.highlight.id + "（共 " + machines.length + " 台）");
+          fbtn.addEventListener("click", this._showFleet.bind(this, machines, report.highlight.id));
+          box.appendChild(fbtn);
+        } else if (this._viewportMatches(report.highlight.id)) {
           var btn = el("button", "btn btn-ghost btn-block", "在 3D 视口中高亮 " + report.highlight.id);
           btn.addEventListener("click", this._highlightMachine.bind(this, report.highlight.id));
           box.appendChild(btn);
-        } else {
-          box.appendChild(el("div", "note",
-            "3D 视口当前只装载一台「" + esc((P && P.MODEL_NAME) || "打印机") + "」，与结论指向的 " +
-            esc(report.highlight.id) + " 不是同一台；机群视图尚未实现，因此这里不提供视口定位。"));
         }
       }
 
@@ -574,6 +574,52 @@
 
     /* ── 3D 视口联动 ──────────────────────── */
 
+    /**
+     * 进入机群视图并定位到目标机台。
+     *
+     * 视觉编码有意与统计口径对齐：色相 = 失败率，**不透明度 = 证据强度**。
+     * 只按失败率上色会让「1 单 1 失败」显示成最刺眼的红色，而那恰恰最不该信；
+     * 置信区间越宽越透明，看不清就对应统计上的证据不足。
+     */
+    _showFleet(items, targetId) {
+      var fleet = this.fx.fleet;
+      if (!fleet) return this.ui.toast("当前场景不支持机群视图", "warn");
+
+      var machines = FXFleetView.fromChartItems(items, targetId);
+      fleet.build(machines).highlight(targetId).show(true);
+      if (this.fx.printer) this.fx.printer.group.visible = false;   // 与详细机型互斥，避免遮挡
+
+      var view = fleet.focusTarget(targetId);
+      this.fx.orbit.setView(view.pos, view.target, false);
+      this._fleetOn = true;
+      this._renderFleetExit();
+
+      var weak = machines.filter(function (m) { return !m.status.trustworthy; }).length;
+      this.ui.toast("机群视图：" + machines.length + " 台，已定位 " + targetId +
+        (weak ? "（其中 " + weak + " 台证据不足，显示为半透明）" : ""), "ok");
+    }
+
+    /** 退出机群视图，回到详细打印机 */
+    _exitFleet() {
+      if (!this._fleetOn) return;
+      this.fx.fleet.show(false).clear();
+      if (this.fx.printer) this.fx.printer.group.visible = true;
+      this.fx.setCameraPreset("overview");
+      this._fleetOn = false;
+      var b = $("#fleet-exit");
+      if (b) b.hidden = true;
+    }
+
+    _renderFleetExit() {
+      var b = $("#fleet-exit");
+      if (!b) return;
+      b.hidden = false;
+      if (!b._bound) {
+        b._bound = true;
+        b.addEventListener("click", this._exitFleet.bind(this));
+      }
+    }
+
     /** 结论指向的机台，是否就是视口里当前装载的这台机型 */
     _viewportMatches(machineId) {
       var P = this.sim && this.sim.printer;
@@ -622,22 +668,91 @@
 
     _refreshEngineTag() {
       var tag = $("#insight-engine-tag");
-      var cloud = FXApiClient.engineMode === "infinisynapse";
+      var caps = FXApiClient.capabilities || { ai: false };
+      var isAi = !!(FXApiClient.available && caps.ai);
       if (tag) {
-        tag.textContent = !FXApiClient.available ? "本地规则" : cloud ? "云端 AI" : "后端规则";
+        tag.textContent = !FXApiClient.available ? "本地规则" : isAi ? "AI + 统计核" : "后端规则";
       }
-      if (!this._engineNote) return;
-      this._engineNote.hidden = false;
-      this._engineNote.innerHTML = !FXApiClient.available
-        ? "当前是<b>本地规则引擎</b>（file:// 直开或后端未启动）。<b>它不是 AI</b>：" +
-          "报告由固定的关键词路由 + 聚合统计产出，只覆盖有限几个分析维度。" +
-          "要用 InfiniSynapse 云端 AI：运行 <span class=\"mono\">node server/index.js</span>，" +
-          "改用 <span class=\"mono\">http://127.0.0.1:8787</span> 打开本页。"
-        : cloud
-        ? "已连接 <b>InfiniSynapse 云端 AI</b>：每次提问创建一个真实云端任务（实时进度，通常 2–4 分钟）。" +
-          "注意云端报告目前<b>不含图表与视口联动</b>（结构化产物待补，见 Roadmap）。"
-        : "后端已连接，运行的是<b>后端规则引擎</b>（未配置云端密钥）。<b>它不是 AI</b>，" +
-          "与本地规则引擎同源同产物。配好 <span class=\"mono\">server/.env</span> 的 INFINI_API_KEY 后可切云端 AI。";
+      if (this._engineNote) {
+        this._engineNote.hidden = false;
+        this._engineNote.innerHTML = !FXApiClient.available
+          ? "当前是<b>本地规则引擎</b>（file:// 直开或后端未启动）。<b>它不是 AI</b>：" +
+            "报告由关键词路由 + 统计核（Wilson 置信区间 / Fisher 精确检验 / 偏相关）产出。" +
+            "要接 AI：运行 <span class=\"mono\">node server/index.js</span>，" +
+            "改用 <span class=\"mono\">http://127.0.0.1:8787</span> 打开本页。"
+          : isAi
+            ? "已连接 <b>" + esc(FXApiClient.providerLabel || "AI provider") + "</b>。" +
+              "架构上 <b>AI 只负责叙述，数字由本地统计核算</b>——" +
+              "所以图表、视口联动、置信区间与显著性检验在 AI 模式下同样具备，" +
+              "且报告里每个数字都能在「计算依据」里找到出处。"
+            : "后端已连接，运行的是<b>后端规则引擎</b>（未配置 AI provider）。<b>它不是 AI</b>，" +
+              "但结论同样带置信区间与显著性检验。配置 " +
+              "<span class=\"mono\">INFINI_API_KEY</span> 或 <span class=\"mono\">OPENAI_API_KEY</span> 后可接 AI。";
+      }
+      this._renderKnowledge(isAi);
+    }
+
+    /**
+     * 知识库入口。只在 AI provider 下展示——
+     * 规则引擎是确定性统计，不读自然语言知识，摆一个没用的上传框只会误导。
+     */
+    _renderKnowledge(isAi) {
+      if (this._kbBox) { this._kbBox.remove(); this._kbBox = null; }
+      if (!isAi) return;
+
+      var box = el("div", "kb-box");
+      box.appendChild(el("div", "sec-label", "领域知识（可选）"));
+      box.appendChild(el("div", "note",
+        "上传工艺术语表 / 材料参数 / 设备手册，提问时会按问题检索相关片段注入 AI 提示词。" +
+        "<b>检索不到就不注入</b>——宁可不给，也不给无关内容。存储为内存态，重启即失效。"));
+
+      var ta = el("textarea", "kb-input");
+      ta.placeholder = "粘贴知识内容，例如：\n翘边：首层与热床附着失效，边缘翘起离床。\n\nOEE：设备综合效率 = 可用率 × 性能 × 良率。";
+      ta.rows = 4;
+      box.appendChild(ta);
+
+      var row = el("div", "prow ins-actions");
+      var self = this;
+      var upBtn = el("button", "mini-btn", "上传知识");
+      upBtn.addEventListener("click", function () {
+        var text = ta.value.trim();
+        if (!text) return self.ui.toast("先粘贴一些知识内容", "warn");
+        upBtn.disabled = true;
+        FXApiClient.uploadKnowledge("knowledge-" + Date.now() + ".md", text)
+          .then(function (out) {
+            ta.value = "";
+            self.ui.toast(out.retrievalEnabled ? "已登记，提问时会按需检索注入" : out.note, "ok");
+          })
+          .catch(function (e) { self.ui.toast(e.message, "err"); })
+          .then(function () { upBtn.disabled = false; });
+      });
+      var testBtn = el("button", "mini-btn", "测试检索");
+      testBtn.title = "看看当前问题会检索到哪些片段——自己验证，不用盲信";
+      testBtn.addEventListener("click", function () {
+        var q = (self._askInput && self._askInput.value.trim()) || "翘边";
+        FXApiClient.searchKnowledge(q)
+          .then(function (out) {
+            res.hidden = false;
+            res.innerHTML = out.hits.length
+              ? '<div class="kb-h">「' + esc(q) + "」检索到 " + out.hits.length + " 段：</div>" +
+                out.hits.map(function (h) {
+                  return '<div class="kb-hit"><span class="mono">' + h.score.toFixed(2) + "</span> " +
+                    esc(h.text.slice(0, 90)) + (h.text.length > 90 ? "…" : "") + "</div>";
+                }).join("")
+              : '<div class="kb-h">「' + esc(q) + "」没有检索到相关片段——分析时不会注入任何知识内容。</div>";
+          })
+          .catch(function (e) { self.ui.toast(e.message, "err"); });
+      });
+      row.append(upBtn, testBtn);
+      box.appendChild(row);
+
+      var res = el("div", "kb-res");
+      res.hidden = true;
+      box.appendChild(res);
+
+      // 插在「自然语言分析」小节之前
+      this.body.insertBefore(box, this._askInput.parentNode.previousSibling);
+      this._kbBox = box;
     }
   }
 

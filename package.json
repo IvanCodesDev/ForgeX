@@ -1,6 +1,6 @@
 {
   "name": "forgex-insight",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Physics-driven 3D printing simulator with production data analysis — zero runtime dependencies, `node server/index.js` and it runs",
   "keywords": [
     "3d-printing",

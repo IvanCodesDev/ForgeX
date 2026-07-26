@@ -21,6 +21,7 @@ const FRONTEND_GLOBALS = {
   FXPrinterI3: "readonly", // js/printers.js
   FXPrinterDelta: "readonly", // js/printers.js
   FXPrinterGantry: "readonly", // js/printers.js
+  FXFleetView: "readonly", // js/fleet-view.js
   FXScene: "readonly", // js/scene.js
   FXSim: "readonly", // js/sim.js
   FXExport: "readonly", // js/exporter.js（注意不是 FXExporter）
