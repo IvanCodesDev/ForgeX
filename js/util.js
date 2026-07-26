@@ -95,13 +95,16 @@
 
   /** 一阶热惯性模拟：向目标温度收敛，带过冲与噪声 */
   U.ThermalSim = class {
-    constructor(ambient, tau, overshoot) {
+    /** phase：噪声相位。必须可指定且默认确定性——本模型是数据生成链的一环，
+        用 Math.random 会让「同一台机器跑同样的活」得到不同结果，破坏数据集可复现性。
+        不同热区传入不同相位即可解耦各自的噪声。 */
+    constructor(ambient, tau, overshoot, phase) {
       this.ambient = ambient;
       this.value = ambient;
       this.target = ambient;
       this.tau = tau;               // 时间常数（秒）
       this.overshoot = overshoot;   // 过冲幅度（°C）
-      this._phase = Math.random() * 10;
+      this._phase = phase == null ? 0 : phase;
       this._osLeft = 0;             // 剩余过冲能量
       this._lastTarget = ambient;
     }
@@ -113,7 +116,12 @@
     step(dt) {
       // heaterBroken：加热器失效（故障演练注入的物理扰动）——目标不变，实际温度向室温跌落，
       // 由 sim 的热失控监测器按「实际 vs 目标」偏差自行发现，检测链路真实
-      const goal = this.heaterBroken ? this.ambient : Math.max(this.target, this.ambient);
+      //
+      // ceilingC：加热器能达到的稳态上限（由机台的加热器健康度决定）。
+      // 老化的加热器功率不足，够不到高温材料的目标温度——持续偏差会被同一个
+      // 热失控监测器发现。这是「热失控」故障的涌现路径，不需要任何概率抽样。
+      let goal = this.heaterBroken ? this.ambient : Math.max(this.target, this.ambient);
+      if (!this.heaterBroken && this.ceilingC != null) goal = Math.min(goal, this.ceilingC);
       const k = 1 - Math.exp(-dt / this.tau);
       this.value += (goal - this.value) * k;
       // 到达目标附近时释放过冲

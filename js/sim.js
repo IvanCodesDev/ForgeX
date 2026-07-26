@@ -19,6 +19,11 @@
 
   const TYPE_LABEL = { perimeter: "轮廓周界", infill: "稀疏填充", solid: "实心填充", support: "支撑结构", skirt: "裙边预挤出" };
 
+  /** 机构负载超阈值需持续多久（机时秒）才判为故障。瞬时尖峰不报警，与真实固件一致。 */
+  const MECH_HOLD_S = 6;
+  /** 预热多久仍够不到目标温度即判加热失败（机时秒，参考 Marlin 的 heating-failed 保护） */
+  const HEAT_TIMEOUT_S = 240;
+
   class FXSim {
     constructor(fx, bus) {
       this.fx = fx;                    // FXScene
@@ -55,9 +60,13 @@
       this.slice = null;
       this._slicedSpeed = this.settings.speed;
 
+      // 机台身份：机型标签 + 实例号 → 决定这台机器的固有物理特征
+      this.machineInstance = 1;
+
       // 温控
-      this.nozzleT = new FXU.ThermalSim(26, 11, 3.6);
-      this.bedT = new FXU.ThermalSim(26, 30, 1.0);
+      // 固定噪声相位：喷嘴与热床各用一个，互不相关但完全确定
+      this.nozzleT = new FXU.ThermalSim(26, 11, 3.6, 0);
+      this.bedT = new FXU.ThermalSim(26, 30, 1.0, 4.13);
 
       // 耗材（1kg 料盘）
       this.spoolTotalG = 1000;
@@ -97,6 +106,41 @@
 
     get material() { return MATERIALS[this.settings.material]; }
     get partColor() { return COLORS[this.settings.colorIdx].hex; }
+
+    /* ── 机台身份与固有物理特征 ──────────────
+       故障不是抽出来的：每台机器有确定性的磨损/加热器健康度/环境参数，
+       仿真过程按这些特征真实演化，故障是因果链的结果。见 js/machine-profile.js。 */
+
+    /** 机台编号，如 "FX-256-03"。取自仿真器实际装载的机型 + 实例号 */
+    get machineId() {
+      const tag = (this.printer && (this.printer.MODEL_TAG || this.printer.MODEL_NAME)) || "UNKNOWN";
+      return String(tag) + "-" + String(this.machineInstance).padStart(2, "0");
+    }
+
+    /** 本机台的固有物理特征（确定性，同一 machineId 恒定） */
+    get machineProfile() {
+      const id = this.machineId;
+      if (!this._profCache || this._profCache.id !== id) {
+        this._profCache = FXMachineProfile.of(id, this._profOverride || null);
+        // 加热器健康度直接落到热模型：功率不足 → 够不到高温目标 → 热失控监测器发现
+        this.nozzleT.ceilingC = FXMachineProfile.heaterCeilingC(this._profCache, this._profCache.ambientC);
+        this.nozzleT.ambient = this._profCache.ambientC;
+        this.bedT.ambient = this._profCache.ambientC;
+      }
+      return this._profCache;
+    }
+
+    /** 切换机台实例（虚拟机群用）。overrides 仅供测试注入极端特征。 */
+    setMachineInstance(n, overrides) {
+      this.machineInstance = Math.max(1, n | 0);
+      this._profOverride = overrides || null;
+      this._profCache = null;
+      this._bedErr = null;          // 床面误差场随机台变化
+      this._bedErrId = "";
+      this.levelMesh = null;        // 换机台后旧调平数据作废
+      this.leveledOnce = false;
+      return this.machineProfile;
+    }
 
     /* ── 模型与切片 ─────────────────────── */
 
@@ -211,6 +255,7 @@
         this.setState("heat");
         this.currentAction = "预热中";
         this._heatMinTimer = 4;
+        this._heatElapsed = 0;
         this.log("info", `任务开始：${this.model.name} · ${this.slice.totalLayers} 层 · 预计 ${FXU.fmtHuman(this.estimateTotal())}`);
         this.log("info", `预热：喷嘴 → ${this.settings.nozzleTemp}°C，热床 → ${this.settings.bedTemp}°C`);
         this.bedTargetY = this.printer.NOZZLE_Y - 60;
@@ -232,14 +277,22 @@
         const e = this.bedErrorAt(sx, sy);
         if (e < eMin) eMin = e; if (e > eMax) eMax = e;
       }
+      // 首层投影面积（翘边风险的输入：大平面翘得厉害）
+      const firstLayerAreaMm2 = Math.max(0, (x1 - x0) * (y1 - y0));
+
       this._telemetry = {
         printTime: 0, tempTime: 0, tempDevSum: 0, tempDevMax: 0,
         offSpeedTime: 0, faults: [], pauses: 0, tunes: 0,
         leveled: !!this.levelMesh,
         levelMax: this.levelMesh ? this.levelMesh.max : null,
         firstLayerUneven: eMax - eMin,
+        firstLayerAreaMm2: firstLayerAreaMm2,
         usedG0: this.usedG,
         settings0: Object.assign({}, this.settings),
+        // 机构负载峰值（堵料/断料的涌现证据，随打印过程真实采集）
+        clogLoadMax: 0, slipRiskMax: 0,
+        machineId: this.machineId,
+        machineProfile: this.machineProfile,
       };
       this.lastQuality = null;
       // autoLevel 开启时预热后会自动调平，无需告警；仅「关掉自动调平且从未调平」才是真裸奔
@@ -324,6 +377,81 @@
       this.bus.emit("fault", F);
     }
 
+    /* ── 机构负载监测（堵料 / 断料的涌现路径） ──────────────
+       与热失控监测器同构：不注入故障，只持续观测真实物理量，
+       超阈值且持续足够久才报警。所有输入都来自本次打印的实际状态，无概率抽样。 */
+
+    /** 当前挤出状态快照，喂给 FXMachineProfile 的机理模型 */
+    _mechState() {
+      const st = this.settings;
+      const mat = this.material;
+      const L = this._layer;
+      // 体积流量 mm³/s = 线速度 × 挤出宽度 × 层高
+      const v = L && L.phase === "extrude" ? L.curSpeed || 0 : 0;
+      const T = this._telemetry;
+      return {
+        nozzleNow: this.nozzleNow || 0,
+        nozzleTarget: this.nozzleT.target,
+        materialNominalC: mat.nozzle,
+        materialFlowMm3s: FXMachineProfile.FLOW_MM3S[st.material] || 9,
+        flowMm3s: v * st.extrusionWidth * st.layerHeight,
+        extrudedMm3: (this.usedG - (T ? T.usedG0 : 0)) * 1000 / mat.densityG,
+        spoolRemainFrac: FXU.clamp((this.spoolTotalG - this.usedG) / this.spoolTotalG, 0, 1),
+      };
+    }
+
+    /**
+     * 送料/热端负载监测器。
+     * 堵料：热端阻力（积碳 × 温度不足 × 流量过大）持续超限 → 挤出机负载报警。
+     * 断料：送料侧打滑（齿轮咬合力不足 × 料架阻力 × 料盘将空）持续超限 → 断料检测。
+     * 两者都是真实机理的结果，同一台机器跑同样的活会稳定复现。
+     */
+    _mechWatch(dt) {
+      if (this.state !== "print" || this.faultInfo) { this._clogT = 0; this._slipT = 0; return; }
+      const L = this._layer;
+      if (!L || L.phase !== "extrude") return;      // 只在真正挤出时承载
+
+      // 回温期不计负载：排障后喷嘴正从低温爬回目标，此时的高阻力是暂态而非堵料。
+      // 与 _thermalWatch 同一条规则（rate > 0.3°C/s 视为正在有效升温），避免两个监测器
+      // 对同一个恢复过程给出矛盾结论。
+      if ((this._nozzleRate || 0) > 0.3) { this._clogT = 0; return; }
+
+      const mdt = dt * this.simMult;
+      const prof = this.machineProfile;
+      const s = this._mechState();
+      const clog = FXMachineProfile.hotendLoad(prof, s);
+      const slip = FXMachineProfile.feedSlipRisk(prof, s);
+
+      const T = this._telemetry;
+      if (T) {
+        if (clog > T.clogLoadMax) T.clogLoadMax = clog;
+        if (slip > T.slipRiskMax) T.slipRiskMax = slip;
+      }
+
+      // 超限需持续 MECH_HOLD_S 机时秒才报警——瞬时尖峰不算故障（与真实固件一致）
+      this._clogT = clog > 1 ? (this._clogT || 0) + mdt : 0;
+      this._slipT = slip > 1 ? (this._slipT || 0) + mdt : 0;
+
+      if (this._clogT >= MECH_HOLD_S) {
+        this._clogT = 0;
+        this._raiseFault({
+          name: "喷嘴堵塞预警",
+          msg: `挤出机负载 ${(clog * 100).toFixed(0)}% 于阈值，持续 ${MECH_HOLD_S}s` +
+            `（热端积碳 ${(prof.hotendFouling * 100).toFixed(0)}%，喷嘴 ${s.nozzleNow.toFixed(0)}/${s.materialNominalC}°C，` +
+            `流量 ${s.flowMm3s.toFixed(1)}/${s.materialFlowMm3s} mm³/s）`,
+        });
+        return;
+      }
+      if (this._slipT >= MECH_HOLD_S) {
+        this._slipT = 0;
+        this._raiseFault({
+          name: "断料检测触发",
+          msg: `送料齿轮打滑（咬合力 ${(prof.feederGrip * 100).toFixed(0)}%，料架阻力 ${(prof.spoolDrag * 100).toFixed(0)}%，` +
+            `料盘余量 ${(s.spoolRemainFrac * 100).toFixed(0)}%），持续 ${MECH_HOLD_S}s`,
+        });
+      }
+    }
+
     /** 热失控监测器：打印态持续比对「实测 vs 目标」，偏差 >15°C、温度无回升趋势且持续 >3s（机时）→ 保护。
         参考真实固件（Marlin thermal runaway protection）：偏差大但正在有效升温（排障回温）不算失控。
         对任何原因的温度失守都有效（演练注入的加热失效同样由它发现，而非注入直报）。 */
@@ -331,6 +459,7 @@
       const mdt = dt * this.simMult;
       const rate = this._lastNozzleNow != null && mdt > 0 ? (this.nozzleNow - this._lastNozzleNow) / mdt : 0;
       this._lastNozzleNow = this.nozzleNow;
+      this._nozzleRate = rate;      // 供 _mechWatch 复用：回温期不把暂态高阻力算作堵料
       if (this.state !== "print" || this.faultInfo || this.nozzleT.target <= 100) {
         this._thermalT = 0;
         return;
@@ -352,11 +481,12 @@
 
     /* ── 床面误差场与调平（真实数据链：误差场 → 探测采样 → 拟合网格 → 打印补偿） ── */
 
-    /** 机台固有床面误差场（按机型 ID 确定性生成，会话内稳定 → 重复调平结果一致） */
+    /** 机台固有床面误差场（按**机台编号**确定性生成 → 同一台机器重复调平结果一致，
+        不同实例的床面各不相同，这是虚拟机群里机台差异的来源之一） */
     _bedErrField() {
-      if (this._bedErr && this._bedErrId === this.printer.ID) return this._bedErr;
+      const id = this.machineId;
+      if (this._bedErr && this._bedErrId === id) return this._bedErr;
       let seed = 0x9e3779b9;
-      const id = String(this.printer.ID || "fx");
       for (let i = 0; i < id.length; i++) seed = (Math.imul(seed ^ id.charCodeAt(i), 0x01000193)) >>> 0;
       const noise = FXU.valueNoise2D(seed);
       const rnd = FXU.mulberry32(seed ^ 0x5f356495);
@@ -366,12 +496,26 @@
       this._bedErr = (x, y) =>
         tiltX * x + tiltY * y +
         (noise(x / 128 * 1.5 + 3.7, y / 128 * 1.5 + 8.2) - 0.5) * 0.18;
-      this._bedErrId = this.printer.ID;
+      this._bedErrId = id;
+      this._bedErrSeed = seed;      // 供探针噪声派生，保证同机台探测可复现
+      this._probeRnd = null;
       return this._bedErr;
     }
 
     /** 床面某点的真实高度误差（mm）——探测与首层补偿共用同一数据源 */
     bedErrorAt(x, y) { return this._bedErrField()(x, y); }
+
+    /** 探针重复性误差（±3μm 量级）。按机台 + 探测点确定性生成：
+        同一台机器、同一个点，每次探测得到同样的读数——真实探针的重复精度就是这样，
+        而且这保证了整条调平数据链可复现。 */
+    _probeNoise(x, y) {
+      if (!this._probeRnd || this._probeRndId !== this.machineId) {
+        this._probeRndId = this.machineId;
+        this._probeNoiseFn = FXU.valueNoise2D((this._bedErrSeed || 1) ^ 0x2545f491);
+        this._probeRnd = true;
+      }
+      return (this._probeNoiseFn(x / 17.3 + 11.1, y / 17.3 + 5.5) - 0.5) * 0.006;
+    }
 
     /** 调平补偿：按喷头位置在 5×5 网格上双线性插值（未调平返回 0） */
     meshCompAt(x, y) {
@@ -465,8 +609,9 @@
       const fanEff = this.state === "print" && this.layerIdx < 2 ? 0 : this.settings.fanSpeed / 100;
       P.fanFrac = this.state === "print" || this.state === "pause" ? fanEff : 0;
 
-      // 热失控监测器：凭实测温度偏差发现异常（演练注入的加热失效也由它发现）
-      this._thermalWatch(dt);
+      // 监测器：只观测真实物理量，不注入故障
+      this._thermalWatch(dt);   // 温度失守（加热器老化 / 演练注入的失效都由它发现）
+      this._mechWatch(dt);      // 热端阻力与送料打滑（堵料 / 断料的涌现路径）
       // 热失控保护动作：切断加热（固件保护行为）
       if (this.faultInfo && this.faultInfo.name.includes("热失控")) this.nozzleT.setTarget(26);
 
@@ -502,12 +647,29 @@
     }
 
     _tickHeat(dt) {
-      this._heatMinTimer -= dt * this.simMult;
+      const mdt = dt * this.simMult;
+      this._heatMinTimer -= mdt;
+      this._heatElapsed = (this._heatElapsed || 0) + mdt;
       // 归位动作
       this.headPos.x = FXU.lerp(this.headPos.x, -110, 1 - Math.exp(-dt * 2));
       this.headPos.y = FXU.lerp(this.headPos.y, 110, 1 - Math.exp(-dt * 2));
       this.printer.setHeadXY(this.headPos.x, this.headPos.y);
       this.currentAction = `预热中 · 喷嘴 ${this.nozzleNow.toFixed(0)}/${this.settings.nozzleTemp}°C`;
+
+      // 加热失败保护（参考 Marlin "Heating failed"）：加热器功率不足时温度会
+      // 停在稳态上限达不到目标，若不设超时预热会永远卡住。
+      // 这是「加热器老化 → 跑不了高温材料」这条涌现路径的落地点。
+      if (!this.faultInfo && this._heatElapsed > HEAT_TIMEOUT_S && !this.nozzleT.reached(3)) {
+        const prof = this.machineProfile;
+        this._raiseFault({
+          name: "加热失败",
+          msg: `预热 ${Math.round(this._heatElapsed)}s 后喷嘴仍停在 ${this.nozzleNow.toFixed(0)}°C，` +
+            `达不到目标 ${this.settings.nozzleTemp}°C —— 加热器有效功率 ${(prof.heaterHealth * 100).toFixed(0)}%，` +
+            `稳态上限约 ${FXMachineProfile.heaterCeilingC(prof, prof.ambientC).toFixed(0)}°C`,
+        });
+        return;
+      }
+
       if (this._heatMinTimer <= 0 && this.nozzleT.reached(3) && this.bedT.reached(3)) {
         this.log("ok", `预热完成：喷嘴 ${this.nozzleNow.toFixed(1)}°C / 热床 ${this.bedNow.toFixed(1)}°C`);
         if (this.settings.autoLevel && !this.leveledOnce) {
@@ -544,7 +706,9 @@
         this.bedTargetY = this.printer.NOZZLE_Y - 10 + dip;
         if (L.t >= 0.95) {
           // 真实采样：床面误差场 + 探针读数噪声（±3µm），该值直接参与网格拟合
-          const z = this.bedErrorAt(target.x, target.y) + (Math.random() - 0.5) * 0.006;
+          // 探针重复性误差：确定性噪声（同一台机器同一点，每次探测结果一致），
+          // 用 Math.random 会让调平数据链失去可复现性
+          const z = this.bedErrorAt(target.x, target.y) + this._probeNoise(target.x, target.y);
           L.samples.push(z);
           this.log("info", `探测点 ${L.idx + 1}/9（X${target.x} Y${target.y}）：Z = ${z >= 0 ? "+" : ""}${z.toFixed(3)} mm`);
           L.idx++;
@@ -751,8 +915,69 @@
         this.bus.emit("quality-actual", this.lastQuality);
         this.log("info", `成品实测质量评级 ${this.lastQuality.grade}（综合 ${this.lastQuality.score} 分）· 详见「质量」面板`);
       }
+
+      // 成品判废：翘边与悬垂塌陷不是「打印中断」，而是机械上跑完了但零件报废——
+      // 真实产线正是这样记录的。风险由本次打印的真实条件推出，不做概率抽样。
+      const scrap = this._evaluateScrap();
       this.bus.emit("done");
-      this.bus.emit("job-record", { status: "success", fault: null });
+      if (scrap) {
+        this.log("err", `【成品判废】${scrap.reason} — ${scrap.msg}`);
+        if (this._telemetry) this._telemetry.faults.push(scrap.reason);
+        this.bus.emit("job-record", { status: "fail", fault: scrap.reason, scrap: scrap });
+      } else {
+        this.bus.emit("job-record", { status: "success", fault: null });
+      }
+    }
+
+    /**
+     * 打印完成时的成品判废评估（翘边 / 悬垂塌陷的涌现路径）。
+     * 输入全部来自本次打印的真实条件：床温、环境、材料收缩率、首层面积与不均匀度、
+     * 风扇、层高、速度、是否开支撑。返回 null 表示合格。
+     */
+    _evaluateScrap() {
+      const T = this._telemetry;
+      if (!T || !this.model) return null;
+      const st = this.settings;
+      const mat = this.material;
+      const prof = this.machineProfile;
+
+      const warp = FXMachineProfile.warpRisk(prof, {
+        bedMinC: mat.bedMin,
+        bedNow: T.settings0.bedTemp,          // 设定床温（打印全程维持）
+        shrinkage: FXMachineProfile.SHRINKAGE[st.material] || 0.4,
+        firstLayerAreaMm2: T.firstLayerAreaMm2,
+        firstLayerUnevenMm: T.leveled ? Math.min(T.firstLayerUneven, 0.04) : T.firstLayerUneven,
+        fanFrac: (T.settings0.fanSpeed || 0) / 100,
+      });
+      const overhang = FXMachineProfile.overhangRisk(prof, {
+        needSupport: !!this.model.needSupport,
+        supportEnabled: !!T.settings0.supportEnabled,
+        fanFrac: (T.settings0.fanSpeed || 0) / 100,
+        layerHeightMm: T.settings0.layerHeight,
+        speedMmS: T.settings0.speed,
+      });
+      T.warpRisk = Math.round(warp * 100) / 100;
+      T.overhangRisk = Math.round(overhang * 100) / 100;
+
+      if (overhang >= 1 && overhang >= warp) {
+        return {
+          reason: "悬垂塌陷",
+          risk: T.overhangRisk,
+          msg: !T.settings0.supportEnabled
+            ? "模型存在 >60° 悬垂面但未启用支撑，顶部结构无支承"
+            : `支撑已开但冷却/层高/速度组合不足以成形桥接段（风险指数 ${T.overhangRisk}）`,
+        };
+      }
+      if (warp >= 1) {
+        return {
+          reason: "翘边",
+          risk: T.warpRisk,
+          msg: `床温 ${T.settings0.bedTemp}°C（${st.material} 下限 ${mat.bedMin}°C）· ` +
+            `环境 ${prof.ambientC}°C ${prof.enclosed ? "封闭" : "开放"}腔体 · 风扰 ${(prof.draft * 100).toFixed(0)}% · ` +
+            `首层面积 ${Math.round(T.firstLayerAreaMm2)} mm²（风险指数 ${T.warpRisk}）`,
+        };
+      }
+      return null;
     }
   }
 

@@ -6,11 +6,13 @@ const path = require("path");
 
 const JS = (p) => path.join(__dirname, "..", "..", "js", p);
 require(JS("util.js"));
+require(JS("farm-dataset.js"));   // 内置机群仿真数据集（须在 insight-data 之前，Store 构造要用）
 require(JS("insight-data.js"));
 require(JS("insight-engine.js"));
 
 const D = globalThis.FXInsightData;
 const E = globalThis.FXInsightEngine;
+const FARM = globalThis.FXFarmDataset;
 
 module.exports = {
   FIELDS: D.FIELDS,
@@ -18,6 +20,10 @@ module.exports = {
   MIN_SAMPLE: E.MIN_SAMPLE,
   parseCsv: (text) => D.parseCsv(text),
   toCsv: (rows) => D.toCsv(rows),
+  /** 内置数据集：物理仿真产出的机群数据（不是概率合成） */
+  farmRows: () => FARM.rows(),
+  farmCsv: () => FARM.csv,
+  /** 概率合成数据，仅保留给回归测试作确定性输入 */
   generateSample: (n) => D.generateSample(n),
   analyze: (question, rows, opts) => E.analyze(question, rows, opts),
 };

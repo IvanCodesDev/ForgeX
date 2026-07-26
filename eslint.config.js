@@ -24,6 +24,8 @@ const FRONTEND_GLOBALS = {
   FXScene: "readonly", // js/scene.js
   FXSim: "readonly", // js/sim.js
   FXExport: "readonly", // js/exporter.js（注意不是 FXExporter）
+  FXMachineProfile: "readonly", // js/machine-profile.js
+  FXFarmDataset: "readonly", // js/farm-dataset.js（自动生成）
   FXInsightData: "readonly", // js/insight-data.js
   FXInsightEngine: "readonly", // js/insight-engine.js
   FXApiClient: "readonly", // js/api-client.js
@@ -106,7 +108,14 @@ const COMMON_RULES = {
 
 module.exports = [
   {
-    ignores: ["js/vendor/**", "node_modules/**", "coverage/**", "**/.tmp-*"],
+    ignores: [
+      "js/vendor/**",
+      // 自动生成（node tools/farm-sim.js --emit-js），内嵌大段 CSV，不手工维护
+      "js/farm-dataset.js",
+      "node_modules/**",
+      "coverage/**",
+      "**/.tmp-*",
+    ],
   },
 
   js.configs.recommended,
@@ -126,9 +135,9 @@ module.exports = [
     },
   },
 
-  // ── 后端与测试：Node CommonJS ──
+  // ── 后端 / 测试 / 工具：Node CommonJS ──
   {
-    files: ["server/**/*.js", "tests/**/*.js", "eslint.config.js"],
+    files: ["server/**/*.js", "tests/**/*.js", "tools/**/*.js", "eslint.config.js"],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "commonjs",
@@ -137,9 +146,9 @@ module.exports = [
     rules: COMMON_RULES,
   },
 
-  // 测试里会 require 前端模块并从 globalThis 取，放行这些全局
+  // 测试与工具会 require 前端模块并从 globalThis 取，放行这些全局
   {
-    files: ["tests/**/*.js", "server/services/local-engine.js"],
+    files: ["tests/**/*.js", "tools/**/*.js", "server/services/local-engine.js"],
     languageOptions: {
       globals: { ...NODE_GLOBALS, ...FRONTEND_GLOBALS },
     },

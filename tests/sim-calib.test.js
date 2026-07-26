@@ -8,6 +8,7 @@ const J = (p) => path.join(__dirname, "..", "js", p);
 require(J("util.js"));
 require(J("slicer.js"));
 require(J("models.js"));
+require(J("machine-profile.js"));
 require(J("sim.js"));
 
 const FXU = globalThis.FXU, FXSim = globalThis.FXSim;
@@ -21,7 +22,7 @@ function check(name, cond, detail) {
 /* ── stub 打印机（只保留 sim 消费的契约面） ── */
 function makePrinter(id) {
   return {
-    ID: id, MODEL_NAME: "STUB-" + id, KIN_TAG: "stub", NOZZLE_Y: 200, bedTopY: 0,
+    ID: id, MODEL_NAME: "STUB-" + id, MODEL_TAG: "STUB-" + id, KIN_TAG: "stub", NOZZLE_Y: 200, bedTopY: 0,
     nozzleHotFrac: 0, bedHotFrac: 0, fanFrac: 0, extrudeRate: 0,
     setBedTopY(y) { this.bedTopY = y; },
     setHeadXY() {}, setStateLED() {}, setSpoolFrac() {}, setFilamentColor() {},

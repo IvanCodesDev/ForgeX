@@ -227,12 +227,15 @@ console.log("\n[11] 诚实性：来源标记 / 未识别问题 / 机台 ID");
   check("无机型信息时不冒充具体机台",
     D.machineIdFromSim({}) === "UNKNOWN-01", D.machineIdFromSim({}));
 
-  // 故障词表：仿真器可产出的子集必须是全量词表的真子集，且「未知」不在词表内
-  check("仿真可产故障是全量词表子集",
-    D.SIM_FAULTS.every((f) => D.FAIL_REASONS.indexOf(f) >= 0) && D.SIM_FAULTS.length < D.FAIL_REASONS.length,
-    D.SIM_FAULTS.join(","));
+  // 故障词表：P2 起五类故障已全部可由物理仿真产生（三类运行中报警 + 两类完成时判废）
+  check("仿真可产故障全部在标准词表内",
+    D.SIM_FAULTS.every((f) => D.FAIL_REASONS.indexOf(f) >= 0), D.SIM_FAULTS.join(","));
+  check("词表覆盖运行中报警与完成时判废两个阶段",
+    D.FAULT_TAXONOMY.some((f) => f.stage === "runtime") && D.FAULT_TAXONOMY.some((f) => f.stage === "scrap"));
   check("未知故障有独立取值，不并入任何具体故障",
     D.FAIL_REASONS.indexOf(D.FAULT_UNKNOWN) < 0, D.FAULT_UNKNOWN);
+  check("normalizeFault 不猜：无法归类返回「未知」",
+    D.normalizeFault("某种没见过的错误") === D.FAULT_UNKNOWN);
 }
 
 console.log("\n[12] 计价口径可溯与可替换");

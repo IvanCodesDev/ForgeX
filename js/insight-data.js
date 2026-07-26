@@ -45,23 +45,44 @@
   D.MACHINES = ["FX-256-01", "FX-256-02", "FX-256-03", "FX-256-04"];
 
   /**
-   * 故障词表（单一真源）。`sim` 标记该类故障当前的仿真器能否真实产生——
-   * 仿真器只实现了断料/堵料/热失控三种物理故障链，翘边与悬垂塌陷尚无对应模型。
-   * 两侧词表不一致会造出错误数据（历史上未识别故障被兜底写成「热失控」）。
-   * 统一到同一份枚举是 P2 的任务，见 doc/优化文档.md §5 P2.4。
+   * 故障词表（单一真源）。仿真侧与分析侧共用这一份枚举——
+   * 两侧词表不一致会造出错误数据（历史上未识别的故障被兜底写成「热失控」）。
+   *
+   * `mech` 是该类故障在仿真器中的**物理产生机理**（见 js/machine-profile.js）。
+   * 五类故障现在全部可由物理过程涌现，没有任何一类是概率抽出来的：
+   *   前三类由打印过程中的监测器发现（中途报警，任务中止）；
+   *   后两类在打印完成时判废（机械上跑完了，但零件报废——真实产线正是这样记录的）。
+   *
+   * `match` 是仿真器故障名 → 标准类型的匹配子串。
    */
   D.FAULT_TAXONOMY = [
-    { name: "翘边", sim: false },
-    { name: "堵料", sim: true },
-    { name: "断料", sim: true },
-    { name: "热失控", sim: true },
-    { name: "悬垂塌陷", sim: false },
+    { name: "堵料", stage: "runtime", match: ["堵"], mech: "热端积碳 × 温度不足 × 体积流量过大 → 挤出负载超限" },
+    { name: "断料", stage: "runtime", match: ["断料"], mech: "送料齿轮咬合力不足 × 料架阻力 × 料盘将空 → 打滑" },
+    { name: "热失控", stage: "runtime", match: ["热失控", "加热失败"], mech: "加热器有效功率不足，够不到高温材料目标 → 温度失守保护" },
+    { name: "翘边", stage: "scrap", match: ["翘边"], mech: "床温低于材料下限 × 环境冷/有风 × 材料收缩率 × 大平面 → 首层附着失效" },
+    { name: "悬垂塌陷", stage: "scrap", match: ["塌陷"], mech: "需支撑却未开启，或冷却/层高/速度不足以成形桥接段" },
   ];
   D.FAIL_REASONS = D.FAULT_TAXONOMY.map(function (f) { return f.name; });
-  /** 仿真器可真实产出的故障类型子集 */
-  D.SIM_FAULTS = D.FAULT_TAXONOMY.filter(function (f) { return f.sim; }).map(function (f) { return f.name; });
+  /** 仿真器可真实产出的故障类型（现已覆盖全部五类） */
+  D.SIM_FAULTS = D.FAIL_REASONS.slice();
   /** 无法归类时的取值——绝不允许兜底猜成某个具体故障 */
   D.FAULT_UNKNOWN = "未知";
+
+  /**
+   * 仿真器故障名 → 标准故障类型。单一真源：前端采集与虚拟机群共用本函数，
+   * 避免两处各写一份匹配规则而漂移。匹配不上一律返回「未知」，绝不猜。
+   */
+  D.normalizeFault = function (name) {
+    var s = String(name || "");
+    if (!s) return "";
+    for (var i = 0; i < D.FAULT_TAXONOMY.length; i++) {
+      var t = D.FAULT_TAXONOMY[i];
+      for (var j = 0; j < t.match.length; j++) {
+        if (s.indexOf(t.match[j]) >= 0) return t.name;
+      }
+    }
+    return D.FAULT_UNKNOWN;
+  };
 
   D.costFen = function (material, filamentG, energyKwh, durationMin) {
     var p = D.COST_PROFILE;
@@ -263,12 +284,21 @@
        任何界面都不得让合成数据看起来像真实产线数据。 */
 
   D.PROVENANCE = {
+    farm: {
+      source: "sim-farm",
+      synthetic: true,
+      badge: "机群仿真",
+      note: "由虚拟机群物理仿真产出：8 台机器各有确定性的固有物理特征（热端积碳、送料咬合力、" +
+            "加热器功率、环境温度…），故障是这些特征与本单工艺参数相互作用的结果，" +
+            "没有任何一台机器被预先指定过故障率。非真实产线数据，但结论可被证伪。",
+      generator: { name: "tools/farm-sim.js", version: 1, seed: 20260726 },
+    },
     sample: {
       source: "synthetic",
       synthetic: true,
       badge: "合成",
       note: "概率生成的演示数据，含预先写死的故事线（03 号机高故障率、ABS×悬垂件高失败）。" +
-            "从中得出的结论只是生成参数的回显，不适用于任何真实设备。",
+            "从中得出的结论只是生成参数的回显，不适用于任何真实设备。保留仅为回归测试的确定性输入。",
       generator: { name: "FXInsightData.generateSample", version: 1, seed: 20260721 },
     },
     upload: {
@@ -282,9 +312,19 @@
       source: "simulator",
       synthetic: true,
       badge: "仿真",
-      note: "由本机仿真器的物理过程（温控惯性、床面误差场、故障链）产出，" +
-            "是真实计算结果但非真实产线数据。仿真器目前只能产生 " + D.SIM_FAULTS.join("/") + " 三类故障。",
-      generator: { name: "FXSim", version: 1, seed: null },
+      note: "由本机仿真器的物理过程产出（温控惯性、床面误差场、机构负载、成品判废），" +
+            "是真实计算结果但非真实产线数据。故障不是抽样出来的：" +
+            "每台机器有确定性的固有物理特征，故障是这些特征与本单工艺参数相互作用的结果。",
+      generator: { name: "FXSim", version: 2, seed: null },
+    },
+    "sim-farm": {
+      source: "sim-farm",
+      synthetic: true,
+      badge: "机群仿真",
+      note: "由虚拟机群（tools/farm-sim.js）批量物理仿真产出。多台机器各有固有物理特征，" +
+            "失败与故障类型完全由物理演化决定，仅排产（派给哪台机、用什么材料参数）使用随机。" +
+            "同一 seed 完全可复现。",
+      generator: { name: "tools/farm-sim.js", version: 1, seed: null },
     },
   };
 
@@ -296,12 +336,19 @@
    */
   D.Store = function (bus) {
     this.bus = bus;
+    // 默认数据集是**物理仿真产出**的机群数据，而不是埋了故事线的概率合成数据——
+    // 开箱即用的那份数据，其结论必须是能被证伪的。
+    var farm = typeof FXFarmDataset !== "undefined" ? FXFarmDataset.rows() : null;
     this.sets = {
-      sample: { label: "合成示例", rows: D.generateSample(), provenance: D.PROVENANCE.sample },
+      farm:   { label: "机群仿真", rows: farm || [], provenance: D.PROVENANCE.farm },
       upload: { label: "我的上传", rows: [], provenance: D.PROVENANCE.upload },
-      sim:    { label: "仿真采集", rows: [], provenance: D.PROVENANCE.sim },
+      sim:    { label: "本机采集", rows: [], provenance: D.PROVENANCE.sim },
     };
-    this.active = "sample";
+    // 数据模块缺失时（例如只加载了部分脚本）退回合成数据，但如实标注来源
+    if (!farm || !farm.length) {
+      this.sets.farm = { label: "合成示例", rows: D.generateSample(), provenance: D.PROVENANCE.sample };
+    }
+    this.active = "farm";
   };
   D.Store.prototype.rows = function () { return this.sets[this.active].rows; };
   /** 当前数据集的来源标记（随报告一起流转） */
@@ -337,13 +384,20 @@
     return tag ? tag + "-01" : "UNKNOWN-01";
   };
 
-  /** 由模拟器状态构造一条生产记录（sim 完成/中止/故障时调用） */
+  /**
+   * 由模拟器状态构造一条生产记录（sim 完成/中止/故障时调用）。
+   *
+   * 除 12 个标准 CSV 列外，还挂上 `_telemetry` —— 仿真过程真实采集的物理量
+   * （挤出负载峰值、翘边/悬垂风险指数、温度偏差、调平残差、机台固有特征）。
+   * 这些量是本项目独有的数据资产：真实产线拿不到，别的分析工具也造不出来。
+   * 它们不进 CSV（保持标准字段简洁），但留在内存记录上供后续深度分析使用。
+   */
   D.recordFromSim = function (sim, status, failReason) {
     var mat = sim.settings.material;
     var dur = Math.round(sim.machineElapsed / 60) || 1;   // 机时（分钟）
     var g = Math.round(sim.usedG * 10) / 10;
     var kwh = Math.round((dur / 60) * (mat === "ABS" ? 0.34 : 0.24) * 100) / 100;
-    return {
+    var rec = {
       job_id: "SIM-" + String(Date.now()).slice(-6),
       date: new Date().toISOString().slice(0, 10),
       machine_id: D.machineIdFromSim(sim),   // 曾写死 "FX-256-01"：跑 FX-500 也记成 FX-256
@@ -357,7 +411,30 @@
       fail_reason: failReason || "",
       energy_kwh: kwh,
     };
+    var t = sim._telemetry;
+    if (t) {
+      rec._telemetry = {
+        clogLoadMax: round2(t.clogLoadMax),
+        slipRiskMax: round2(t.slipRiskMax),
+        warpRisk: t.warpRisk != null ? t.warpRisk : null,
+        overhangRisk: t.overhangRisk != null ? t.overhangRisk : null,
+        tempDevMax: round2(t.tempDevMax),
+        firstLayerUneven: round3(t.firstLayerUneven),
+        leveled: !!t.leveled,
+        pauses: t.pauses,
+        tunes: t.tunes,
+        nozzleTemp: t.settings0 ? t.settings0.nozzleTemp : null,
+        bedTemp: t.settings0 ? t.settings0.bedTemp : null,
+        speed: t.settings0 ? t.settings0.speed : null,
+        supportEnabled: t.settings0 ? !!t.settings0.supportEnabled : null,
+        machineProfile: t.machineProfile || null,
+      };
+    }
+    return rec;
   };
+
+  function round2(v) { return v == null ? null : Math.round(v * 100) / 100; }
+  function round3(v) { return v == null ? null : Math.round(v * 1000) / 1000; }
 
   /** 浏览器下载 CSV（data URI，file:// 直开可用） */
   D.downloadCsv = function (rows, filename) {

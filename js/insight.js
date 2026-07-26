@@ -14,11 +14,9 @@
     "失败批次有没有共性",
   ];
 
-  /* 仿真器故障名 → 标准故障词表（FXInsightData.FAULT_TAXONOMY）。
+  /* 仿真器故障名 → 标准故障词表的映射，已收敛到 FXInsightData.normalizeFault()
+     （单一真源，与虚拟机群 tools/farm-sim.js 共用同一套规则）。
      未命中一律记为「未知」——历史上这里兜底猜成「热失控」，会往数据集里写入错误的故障类型。 */
-  var FAULT_MAP = [
-    ["断料", "断料"], ["堵", "堵料"], ["热失控", "热失控"],
-  ];
 
   var CONFIDENCE_LABEL = {
     high: "可信度：高",
@@ -111,15 +109,15 @@
       var btnRow = el("div", "prow ins-actions");
       var upBtn = el("button", "mini-btn", "上传 CSV");
       upBtn.addEventListener("click", function () { $("#csv-input").click(); });
-      var dlBtn = el("button", "mini-btn", "下载合成示例");
-      dlBtn.title = "合成演示数据，不是真实产线数据";
+      var dlBtn = el("button", "mini-btn", "下载机群数据");
+      dlBtn.title = "由虚拟机群物理仿真产出，非真实产线数据";
       dlBtn.addEventListener("click", function () {
-        FXInsightData.downloadCsv(this.store.sets.sample.rows, "print_jobs_synthetic_sample.csv");
+        FXInsightData.downloadCsv(this.store.sets.farm.rows, "print_farm.csv");
       }.bind(this));
-      var simBtn = el("button", "mini-btn", "导出仿真采集");
+      var simBtn = el("button", "mini-btn", "导出本机采集");
       simBtn.addEventListener("click", function () {
         var rows = this.store.sets.sim.rows;
-        if (!rows.length) return this.ui.toast("暂无仿真采集数据 — 先跑一次打印任务", "warn");
+        if (!rows.length) return this.ui.toast("暂无本机采集数据 — 先跑一次打印任务", "warn");
         FXInsightData.downloadCsv(rows, "sim_jobs.csv");
       }.bind(this));
       btnRow.append(upBtn, dlBtn, simBtn);
@@ -185,7 +183,7 @@
             esc(s.label) + " · " + s.rows.length + (p.badge ? ' <i class="ds-badge">' + esc(p.badge) + "</i>" : ""));
           if (p.note) c.title = p.note;
           c.addEventListener("click", function () {
-            if (!s.rows.length) return self.ui.toast(k === "sim" ? "还没有仿真采集数据，先完成一次打印" : "该数据集为空，请先上传", "warn");
+            if (!s.rows.length) return self.ui.toast(k === "sim" ? "还没有本机采集数据，先完成一次打印" : "该数据集为空，请先上传", "warn");
             self.store.use(k);
           });
           row.appendChild(c);
@@ -250,16 +248,11 @@
     }
 
     _onSimRecord(d) {
-      var reason = "";
-      if (d.status === "fail" && d.fault) {
-        for (var i = 0; i < FAULT_MAP.length; i++)
-          if (d.fault.indexOf(FAULT_MAP[i][0]) >= 0) { reason = FAULT_MAP[i][1]; break; }
-        // 归不了类就如实写「未知」，不猜——猜错会污染整个数据集的故障归因
-        if (!reason) reason = FXInsightData.FAULT_UNKNOWN;
-      }
+      // 归不了类就如实写「未知」，不猜——猜错会污染整个数据集的故障归因
+      var reason = d.status === "fail" ? FXInsightData.normalizeFault(d.fault) : "";
       var rec = FXInsightData.recordFromSim(this.sim, d.status, reason);
       this.store.addSimRecord(rec);
-      this.ui.toast("运行数据已采集 → 仿真采集 " + rec.machine_id +
+      this.ui.toast("运行数据已采集 → 本机采集 " + rec.machine_id +
         "（共 " + this.store.sets.sim.rows.length + " 条）", "info");
     }
 

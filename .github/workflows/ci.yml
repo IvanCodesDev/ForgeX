@@ -99,6 +99,18 @@ jobs:
             console.log('OK: 内置数据集已声明为合成，seed =', p.generator.seed);
           "
 
+      - name: 内置数据集不得由概率抽样产生
+        run: |
+          node -e "
+            require('./js/util.js'); require('./js/farm-dataset.js'); require('./js/insight-data.js');
+            const F = globalThis.FXFarmDataset;
+            if (!F || !F.rows().length) { console.error('内置机群数据集缺失'); process.exit(1); }
+            if (F.generator !== 'tools/farm-sim.js') { console.error('内置数据集必须由物理仿真产出'); process.exit(1); }
+            const D = globalThis.FXInsightData;
+            if (D.PROVENANCE.farm.source !== 'sim-farm') { console.error('内置数据集来源标记错误'); process.exit(1); }
+            console.log('OK: 内置数据集由物理仿真产出，seed =', F.seed, '行数 =', F.rows().length);
+          "
+
       - name: 知识库接口不得宣称已接入检索
         run: |
           node -e "

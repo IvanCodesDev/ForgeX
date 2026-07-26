@@ -12,11 +12,13 @@ class DatasourceStore {
   constructor(cfg) {
     this.cfg = cfg;
     this.map = new Map();
-    const rows = engine.generateSample();
+    // 内置数据源是**物理仿真产出**的机群数据，不是概率合成——
+    // 开箱即用的那份数据，其结论必须是能被证伪的。
+    const rows = engine.farmRows();
     this.map.set("sample", {
-      id: "sample", name: "内置合成示例数据", rows, csv: engine.toCsv(rows),
+      id: "sample", name: "内置机群仿真数据", rows, csv: engine.farmCsv(),
       builtin: true, createdAt: Date.now(),
-      provenance: engine.PROVENANCE.sample,
+      provenance: engine.PROVENANCE.farm,
     });
   }
 

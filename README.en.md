@@ -27,7 +27,7 @@ node server/index.js     # or: npm start
 Run the tests:
 
 ```bash
-npm test        # 210 assertions, zero dependencies
+npm test        # 260 assertions, zero dependencies
 ```
 
 ---
@@ -38,25 +38,27 @@ Credibility matters most for an open-source project, so let's be precise.
 
 ### ✅ Real
 
-| Capability                    | Why it's trustworthy                                                                                                                                                                                                                 |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Slicing engine**            | Perimeter offsetting → even-odd scanline infill → top/bottom solid layers → overhang support → skirt. Real algorithms (`js/slicer.js`, 32 assertions)                                                                                |
-| **Thermal physics**           | First-order lag + overshoot + noise thermal model. Thermal-runaway protection discovers the fault from measured deviation (Marlin-like semantics), not from a scripted trigger                                                       |
-| **Bed leveling data chain**   | Per-model deterministic bed error field → 9-point probing → fitted 5×5 compensation mesh → real-time bilinear-interpolated Z compensation during printing. Printing without leveling yields a genuine first-layer unevenness warning |
-| **Four kinematics**           | CoreXY enclosed / i3 gantry / Delta parallel-arm inverse kinematics / large-format gantry — separately implemented, not reskins (`js/printers.js`)                                                                                   |
-| **G-code export**             | Generated from actual slice paths; extrusion computed for ⌀1.75 filament; ΣE is conserved against slice statistics (asserted). Loads in Cura / PrusaSlicer                                                                           |
-| **Post-print quality report** | Temperature deviation integral, leveling residual, speed-variance fraction and fault log all come from this run's real telemetry — not a preset score                                                                                |
+| Capability                     | Why it's trustworthy                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Slicing engine**             | Perimeter offsetting → even-odd scanline infill → top/bottom solid layers → overhang support → skirt. Real algorithms (`js/slicer.js`, 32 assertions)                                                                                                                                                                                      |
+| **Thermal physics**            | First-order lag + overshoot + noise thermal model. Thermal-runaway protection discovers the fault from measured deviation (Marlin-like semantics), not from a scripted trigger                                                                                                                                                             |
+| **Bed leveling data chain**    | Per-model deterministic bed error field → 9-point probing → fitted 5×5 compensation mesh → real-time bilinear-interpolated Z compensation during printing. Printing without leveling yields a genuine first-layer unevenness warning                                                                                                       |
+| **Four kinematics**            | CoreXY enclosed / i3 gantry / Delta parallel-arm inverse kinematics / large-format gantry — separately implemented, not reskins (`js/printers.js`)                                                                                                                                                                                         |
+| **G-code export**              | Generated from actual slice paths; extrusion computed for ⌀1.75 filament; ΣE is conserved against slice statistics (asserted). Loads in Cura / PrusaSlicer                                                                                                                                                                                 |
+| **Post-print quality report**  | Temperature deviation integral, leveling residual, speed-variance fraction and fault log all come from this run's real telemetry — not a preset score                                                                                                                                                                                      |
+| **Faults emerge from physics** | None of the five fault types (clog / runout / thermal / warping / overhang collapse) is drawn from a probability. Each machine has deterministic intrinsic characteristics (hotend fouling, feeder grip, heater power, ambient draft); a fault is what happens when those interact with the job's process parameters and cross a threshold |
+| **Virtual print farm**         | `tools/farm-sim.js` produces production datasets by physics simulation, reproducible row-for-row from a seed. The bundled default dataset is its output                                                                                                                                                                                    |
 
 ### ⚠️ Things you should know
 
-| Item                                     | Reality                                                                                                                                                                                                                                                                                                         |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **The "analysis engine" is not AI**      | The default engine (local and backend) is a **rules engine**: keyword intent routing + deterministic aggregation, covering 5 dimensions. The UI labels it "rules engine (no AI)". For questions outside those dimensions it **says so explicitly** and lists what it supports, rather than pretending to answer |
-| **The bundled sample data is synthetic** | `doc/samples/print_jobs_synthetic.csv` is seeded-random and has a **storyline baked in** (one machine's failure rate is hardcoded to 0.20, etc.). Any "finding" from it is just the generator's parameters echoed back. It carries a "synthetic" badge in the UI and in reports. See `doc/samples/README.md`    |
-| **Cloud AI mode has _fewer_ features**   | With InfiniSynapse connected, you get text conclusions only — **no charts, no viewport linkage** (the rules engine has both). Reports state this gap explicitly. Fix is roadmap P3                                                                                                                              |
-| **Viewport linkage is single-machine**   | The 3D scene holds exactly one printer. Highlighting is offered only when the conclusion points at that same model; otherwise the UI says fleet view isn't implemented                                                                                                                                          |
-| **In-memory only**                       | Datasources, tasks and share pages live in memory; a restart clears everything. "Share valid for 24h" means within the process lifetime                                                                                                                                                                         |
-| **No auth, no quota**                    | Read the Deployment section before exposing this publicly                                                                                                                                                                                                                                                       |
+| Item                                    | Reality                                                                                                                                                                                                                                                                                                         |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The "analysis engine" is not AI**     | The default engine (local and backend) is a **rules engine**: keyword intent routing + deterministic aggregation, covering 5 dimensions. The UI labels it "rules engine (no AI)". For questions outside those dimensions it **says so explicitly** and lists what it supports, rather than pretending to answer |
+| **The default data is still simulated** | The default dataset comes from the virtual print farm — **not probability sampling** — so its conclusions are falsifiable: change the process parameters and the fault distribution changes with them. It is still not real production data and is badged accordingly. See `datasets/README.md`                 |
+| **Cloud AI mode has _fewer_ features**  | With InfiniSynapse connected, you get text conclusions only — **no charts, no viewport linkage** (the rules engine has both). Reports state this gap explicitly. Fix is roadmap P3                                                                                                                              |
+| **Viewport linkage is single-machine**  | The 3D scene holds exactly one printer. Highlighting is offered only when the conclusion points at that same model; otherwise the UI says fleet view isn't implemented                                                                                                                                          |
+| **In-memory only**                      | Datasources, tasks and share pages live in memory; a restart clears everything. "Share valid for 24h" means within the process lifetime                                                                                                                                                                         |
+| **No auth, no quota**                   | Read the Deployment section before exposing this publicly                                                                                                                                                                                                                                                       |
 
 ### ❌ Not present
 
@@ -139,16 +141,21 @@ js/printers.js        extended machine library (three more kinematics)
 js/scene.js           renderer / lighting / engineering grid floor
 js/sim.js             simulation state machine (motion / thermal / leveling / filament / faults / telemetry / quality)
 js/exporter.js        export engine (STL / OBJ / G-code, pure logic, testable)
-js/insight-data.js    data layer (synthetic generation / CSV / provenance / dataset management)
+js/machine-profile.js machine intrinsic characteristics + fault mechanism models (pure logic)
+js/farm-dataset.js    bundled farm dataset (generated; do not hand-edit)
+js/insight-data.js    data layer (CSV / provenance / fault taxonomy / dataset management)
 js/insight-engine.js  rules analysis engine (intent routing / aggregation / statistical guards)
 js/api-client.js      backend API client
 js/insight.js         insight panel
 js/ui.js              flow pills / floating panels / dock / monitor
 js/main.js            bootstrap
 server/               thin backend (zero npm dependencies)
+tools/headless-sim.js headless simulation driver (full state machine under node)
+tools/farm-sim.js     virtual print farm: physics-generated datasets
+datasets/             farm datasets and companion telemetry
 doc/优化文档.md        current-state audit + refactor roadmap (Chinese)
-doc/samples/          synthetic sample data and its documentation
-tests/                5 suites, 210 assertions total
+doc/samples/          legacy probability-synthesized data (regression input only)
+tests/                6 suites, 260 assertions total
 ```
 
 ---
@@ -161,7 +168,8 @@ npm test                     # run all local suites
 node tests/smoke.js          # slicer: geometry / infill / contours / models / transforms (32)
 node tests/sim-calib.test.js # sim core: bed error field / leveling chain / state machine / telemetry (44)
 node tests/exporter.test.js  # export: STL / OBJ / G-code semantics and extrusion conservation (24)
-node tests/insight.test.js   # insight: data / parsing / stats / guards / provenance / honesty (64)
+node tests/insight.test.js   # insight: data / parsing / stats / guards / provenance / honesty (66)
+node tests/farm.test.js      # virtual farm: determinism / emergent discrimination / effect inversion (48)
 node tests/server.test.js    # backend contract: healthz / datasource / analyze+SSE / share / rate limit / traversal (46)
 node tests/check-refs.js     # HTML ↔ JS DOM id cross-check
 
@@ -211,14 +219,14 @@ Chrome / Edge / Firefox / Safari, plus Chinese dual-core browsers in fast mode.
 
 Full version in `doc/优化文档.md`. Summary:
 
-| Phase                        | Contents                                                                                                                                                                                                                    |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **P0 Honesty** ✅            | Remove everything claimed-but-not-implemented; statistical guards; provenance; real progress events                                                                                                                         |
-| **P1 Open-source readiness** | LICENSE, CI, lint, community files, English-first code, DOM-level tests                                                                                                                                                     |
-| **P2 Real data**             | **Virtual print farm**: give each machine intrinsic physical characteristics so failures _emerge from physics_ instead of probability sampling; pipe simulator telemetry into the analysis layer                            |
-| **P3 Real analysis**         | Stats kernel (confidence intervals + significance tests + partial correlation), QueryPlan layer, provider abstraction (InfiniSynapse / OpenAI-compatible / local), cloud output isomorphic with local, fleet view, real RAG |
-| **P4 Productionization**     | SQLite persistence, auth, quotas and cost gate, observability                                                                                                                                                               |
-| **P5 Ecosystem**             | Machine/material profile plugins, real G-code import & replay, community datasets                                                                                                                                           |
+| Phase                        | Contents                                                                                                                                                                                                                             |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **P0 Honesty** ✅            | Remove everything claimed-but-not-implemented; statistical guards; provenance; real progress events                                                                                                                                  |
+| **P1 Open-source readiness** | LICENSE, CI, lint, community files, English-first code, DOM-level tests                                                                                                                                                              |
+| **P2 Real data** ✅          | **Virtual print farm** shipped: each machine has deterministic intrinsic characteristics, all five fault types emerge from physics, simulator telemetry reaches the analysis layer, and the default dataset is now physics-generated |
+| **P3 Real analysis**         | Stats kernel (confidence intervals + significance tests + partial correlation), QueryPlan layer, provider abstraction (InfiniSynapse / OpenAI-compatible / local), cloud output isomorphic with local, fleet view, real RAG          |
+| **P4 Productionization**     | SQLite persistence, auth, quotas and cost gate, observability                                                                                                                                                                        |
+| **P5 Ecosystem**             | Machine/material profile plugins, real G-code import & replay, community datasets                                                                                                                                                    |
 
 ---
 
