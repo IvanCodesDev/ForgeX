@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 关键约束：运行本项目不需要 npm install。
+  # 这个 job 刻意不装任何依赖——一旦有人给运行时代码引入 npm 依赖，这里会红。
+  test-zero-deps:
+    name: Test (no install) · Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["18", "20", "22"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: 确认无 node_modules（运行时零依赖）
+        run: |
+          if [ -d node_modules ]; then
+            echo "::error::node_modules 不应存在于此 job — 运行时必须零依赖"
+            exit 1
+          fi
+
+      - name: 跑测试（不 install）
+        run: npm test
+
+  lint:
+    name: Lint & format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 安装开发工具链
+        run: npm install --no-audit --no-fund
+
+      - run: npm run lint
+
+      - run: npm run format:check
+
+  honesty:
+    name: 诚实性检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 密钥不得入库
+        run: |
+          if git ls-files | grep -E '(^|/)\.env$'; then
+            echo "::error::.env 文件不得提交"
+            exit 1
+          fi
+          if git grep -nIE 'sk-[a-zA-Z0-9]{16,}' -- . ':!*.md'; then
+            echo "::error::疑似 API key 硬编码在代码中"
+            exit 1
+          fi
+
+      - name: 规则引擎不得自称 AI
+        run: |
+          # 用户可见文案里，"AI" 只能出现在真 provider 相关的位置。
+          # 这里做一个粗粒度守卫：规则引擎的标识附近不得出现 AI 字样。
+          if git grep -nE '(local-rules|server-rules)[^\n]*\bAI\b' -- 'js/*.js' 'server/**/*.js' \
+             | grep -v '无 AI' | grep -v '不是 AI' | grep -v '非 AI'; then
+            echo "::error::规则引擎标识附近出现了未加否定词的 AI 字样"
+            exit 1
+          fi
+
+      - name: 合成数据必须自我声明
+        run: |
+          node -e "
+            require('./js/util.js'); require('./js/insight-data.js');
+            const D = globalThis.FXInsightData;
+            const p = D.PROVENANCE.sample;
+            if (p.synthetic !== true) { console.error('内置示例数据集必须标记 synthetic:true'); process.exit(1); }
+            if (!p.generator || !p.generator.seed) { console.error('合成数据必须带生成器与种子（可复现）'); process.exit(1); }
+            console.log('OK: 内置数据集已声明为合成，seed =', p.generator.seed);
+          "
+
+      - name: 知识库接口不得宣称已接入检索
+        run: |
+          node -e "
+            const { NOT_IMPLEMENTED_NOTE } = require('./server/routes/knowledge.js');
+            const banned = ['将在分析任务中注入', '将被注入', '已生效'];
+            for (const b of banned) {
+              if (NOT_IMPLEMENTED_NOTE.includes(b)) {
+                console.error('知识库提示语宣称了未实现的能力:', b); process.exit(1);
+              }
+            }
+            if (!NOT_IMPLEMENTED_NOTE.includes('尚未实现检索')) {
+              console.error('知识库提示语必须明确说明检索未实现'); process.exit(1);
+            }
+            console.log('OK: 知识库接口如实标注未实现检索');
+          "

@@ -453,7 +453,7 @@
 
     /* ── 主循环 ─────────────────────────── */
 
-    tick(dt, t) {
+    tick(dt, _t) {   // _t：场景传入的累计时间，仿真核不需要（保留形参以对齐 onTick 签名）
       const P = this.printer;
       // 温度总是演化
       const nActual = this.nozzleT.step(dt * (this.state === "idle" ? 1 : this.simMult * 0.55));
@@ -664,9 +664,8 @@
           if (L.distInPath >= p.len - 1e-6) this._setupTravelTo(L.pathIdx + 1);
         } else { // layerEnd
           L.timeInLayer += 1.1;
-          budget -= Math.min(budget, 0.35);
           this._completeLayer();
-          break;    // 新层的管束已重建，本 tick 不再消费预算
+          break;    // 新层的管束已重建，本 tick 不再消费预算（故此处无需再扣 budget）
         }
       }
       // 注意：_completeLayer 可能已切换/清空当前层，必须取最新引用

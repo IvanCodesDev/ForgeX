@@ -285,7 +285,7 @@
     const ew = st.extrusionWidth;
     const layers = [];
 
-    let extTotal = 0, travelTotal = 0, timeTotal = 0, areaSum = 0;
+    let extTotal = 0, travelTotal = 0, timeTotal = 0;
 
     for (let li = 0; li < total; li++) {
       const z = (li + 1) * lh;                 // 该层顶面高度

@@ -1,0 +1,80 @@
+name: Bug 报告 / Bug report
+description: 报告一个功能缺陷 / Report something that doesn't work
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢报告！请注意：**安全问题请勿走公开 issue**，见 [SECURITY.md](../blob/main/SECURITY.md)。
+
+        Thanks! Note: **do not report security issues here** — see SECURITY.md.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 问题描述 / What happened
+      description: 发生了什么？你期望发生什么？
+      placeholder: |
+        实际：切换到 FX-500 机型后开始打印，进度环停在 0%
+        期望：正常开始逐层打印
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      placeholder: |
+        1. 打开 index.html
+        2. 「模型」面板切换到 FX-500 巨匠
+        3. 点「开始打印」
+        4. 观察底部进度环
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: 运行方式 / How are you running it
+      options:
+        - "file:// 直接打开 index.html"
+        - "node server/index.js（本机后端）"
+        - "部署在服务器上"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: 分析引擎 / Analysis engine
+      description: 打开「洞察」面板，标题栏右侧的标记。非分析相关的 bug 可选「不适用」
+      options:
+        - "不适用（非分析功能的问题）"
+        - "本地规则"
+        - "后端规则"
+        - "云端 AI"
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: 环境 / Environment
+      placeholder: "Chrome 131 / Windows 11 / Node 20.11"
+    validations:
+      required: true
+
+  - type: textarea
+    id: console
+    attributes:
+      label: 控制台报错 / Console errors
+      description: 浏览器 F12 控制台，或 `node server/index.js` 的输出
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 自检 / Checklist
+      options:
+        - label: 我跑过 `npm test`，并附上了失败输出（如果与测试相关）
+        - label: 我确认这不是 README「已知限制」里已声明的行为

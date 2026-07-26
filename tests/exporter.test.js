@@ -9,7 +9,8 @@ require(J("slicer.js"));
 require(J("models.js"));
 require(J("exporter.js"));
 
-const FXU = globalThis.FXU, FXSlicer = globalThis.FXSlicer,
+// util.js 只需其副作用（注册 FXU 供 slicer/models 使用），此处不直接引用
+const FXSlicer = globalThis.FXSlicer,
       FXModels = globalThis.FXModels, FXExport = globalThis.FXExport;
 
 let passed = 0, failed = 0;

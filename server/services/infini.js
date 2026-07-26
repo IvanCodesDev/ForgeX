@@ -102,7 +102,7 @@ class InfiniClient {
       };
 
       const consume = (event, data) => {
-        let j = null;
+        let j;
         try { j = JSON.parse(data); } catch (e) { return; }   // heartbeat: "ping" 等非 JSON
         if (j && j.taskId && !taskId) {
           taskId = String(j.taskId);

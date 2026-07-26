@@ -1,14 +1,41 @@
 {
   "name": "forgex-insight",
-  "version": "0.9.0",
-  "private": true,
-  "description": "FORGE·X 智造洞察 — 工业 3D 打印仿真 × InfiniSynapse 数据分析（零 npm 依赖，node server/index.js 即起）",
-  "license": "UNLICENSED",
+  "version": "0.10.0",
+  "description": "Physics-driven 3D printing simulator with production data analysis — zero runtime dependencies, `node server/index.js` and it runs",
+  "keywords": [
+    "3d-printing",
+    "additive-manufacturing",
+    "simulation",
+    "slicer",
+    "gcode",
+    "three-js",
+    "data-analysis",
+    "manufacturing"
+  ],
+  "homepage": "https://github.com/IvanCodesDev/ForgeX#readme",
+  "bugs": {
+    "url": "https://github.com/IvanCodesDev/ForgeX/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IvanCodesDev/ForgeX.git"
+  },
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=18"
   },
   "scripts": {
     "start": "node server/index.js",
-    "test": "node tests/smoke.js && node tests/sim-calib.test.js && node tests/exporter.test.js && node tests/insight.test.js && node tests/server.test.js && node tests/check-refs.js"
+    "test": "node tests/smoke.js && node tests/sim-calib.test.js && node tests/exporter.test.js && node tests/insight.test.js && node tests/server.test.js && node tests/check-refs.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run lint && npm run format:check && npm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "eslint": "^10.0.0",
+    "prettier": "^3.4.2"
   }
 }

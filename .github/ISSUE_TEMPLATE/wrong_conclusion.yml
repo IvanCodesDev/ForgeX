@@ -1,0 +1,72 @@
+name: 分析结论不合理 / Questionable analysis conclusion
+description: 分析引擎给出了错误、误导或无依据的结论
+labels: ["bug", "analysis", "priority:high"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **这是我们最重视的一类 issue。**
+
+        一个数据分析工具给出无依据的结论，比它崩溃更糟糕——崩溃是显性的，
+        错误结论会被当真。所以这类问题优先级高于功能缺失。
+
+        This is the issue type we care about most. A data tool that produces
+        unsupported conclusions is worse than one that crashes: a crash is visible,
+        a wrong conclusion gets believed.
+
+  - type: input
+    id: question
+    attributes:
+      label: 你问了什么 / The question you asked
+      placeholder: "哪台机故障率最高"
+    validations:
+      required: true
+
+  - type: textarea
+    id: got
+    attributes:
+      label: 引擎给出的结论 / What the engine concluded
+      description: 请把报告的 verdict 和相关小节贴过来，包括 confidence 标记
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: 为什么它是错的 / Why it's wrong
+      description: |
+        例如：样本量不足以支撑这个结论 / 存在未控制的混杂因素 /
+        统计口径有问题 / 结论与数据矛盾
+    validations:
+      required: true
+
+  - type: textarea
+    id: data
+    attributes:
+      label: 数据 / Data
+      description: |
+        脱敏后的 CSV 片段，**或**一段能构造出该数据集的代码
+        （参考 tests/insight.test.js 里的 makeRows 辅助函数）。
+
+        ⚠️ 请勿上传含真实商业信息的数据。
+      render: text
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: 哪个引擎 / Which engine
+      options:
+        - "本地规则引擎（浏览器）"
+        - "后端规则引擎"
+        - "云端 AI（InfiniSynapse）"
+    validations:
+      required: true
+
+  - type: input
+    id: provenance
+    attributes:
+      label: 数据来源标记 / Provenance badge
+      description: 报告头部显示的来源说明（合成 / 仿真 / 用户上传）
+      placeholder: "用户上传"
