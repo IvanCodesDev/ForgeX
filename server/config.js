@@ -45,16 +45,54 @@ function getConfig(overrides) {
     infiniVerified: env.INFINI_VERIFIED === "1",
     infiniTimeoutMs: num(env.INFINI_TIMEOUT_MS, 180000),
     forceMock: env.INFINI_MOCK === "1",
+
+    // ── OpenAI 兼容 provider（OpenAI / Azure / Ollama / vLLM / 各家兼容端点）──
+    openaiKey: env.OPENAI_API_KEY || "",
+    openaiBaseUrl: env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+    openaiModel: env.OPENAI_MODEL || "",
+    openaiTimeoutMs: num(env.OPENAI_TIMEOUT_MS, 120000),
+
+    // 显式指定 provider：auto / local / infinisynapse / openai
+    providerPref: env.ANALYSIS_PROVIDER || "auto",
+
+    // 结果缓存：同一「问题 + 数据集 + provider」不重复调用 AI（省钱也省等待）
+    cacheTtlMs: num(env.RESULT_CACHE_TTL_MS, 30 * 60 * 1000),
+    cacheMax: num(env.RESULT_CACHE_MAX, 200),
   }, overrides || {});
 
-  // 真实调用需同时满足：有 key + 端点核准（INFINI_VERIFIED=1）+ 未强制降级
-  // mode="rules" 指后端规则引擎（确定性聚合统计，不是 AI，也不是假数据——
-  // 旧名 "mock" 会让人误以为结果是编的，实际是真实计算，只是没有 AI 参与）。
-  cfg.mode = (!cfg.forceMock && cfg.infiniKey && cfg.infiniVerified) ? "infinisynapse" : "rules";
-  cfg.modeReason = cfg.forceMock ? "INFINI_MOCK=1 强制使用规则引擎"
-    : !cfg.infiniKey ? "未配置 INFINI_API_KEY，使用规则引擎"
-    : !cfg.infiniVerified ? "端点未核准（INFINI_VERIFIED≠1），使用规则引擎"
-    : "密钥就绪且端点已核准，使用 InfiniSynapse 云端 AI";
+  /* ── provider 选择 ──────────────────────────
+     优先级：强制降级 > 显式指定 > 自动探测（InfiniSynapse > OpenAI 兼容 > 本地规则）。
+     "local" 指后端规则引擎——确定性聚合统计 + 假设检验，不是 AI，也不是假数据。
+     旧名 "mock" 会让人误以为结果是编的，实际是真实计算，只是没有 AI 参与。 */
+  var pref = String(cfg.providerPref || "auto").toLowerCase();
+  var infiniReady = !!(cfg.infiniKey && cfg.infiniVerified);
+  var openaiReady = !!(cfg.openaiKey && cfg.openaiModel);
+
+  if (cfg.forceMock || pref === "local") {
+    cfg.provider = "local";
+    cfg.providerReason = cfg.forceMock ? "INFINI_MOCK=1 强制使用规则引擎" : "ANALYSIS_PROVIDER=local";
+  } else if (pref === "infinisynapse") {
+    cfg.provider = infiniReady ? "infinisynapse" : "local";
+    cfg.providerReason = infiniReady ? "显式指定 InfiniSynapse"
+      : "指定了 InfiniSynapse 但密钥/核准不全，降级为规则引擎";
+  } else if (pref === "openai") {
+    cfg.provider = openaiReady ? "openai" : "local";
+    cfg.providerReason = openaiReady ? "显式指定 OpenAI 兼容端点（" + cfg.openaiModel + "）"
+      : "指定了 OpenAI 兼容端点但缺 OPENAI_API_KEY / OPENAI_MODEL，降级为规则引擎";
+  } else if (infiniReady) {
+    cfg.provider = "infinisynapse";
+    cfg.providerReason = "自动选择：InfiniSynapse 密钥就绪且端点已核准";
+  } else if (openaiReady) {
+    cfg.provider = "openai";
+    cfg.providerReason = "自动选择：OpenAI 兼容端点已配置（" + cfg.openaiModel + "）";
+  } else {
+    cfg.provider = "local";
+    cfg.providerReason = "未配置任何 AI provider，使用规则引擎（结论仍带置信区间与显著性检验）";
+  }
+
+  // 兼容旧字段：healthz 与前端读的是 mode/modeReason
+  cfg.mode = cfg.provider === "local" ? "rules" : cfg.provider;
+  cfg.modeReason = cfg.providerReason;
   return cfg;
 }
 

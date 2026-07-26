@@ -80,7 +80,7 @@ class InfiniClient {
    * onProgress 已内置节流（partial 洪峰每几毫秒一条，原样透传会撑爆事件缓存）。
    * 返回 {taskId, resultText, workspace}
    */
-  async runAnalysis({ question, csvText, datasourceName, onProgress }) {
+  async runAnalysis({ question, systemPrompt, userText, datasourceName, onProgress }) {
     this._ensureUsable();
     const connId = crypto.randomUUID();
     const deadline = Date.now() + this.cfg.infiniTimeoutMs;
@@ -128,7 +128,7 @@ class InfiniClient {
         body: {
           type: "newTask",
           connId,
-          text: this._buildPrompt(question, csvText, datasourceName),
+          text: this._buildPrompt(question, systemPrompt, userText, datasourceName),
           chatSettings: { mode: "act" },
         },
       });
@@ -189,22 +189,26 @@ class InfiniClient {
     };
   }
 
-  /** 分析指令：要求 JSON 产物便于结构化渲染；解析失败有降级（analysis.js）。
-      实测教训：不给加载提示时云端会先尝试创建 .csv 文件（平台禁止，白耗 ~45s），
-      明示「inline JSON → Infinity SQL」路径可直达。 */
-  _buildPrompt(question, csvText, datasourceName) {
+  /**
+   * 云端任务指令。
+   *
+   * ⚠ 重要变更（P3）：这里**不再内联整份 CSV**。
+   * 旧做法把 400 行 CSV（约 32KB）塞进 prompt 让云端自己建表、自己算，
+   * 结果是 token 成本随数据量线性增长、上万行直接超限，而且数字由 LLM 心算、无从校验。
+   * 现在传的是本地统计核算好并核验过的**统计简报**（约 2KB，行数再涨十倍也不会变大），
+   * 云端只负责把已验证的事实组织成叙述。
+   *
+   * 因此原先「不要创建 .csv 文件、改用 execute_infinity_sql 加载」那条提示也不再需要——
+   * 已经没有数据文件要加载了。
+   */
+  _buildPrompt(question, systemPrompt, userText, datasourceName) {
     return [
-      "你是增材制造（3D 打印）领域的资深数据分析师。请基于下面给出的 CSV 生产数据回答用户问题。",
-      "生产数据（" + (datasourceName || "print_jobs.csv") + "，金额列 cost_cny 单位为元）：",
-      "```csv\n" + csvText + "\n```",
-      "用户问题：" + question,
-      "要求：",
-      "1. 不要尝试创建 .csv 等数据文件（平台禁止）；请把上述数据转成 inline JSON 用 execute_infinity_sql 加载为表，再用 SQL 聚合计算；",
-      "2. 结论必须来自真实计算（计数/求和/均值/比率），未知不编造；",
-      "3. 中文回答，附数据依据（样本数、比率、金额），并给出可执行建议；",
-      "4. 最终结论（attempt_completion）请严格输出如下 JSON（不要输出 JSON 以外的文字）：",
-      '{"title":"报告标题(≤16字)","verdict":"一句话核心结论(≤80字)","sections":[{"h":"小节标题","lines":["要点…"]}]}',
-    ].join("\n\n");
+      systemPrompt,
+      "",
+      "数据集名称：" + (datasourceName || "print_jobs"),
+      "",
+      userText,
+    ].join("\n");
   }
 }
 

@@ -4,6 +4,7 @@
    进程内起服务（端口 0 随机），规则引擎（forceMock），不依赖外部网络。 */
 "use strict";
 const http = require("http");
+const path = require("path");
 const { createApp } = require("../server/index");
 
 let passed = 0, failed = 0;
@@ -82,7 +83,10 @@ async function main() {
   {
     const r = await jfetch(base, "/healthz");
     check("healthz 200 且 ok:true", r.status === 200 && r.json && r.json.ok === true, r.text);
-    check("门禁生效：未配密钥时为规则引擎", r.json.engine === "rules", r.json && r.json.engine);
+    check("门禁生效：未配密钥时为规则引擎", r.json.engine === "server-rules", r.json && r.json.engine);
+    check("healthz 报出 provider 与能力", r.json.provider === "local" && r.json.capabilities.ai === false,
+      JSON.stringify({ p: r.json.provider, c: r.json.capabilities }));
+    check("healthz 的 engine 与报告的 engine 同源", typeof r.json.label === "string" && r.json.label.length > 0, r.json.label);
     check("附带模式原因说明", typeof r.json.reason === "string" && r.json.reason.length > 0);
   }
 
@@ -123,7 +127,7 @@ async function main() {
     const r = await post(base, "/api/analyze", { question: "哪台机故障率最高，主要故障是什么", datasourceId: "sample" });
     taskId = r.json && r.json.taskId;
     check("建任务 → 202 + taskId", r.status === 202 && !!taskId, r.text);
-    check("返回引擎标识 rules", r.json.engine === "rules", r.json && r.json.engine);
+    check("返回引擎标识 server-rules", r.json.engine === "server-rules", r.json && r.json.engine);
 
     const sse = await collectSse(base, "/api/analyze/" + taskId + "/stream", 5000);
     check("SSE Content-Type 正确", String(sse.contentType).startsWith("text/event-stream"), sse.contentType);
@@ -215,6 +219,177 @@ async function main() {
   }
 
   await app.close();
+
+console.log("\n[10] Provider 抽象：选择逻辑与能力标记");
+{
+  const { getConfig } = require(path.join(__dirname, "..", "server", "config.js"));
+  const base = { logLevel: "error" };
+
+  const local = getConfig(Object.assign({}, base, { infiniKey: "", openaiKey: "", providerPref: "auto" }));
+  check("无任何配置 → 本地规则引擎", local.provider === "local", local.provider);
+  check("降级原因如实说明", /规则引擎/.test(local.providerReason), local.providerReason);
+
+  const infini = getConfig(Object.assign({}, base, { infiniKey: "sk-x", infiniVerified: true, providerPref: "auto" }));
+  check("InfiniSynapse 就绪 → 自动选它", infini.provider === "infinisynapse", infini.provider);
+
+  const oai = getConfig(Object.assign({}, base,
+    { infiniKey: "", openaiKey: "sk-y", openaiModel: "gpt-x", providerPref: "auto" }));
+  check("仅 OpenAI 兼容就绪 → 自动选它", oai.provider === "openai", oai.provider);
+
+  const both = getConfig(Object.assign({}, base,
+    { infiniKey: "sk-x", infiniVerified: true, openaiKey: "sk-y", openaiModel: "gpt-x", providerPref: "auto" }));
+  check("两者都就绪 → 按优先级选 InfiniSynapse", both.provider === "infinisynapse", both.provider);
+
+  const forced = getConfig(Object.assign({}, base,
+    { infiniKey: "sk-x", infiniVerified: true, providerPref: "local" }));
+  check("显式指定 local → 覆盖自动探测", forced.provider === "local", forced.provider);
+
+  const halfOai = getConfig(Object.assign({}, base, { openaiKey: "sk-y", openaiModel: "", providerPref: "openai" }));
+  check("指定 openai 但缺 model → 降级并说明原因",
+    halfOai.provider === "local" && /缺 OPENAI/.test(halfOai.providerReason), halfOai.providerReason);
+
+  const mock = getConfig(Object.assign({}, base, { infiniKey: "sk-x", infiniVerified: true, forceMock: true }));
+  check("INFINI_MOCK=1 优先级最高", mock.provider === "local", mock.provider);
+
+  // 能力标记必须与实现一致，前端据此决定 UI
+  const P = require(path.join(__dirname, "..", "server", "services", "providers.js"));
+  const lp = P.localProvider(local);
+  check("规则引擎不声称有 AI 能力", lp.capabilities.ai === false && lp.id === "server-rules");
+  const op = P.openaiProvider(oai, { info() {}, warn() {}, error() {} });
+  check("OpenAI provider 声称有 AI 能力", op.capabilities.ai === true && op.id === "openai-compatible");
+}
+
+console.log("\n[11] 云端与本地产物同构：数字由本地统计核负责");
+{
+  const P = require(path.join(__dirname, "..", "server", "services", "providers.js"));
+  const engine = require(path.join(__dirname, "..", "server", "services", "local-engine.js"));
+  const localReport = engine.analyze("哪台机故障率最高", engine.farmRows().slice(0, 200), { provenance: null });
+
+  // LLM 只给叙述，图表 / highlight / evidence 必须来自本地
+  const narrative = { title: "AI 标题", verdict: "AI 结论", sections: [{ h: "AI 小节", lines: ["要点"] }] };
+  const merged = P.mergeWithLocal(narrative, localReport, { engine: "openai-compatible", narrativeBy: "gpt-x" });
+  check("叙述采用 AI 的", merged.title === "AI 标题" && merged.verdict === "AI 结论");
+  check("图表来自本地统计核（云端不再无图表）",
+    !!merged.chart && Array.isArray(merged.chart.items) && merged.chart.items.length > 0);
+  check("highlight 来自本地（云端也有视口联动）", !!merged.highlight && merged.highlight.type === "machine");
+  check("evidence 来自本地（数字可追溯）", Array.isArray(merged.evidence) && merged.evidence.length > 0);
+  check("统计明细不被 AI 叙述覆盖掉",
+    merged.sections.some((s) => /排行/.test(s.h)), JSON.stringify(merged.sections.map((s) => s.h)));
+  check("叙述出处与数字出处分开标注",
+    merged.narrativeBy === "gpt-x" && merged.statsBy === "local-stats-kernel",
+    `${merged.narrativeBy} / ${merged.statsBy}`);
+
+  // AI 挂了 / 返回不可解析内容时，数字不受影响
+  const degraded = P.mergeWithLocal(null, localReport, { engine: "openai-compatible" });
+  check("AI 叙述失败时保留本地全部产物",
+    degraded.verdict === localReport.verdict && !!degraded.chart && degraded.evidence.length > 0);
+  check("AI 叙述失败时如实说明", degraded.sections.some((s) => /降级/.test(s.h)));
+
+  check("JSON 提取能剥掉代码围栏",
+    P.extractJson('```json\n{"a":1}\n```').a === 1);
+  check("JSON 提取对非 JSON 返回 null", P.extractJson("完全不是 JSON") === null);
+
+  // 系统提示词必须明确禁止 LLM 自己算数
+  check("系统提示词禁止 LLM 自行计算", /不要自己做任何算术/.test(P.SYSTEM_PROMPT));
+  check("系统提示词要求区分显著与不显著", /未达统计显著/.test(P.SYSTEM_PROMPT));
+  check("系统提示词禁止因果表述", /不得表述为因果/.test(P.SYSTEM_PROMPT));
+}
+
+console.log("\n[12] 统计简报：token 成本与数据量解耦");
+{
+  const { buildBrief } = require(path.join(__dirname, "..", "server", "services", "brief.js"));
+  const engine = require(path.join(__dirname, "..", "server", "services", "local-engine.js"));
+  const rows = engine.farmRows();
+
+  const brief = buildBrief(rows);
+  const csvLen = engine.farmCsv().length;
+  check("简报显著小于原始 CSV", brief.text.length < csvLen / 5,
+    `简报 ${brief.text.length}B vs CSV ${csvLen}B`);
+
+  // 关键性质：行数翻倍，简报大小基本不变（而 CSV 会翻倍）
+  const doubled = rows.concat(rows.map((r, i) => Object.assign({}, r, { job_id: "X" + i })));
+  const brief2 = buildBrief(doubled);
+  check("行数翻倍后简报大小基本不变",
+    Math.abs(brief2.text.length - brief.text.length) < brief.text.length * 0.25,
+    `${brief.text.length} → ${brief2.text.length}（行数 ${rows.length} → ${doubled.length}）`);
+
+  check("简报含置信区间", /95%CI/.test(brief.text));
+  check("简报含显著性标注", /显著高于其余|未达显著/.test(brief.text));
+  check("简报含样本量守卫说明", /样本量.*不参与排名/.test(brief.text));
+  check("简报明确禁止把相关当因果", /相关不等于因果/.test(brief.text));
+  check("简报结构化事实可复用", !!(brief.facts && brief.facts.machines && brief.facts.overall));
+  check("简报不含原始行数据（不泄漏逐条记录）",
+    !/FARM-0001/.test(brief.text), brief.text.slice(0, 80));
+}
+
+console.log("\n[13] 结果缓存：同一问题不重复烧钱");
+{
+  const app = createApp({ logLevel: "error", forceMock: true, rateLimitMs: 0 });
+  const tasks = app.ctx.tasks;
+  const k1 = tasks.cache.key("哪台机故障率最高", "sample", "openai-compatible");
+  const k2 = tasks.cache.key("哪台机故障率最高", "sample", "openai-compatible");
+  const k3 = tasks.cache.key("哪台机故障率最高", "sample", "server-rules");
+  const k4 = tasks.cache.key("别的问题", "sample", "openai-compatible");
+  check("同问题+同数据集+同 provider → 同 key", k1 === k2);
+  check("换 provider → 不同 key（不会串用别的引擎的结果）", k1 !== k3);
+  check("换问题 → 不同 key", k1 !== k4);
+
+  tasks.cache.set(k1, { verdict: "cached" });
+  check("写入后可命中", tasks.cache.get(k1).verdict === "cached");
+
+  // LRU 容量淘汰
+  const small = new (Object.getPrototypeOf(tasks.cache).constructor)({ cacheTtlMs: 1e9, cacheMax: 2 });
+  small.set("a", { v: 1 }); small.set("b", { v: 2 }); small.set("c", { v: 3 });
+  check("超容量淘汰最久未用", small.get("a") === null && !!small.get("c"));
+
+  // TTL 过期
+  const expired = new (Object.getPrototypeOf(tasks.cache).constructor)({ cacheTtlMs: -1, cacheMax: 10 });
+  expired.set("x", { v: 1 });
+  check("过期条目不再命中", expired.get("x") === null);
+  app.close();
+}
+
+console.log("\n[14] 知识检索（RAG 的 R）");
+{
+  const R = require(path.join(__dirname, "..", "server", "services", "retrieval.js"));
+  const docs = [
+    { id: "k1", name: "工艺术语表", text: "翘边：首层与热床附着失效，零件边缘翘起离床。\n\n回抽：喷头空驶前把耗材回抽一小段，防止拉丝。\n\nOEE：设备综合效率 = 可用率 × 性能 × 良率。" },
+    { id: "k2", name: "材料参数", text: "ABS 推荐喷嘴 255°C，热床 100°C，需要封闭腔体。\n\nPLA 推荐喷嘴 210°C，热床 60°C，风扇全开。" },
+  ];
+
+  check("中文 bigram 分词可用", R.tokenize("翘边").indexOf("翘边") >= 0, R.tokenize("翘边").join(","));
+  check("英文数字按词切分", R.tokenize("ABS 255C").indexOf("abs") >= 0, R.tokenize("ABS 255C").join(","));
+  check("长文档被切成多个片段", R.chunk(docs[0].text).length >= 3, String(R.chunk(docs[0].text).length));
+
+  const h1 = R.retrieve(docs, "翘边是什么原因");
+  check("检索命中相关片段", h1.length > 0 && /翘边/.test(h1[0].text), JSON.stringify(h1[0] && h1[0].text));
+  const h2 = R.retrieve(docs, "ABS 用多少度");
+  check("跨文档检索正确", h2.length > 0 && /ABS/.test(h2[0].text), h2[0] && h2[0].text);
+
+  // 最重要的一条：不相关就不返回。往提示词里塞无关片段只会干扰模型。
+  check("无关问题不返回任何片段", R.retrieve(docs, "zzz quantum foobar").length === 0);
+  check("空知识库安全返回", R.retrieve([], "翘边").length === 0);
+  check("命中带分数便于排序与调试", h1[0].score > 0 && typeof h1[0].name === "string");
+}
+
+console.log("\n[15] 知识库接口：能力标记必须与实际 provider 一致");
+{
+  const app = createApp({ logLevel: "error", forceMock: true, rateLimitMs: 0 });
+  const base = "http://127.0.0.1:" + (await listen(app));
+  const ok = await post(base, "/api/knowledge", { name: "术语表.md", text: "翘边：首层附着失效。" });
+  check("规则引擎下如实标注检索不生效", ok.json.retrievalEnabled === false, JSON.stringify(ok.json));
+  check("并说明为什么不生效", /规则引擎/.test(ok.json.note), ok.json.note);
+
+  const s1 = await post(base, "/api/knowledge/search", { question: "翘边" });
+  check("检索预览可用（用户能自证会检索到什么）", s1.status === 200 && s1.json.hits.length > 0, s1.text);
+  const s2 = await post(base, "/api/knowledge/search", { question: "完全无关的量子力学" });
+  check("检索预览：无命中时明说", s2.json.hits.length === 0 && /没有检索到/.test(s2.json.note || ""), s2.text);
+  const s3 = await post(base, "/api/knowledge/search", { question: "  " });
+  check("检索预览：空问题 → 400", s3.status === 400, String(s3.status));
+
+  await app.close();
+}
+
   console.log(`\n═══ 结果：${passed} 通过 / ${failed} 失败 ═══`);
   process.exit(failed ? 1 : 0);
 }

@@ -129,18 +129,18 @@ jobs:
             console.log('OK: 内置数据集由物理仿真产出，seed =', F.seed, '行数 =', F.rows().length);
           "
 
-      - name: 知识库接口不得宣称已接入检索
+      - name: 知识库能力标记必须与实际 provider 一致
         run: |
           node -e "
-            const { NOT_IMPLEMENTED_NOTE } = require('./server/routes/knowledge.js');
-            const banned = ['将在分析任务中注入', '将被注入', '已生效'];
-            for (const b of banned) {
-              if (NOT_IMPLEMENTED_NOTE.includes(b)) {
-                console.error('知识库提示语宣称了未实现的能力:', b); process.exit(1);
-              }
-            }
-            if (!NOT_IMPLEMENTED_NOTE.includes('尚未实现检索')) {
-              console.error('知识库提示语必须明确说明检索未实现'); process.exit(1);
-            }
-            console.log('OK: 知识库接口如实标注未实现检索');
+            const { createApp } = require('./server/index.js');
+            const app = createApp({ logLevel: 'error', forceMock: true, rateLimitMs: 0 });
+            const p = app.ctx.tasks.provider;
+            if (p.capabilities.ai !== false) { console.error('规则引擎不应声称有 AI 能力'); process.exit(1); }
+            const { retrieve } = require('./server/services/retrieval.js');
+            const hits = retrieve([{ id: 'k1', name: '术语表', text: '翘边：首层附着失效导致边缘翘起。' }], '翘边怎么办');
+            if (!hits.length) { console.error('检索未命中明显相关的文档'); process.exit(1); }
+            const none = retrieve([{ id: 'k1', name: '术语表', text: '翘边：首层附着失效。' }], 'zzz quantum foobar');
+            if (none.length) { console.error('无关问题不应返回片段'); process.exit(1); }
+            console.log('OK: 能力标记一致，检索有命中也有拒绝');
+            app.close();
           "

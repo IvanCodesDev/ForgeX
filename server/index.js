@@ -45,8 +45,8 @@ function createApp(overrides) {
   const log = createLogger(cfg.logLevel);
   const infini = new InfiniClient(cfg, log);
   const datasources = new DatasourceStore(cfg);
-  const tasks = new TaskStore(cfg, log, infini);
   const knowledge = new KnowledgeStore(cfg);
+  const tasks = new TaskStore(cfg, log, infini, knowledge);
   const shares = new ShareStore();
 
   // 同 IP 冷却限流（仅分析接口调用）。
@@ -75,7 +75,17 @@ function createApp(overrides) {
   const router = new Router();
 
   router.add("GET", /^\/healthz$/, (req, res) => {
-    sendJson(res, 200, { ok: true, engine: cfg.mode, reason: cfg.modeReason, now: Date.now() });
+    // engine 与报告里的 engine 字段取同一个值（provider.id），避免 healthz 说一套、报告说另一套
+    const p = tasks.provider;
+    sendJson(res, 200, {
+      ok: true,
+      engine: p.id,
+      provider: cfg.provider,
+      label: p.label,
+      capabilities: p.capabilities,
+      reason: cfg.providerReason,
+      now: Date.now(),
+    });
   });
   require("./routes/analyze").register(router, ctx);
   require("./routes/datasource").register(router, ctx);

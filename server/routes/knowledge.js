@@ -1,32 +1,52 @@
-/* 知识库路由：登记工艺术语/材料参数/设备手册文档。
+/* 知识库路由：登记工艺术语/材料参数/设备手册文档，供分析时检索注入。
 
-   ⚠ 当前状态：**只存不用**。文档存进内存后不会进入任何分析任务的提示词，
-   没有任何检索（RAG）实现——KnowledgeStore.all() 全仓库无调用方。
-   本路由保留的唯一理由是它是 RAG 落地时要复用的存储管线；
-   在检索真正接通之前，响应里绝不能出现「将被使用/将被注入」之类的措辞。
-   实现计划见 doc/优化文档.md §5 P3.10。 */
+   P3 起检索已真实接通（services/retrieval.js，BM25 关键词检索）：
+   提问时按问题检索 top-k 相关片段注入 AI provider 的提示词。
+
+   两个诚实性约束：
+     1. **只有 AI provider 会用到它**。规则引擎是确定性统计，不读自然语言知识——
+        所以在规则引擎模式下必须如实告知「本次配置下不会被使用」。
+     2. **检索不到就不注入**。宁可不给，也不给无关片段——
+        往提示词里塞无关内容只会干扰模型。 */
 "use strict";
 const { HttpError, readJson, sendJson } = require("../lib/http");
-
-/** 未实现能力的统一口径——改这里之前必须先有真实实现 */
-const NOT_IMPLEMENTED_NOTE =
-  "已登记到内存（进程重启或 TTL 到期即失效）。注意：当前版本尚未实现检索，" +
-  "该文档不会进入任何分析任务的提示词，对分析结果没有影响。";
+const { retrieve } = require("../services/retrieval");
 
 function register(router, ctx) {
-  const { knowledge } = ctx;
+  const { knowledge, tasks } = ctx;
 
   router.add("POST", /^\/api\/knowledge$/, async (req, res) => {
     const body = await readJson(req, 600 * 1024);
     if (typeof body.text !== "string") throw new HttpError(400, "text 字段不能为空");
     const doc = knowledge.create(body.name, body.text);
+    const aiEnabled = !!(tasks && tasks.provider && tasks.provider.capabilities.ai);
     sendJson(res, 201, {
       knowledgeId: doc.id,
       name: doc.name,
-      retrievalEnabled: false,        // 机器可读的能力标记，前端据此决定是否展示相关 UI
-      note: NOT_IMPLEMENTED_NOTE,
+      chunks: doc.text.length,
+      // 机器可读的能力标记：前端据此决定是否展示知识库相关 UI
+      retrievalEnabled: aiEnabled,
+      note: aiEnabled
+        ? "已登记。提问时会按问题检索相关片段注入 AI 提示词（BM25 关键词检索，检索不到则不注入）。" +
+          "存储为内存态，进程重启或 TTL 到期即失效。"
+        : "已登记，但**当前配置下不会被使用**：正在运行的是规则引擎（确定性统计，不读自然语言知识）。" +
+          "配置 AI provider（INFINI_API_KEY 或 OPENAI_API_KEY）后检索才会生效。存储为内存态。",
+    });
+  });
+
+  /** 检索预览：让用户能自己验证「问这个问题时会检索到什么」，而不是盲信 */
+  router.add("POST", /^\/api\/knowledge\/search$/, async (req, res) => {
+    const body = await readJson(req, 8 * 1024);
+    const q = String(body.question || "").trim();
+    if (!q) throw new HttpError(400, "question 不能为空");
+    const hits = retrieve(knowledge.all(), q, { topK: Number(body.topK) || 4 });
+    sendJson(res, 200, {
+      question: q,
+      docCount: knowledge.all().length,
+      hits: hits,
+      note: hits.length ? undefined : "没有检索到相关片段——分析时不会注入任何知识内容。",
     });
   });
 }
 
-module.exports = { register, NOT_IMPLEMENTED_NOTE };
+module.exports = { register };

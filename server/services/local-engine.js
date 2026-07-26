@@ -19,7 +19,8 @@ module.exports = {
   FIELDS: D.FIELDS,
   PROVENANCE: D.PROVENANCE,
   MIN_SAMPLE: E.MIN_SAMPLE,
-  stats: globalThis.FXStats,
+  stats: globalThis.FXStats,   // 统计核（Wilson / Fisher / 偏相关 / Mann-Kendall）
+  engineApi: E,                // 规则引擎全量 API（groupBy / stats / dateRange…）
   parseCsv: (text) => D.parseCsv(text),
   toCsv: (rows) => D.toCsv(rows),
   /** 内置数据集：物理仿真产出的机群数据（不是概率合成） */
