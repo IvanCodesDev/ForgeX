@@ -1,0 +1,26 @@
+# 行尾统一为 LF —— 仓库内存 LF，且**检出时也保持 LF**（含 Windows）。
+#
+# 为什么必须显式声明 eol=lf：
+# Windows 上 git 默认 core.autocrlf=true 会在检出时转成 CRLF，
+# 而本项目 prettier 配置的是 endOfLine:lf ——两者一叠加，
+# Windows 贡献者本地 `npm run check` 会把每一个文件都判为格式错误，
+# 而 Linux CI 却是绿的。这类「只在某些机器上失败」的问题最消耗人。
+* text=auto eol=lf
+
+# 二进制资源不做任何规范化
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.ico   binary
+*.gz    binary
+*.zip   binary
+
+# 自动生成的产物：在 diff 中折叠，避免淹没真实变更
+js/farm-dataset.js              linguist-generated=true
+datasets/*.csv                  linguist-generated=true
+datasets/*_telemetry.json       linguist-generated=true
+package-lock.json               linguist-generated=true
+
+# vendored 第三方库不计入语言统计
+js/vendor/*  linguist-vendored=true
