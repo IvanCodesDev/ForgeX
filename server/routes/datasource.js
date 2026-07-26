@@ -8,11 +8,12 @@ function register(router, ctx) {
   router.add("POST", /^\/api\/datasource$/, async (req, res) => {
     const body = await readJson(req, 4 * 1024 * 1024 + 64 * 1024);   // CSV 4MB + JSON 包装余量
     if (typeof body.csv !== "string" || !body.csv.trim()) throw new HttpError(400, "csv 字段不能为空");
-    const ds = datasources.create(body.name, body.csv);
+    const ds = datasources.create(body.name, body.csv, body.provenance);
     sendJson(res, 201, {
       datasourceId: ds.id,
       name: ds.name,
       rows: ds.rows.length,
+      provenance: ds.provenance,
       warnings: ds.warnings && ds.warnings.length ? ds.warnings : undefined,
     });
   });

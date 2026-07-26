@@ -169,3 +169,31 @@ jobs:
             console.log('OK: 能力标记一致，检索有命中也有拒绝');
             app.close();
           "
+
+  e2e:
+    name: E2E（DOM 层）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 安装工具链与浏览器
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      # 覆盖 ui.js / insight.js 这两块纯逻辑测试够不到的地方：
+      # 「打不开」「点了没反应」「界面说了假话」
+      - run: npm run test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

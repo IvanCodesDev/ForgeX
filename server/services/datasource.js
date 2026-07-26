@@ -27,7 +27,37 @@ class DatasourceStore {
     });
   }
 
-  create(name, csvText) {
+  /**
+   * 客户端声明的数据来源。
+   *
+   * 为什么要接受它：前端把「机群仿真」数据集上传给后端分析时，
+   * 后端只看到一份 CSV，无从判断它是仿真产物还是真实产线数据——
+   * 一律标成 user-upload 的结果是**合成数据经过后端一趟就变成了「真实数据」**，
+   * 报告里的合成标记随之消失。这正是 provenance 契约要防的事。
+   *
+   * 安全方向：客户端只能让标记**更谨慎**，不能更宽松。
+   * 声明 synthetic:true 一律采信（多标一次无害）；
+   * 声明 synthetic:false 不采信——后端无法验证，默认按上传数据处理即可。
+   */
+  static sanitizeProvenance(claim) {
+    const base = engine.PROVENANCE.upload;
+    if (!claim || typeof claim !== "object") return base;
+    const known = engine.PROVENANCE[claim.source] || null;
+    if (known && known.synthetic) return known;              // 已知的合成来源，原样采用
+    if (claim.synthetic === true) {
+      // 未知来源但自称合成：保守起见照样标出来，只是措辞泛化
+      return {
+        source: "client-declared-synthetic",
+        synthetic: true,
+        badge: String(claim.badge || "合成").slice(0, 8),
+        note: "客户端声明为合成/仿真数据，非真实产线数据。",
+        generator: null,
+      };
+    }
+    return base;
+  }
+
+  create(name, csvText, provenanceClaim) {
     const out = engine.parseCsv(csvText);
     if (!out.rows.length) {
       throw new HttpError(400, "CSV 解析失败：" + (out.errors[0] || "无有效数据"));
@@ -41,7 +71,7 @@ class DatasourceStore {
       builtin: false,
       createdAt: Date.now(),
       warnings: out.errors,
-      provenance: engine.PROVENANCE.upload,
+      provenance: DatasourceStore.sanitizeProvenance(provenanceClaim),
     };
     this.map.set(ds);          // FileStore 自带容量淘汰
     return ds;

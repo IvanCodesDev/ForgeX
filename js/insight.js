@@ -296,7 +296,7 @@
       var self = this;
       var t0 = Date.now();
       this._pushStage("上传数据集（" + rows.length + " 行）", 0.05);
-      FXApiClient.uploadDatasource(FXInsightData.toCsv(rows), "print_jobs.csv")
+      FXApiClient.uploadDatasource(FXInsightData.toCsv(rows), "print_jobs.csv", this.store.provenance())
         .then(function (ds) {
           self._pushStage("提交分析任务", 0.12);
           return FXApiClient.analyze(question, ds.datasourceId);

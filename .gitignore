@@ -21,9 +21,11 @@ tests/.tmp-*
 # 其中的技术设计部分已脱敏拆分为 doc/architecture.md（已入库）。
 doc/开发文档.md
 
-# 覆盖率产物
+# 覆盖率与 E2E 产物
 coverage/
 .nyc_output/
+test-results/
+playwright-report/
 
 # 运行时持久化数据（数据源 / 分享页 / 知识库 / 用量计数）
 # 这是用户数据，不该进仓库；容器部署时挂卷到这里。

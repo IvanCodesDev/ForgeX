@@ -13,3 +13,7 @@ server/
 tests/
 index.html
 css/
+
+# Playwright 产物
+test-results/
+playwright-report/

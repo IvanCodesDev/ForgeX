@@ -74,11 +74,12 @@
   };
 
   /** 上传数据源（CSV 文本）：POST /api/datasource → {datasourceId} */
-  C.uploadDatasource = function (csvText, name) {
+  C.uploadDatasource = function (csvText, name, provenance) {
     return fetch(join("/api/datasource"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name || "print_jobs.csv", csv: csvText }),
+      // 带上来源：否则合成数据经后端一趟就会被标成真实上传数据，报告里的合成标记消失
+      body: JSON.stringify({ name: name || "print_jobs.csv", csv: csvText, provenance: provenance || null }),
     }).then(function (r) {
       if (!r.ok) throw new Error("数据源上传失败（HTTP " + r.status + "）");
       return r.json();

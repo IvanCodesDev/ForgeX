@@ -21,7 +21,8 @@ node server/index.js     # 或 npm start
 跑测试：
 
 ```bash
-npm test        # 462 项断言，零依赖，无需 install
+npm test        # 468 项断言，零依赖，无需 install
+npm run test:e2e  # 16 项 DOM 层测试（需 npm install + playwright install chromium）
 ```
 
 ---
@@ -153,7 +154,7 @@ tools/farm-sim.js     虚拟机群：物理仿真批量产出数据集
 datasets/             机群仿真数据集与配套遥测
 doc/优化文档.md        现状体检 + 重构路线图
 doc/samples/          旧的概率合成数据（仅回归测试用）
-tests/                7 个测试套件，共 462 项断言
+tests/                7 个单元套件（468 项断言）+ tests/e2e（16 项 Playwright）
 ```
 
 ---
@@ -171,6 +172,7 @@ node tests/insight.test.js   # 洞察：数据/解析/统计守卫/来源标记/
 node tests/farm.test.js      # 虚拟机群：物理特征确定性/涌现区分度/效应可调转/证据自洽（48 项）
 node tests/server.test.js    # 后端契约 + provider + 持久化 + 成本闸门 + 鉴权 + 指标（151 项）
 node tests/check-refs.js     # HTML ↔ JS 的 DOM id 引用交叉校验
+npm run test:e2e             # E2E：启动/面板交互/统计严谨性在界面上可见（16 项）
 
 node tests/deploy-check.js https://你的域名   # 部署后线上冒烟
 ```

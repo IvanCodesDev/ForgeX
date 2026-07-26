@@ -116,6 +116,8 @@ module.exports = [
       "js/farm-dataset.js",
       "node_modules/**",
       "coverage/**",
+      "test-results/**",
+      "playwright-report/**",
       "**/.tmp-*",
     ],
   },
@@ -144,6 +146,18 @@ module.exports = [
       ecmaVersion: 2022,
       sourceType: "commonjs",
       globals: NODE_GLOBALS,
+    },
+    rules: COMMON_RULES,
+  },
+
+  /* E2E 用例是 Node 文件，但 page.evaluate() 的回调在浏览器里执行——
+     同一个文件里两套运行环境，两套全局都得放行。 */
+  {
+    files: ["tests/e2e/**/*.js", "playwright.config.js"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "commonjs",
+      globals: { ...NODE_GLOBALS, ...BROWSER_GLOBALS, ...FRONTEND_GLOBALS },
     },
     rules: COMMON_RULES,
   },

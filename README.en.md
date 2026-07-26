@@ -27,7 +27,8 @@ node server/index.js     # or: npm start
 Run the tests:
 
 ```bash
-npm test        # 462 assertions, zero dependencies
+npm test          # 468 assertions, zero dependencies
+npm run test:e2e  # 16 DOM-level tests (needs npm install + playwright install chromium)
 ```
 
 ---
@@ -157,7 +158,7 @@ tools/farm-sim.js     virtual print farm: physics-generated datasets
 datasets/             farm datasets and companion telemetry
 doc/优化文档.md        current-state audit + refactor roadmap (Chinese)
 doc/samples/          legacy probability-synthesized data (regression input only)
-tests/                7 suites, 462 assertions total
+tests/                7 unit suites (468 assertions) + tests/e2e (16 Playwright)
 ```
 
 ---
@@ -175,6 +176,7 @@ node tests/insight.test.js   # insight: data / parsing / guards / provenance / s
 node tests/farm.test.js      # virtual farm: determinism / emergent discrimination / effect inversion (48)
 node tests/server.test.js    # backend contract + provider abstraction + brief + cache + retrieval (98)
 node tests/check-refs.js     # HTML ↔ JS DOM id cross-check
+npm run test:e2e             # E2E: boot / panel interaction / statistical honesty visible in the UI (16)
 
 node tests/deploy-check.js https://your-domain   # post-deploy smoke test
 ```

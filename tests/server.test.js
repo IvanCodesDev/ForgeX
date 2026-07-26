@@ -135,6 +135,33 @@ async function main() {
     check("缺 status 列 → 400 且给出原因", bad.status === 400 && bad.json.error.includes("status"), bad.text);
     const badJson = await jfetch(base, "/api/datasource", { method: "POST", body: "{{{", headers: { "Content-Type": "application/json" } });
     check("非法 JSON → 400", badJson.status === 400, String(badJson.status));
+
+    /* 来源标记必须能穿过后端。
+       曾经的缺陷：前端把「机群仿真」数据上传来分析，后端一律标成 user-upload，
+       于是**合成数据经过后端一趟就变成了「真实数据」**，报告里的合成标记消失。
+       这是 provenance 契约要防的头号问题，由 E2E 测试抓到。 */
+    const synth = await post(base, "/api/datasource", {
+      name: "s.csv", csv: CSV_OK, provenance: { source: "sim-farm", synthetic: true, badge: "机群仿真" },
+    });
+    check("合成来源穿过后端不丢失", synth.json.provenance && synth.json.provenance.synthetic === true,
+      JSON.stringify(synth.json.provenance));
+    const sr = await post(base, "/api/analyze", { question: "哪台机故障率最高", datasourceId: synth.json.datasourceId });
+    await collectSse(base, "/api/analyze/" + sr.json.taskId + "/stream", 8000);
+    const srep = await jfetch(base, "/api/analyze/" + sr.json.taskId + "/result");
+    check("报告继承合成标记", srep.json.provenance && srep.json.provenance.synthetic === true,
+      JSON.stringify(srep.json.provenance));
+
+    // 反方向不采信：客户端不能把数据声明成「更真实」
+    const lie = await post(base, "/api/datasource", {
+      name: "l.csv", csv: CSV_OK, provenance: { source: "real-production", synthetic: false, badge: "真实产线" },
+    });
+    check("客户端不能把数据标成更真实（只能更谨慎）",
+      lie.json.provenance.source === "user-upload", JSON.stringify(lie.json.provenance));
+    const weird = await post(base, "/api/datasource", {
+      name: "w.csv", csv: CSV_OK, provenance: { source: "某种未知来源", synthetic: true },
+    });
+    check("未知来源但自称合成 → 保守标出",
+      weird.json.provenance.synthetic === true, JSON.stringify(weird.json.provenance));
   }
 
   console.log("\n[4] 分析任务：创建 → SSE 进度 → 结果（内置示例数据）");
