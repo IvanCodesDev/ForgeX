@@ -1,0 +1,22 @@
+{
+  "$schema": "../../logs/machine-log.schema.json",
+  "format": "forgex-machine-log",
+  "version": 1,
+  "job": {
+    "jobId": "P6-SUPERSLICER-RRF",
+    "machineId": "FX-VALIDATION-01",
+    "firmware": "RepRapFirmware 3.5",
+    "slicer": "SuperSlicer 2.5",
+    "gcodeSha256": "1c652a1ff1802277cf54500764c4b78e2436c8a2a9bbaf62825ffa467cf4fac0",
+    "durationSec": 615.5524271728019,
+    "filamentMm": 12.8,
+    "filamentG": 0.0382,
+    "completedLayers": 4,
+    "status": "success"
+  },
+  "telemetry": [
+    { "timeSec": 0, "nozzleC": 25, "bedC": 25 },
+    { "timeSec": 90, "nozzleC": 220, "bedC": 65 },
+    { "timeSec": 615.5524271728019, "nozzleC": 219.5, "bedC": 64.8 }
+  ]
+}

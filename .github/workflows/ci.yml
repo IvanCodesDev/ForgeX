@@ -183,10 +183,9 @@ jobs:
       - name: 安装工具链与浏览器
         run: |
           npm install --no-audit --no-fund
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium firefox webkit
 
-      # 覆盖 ui.js / insight.js 这两块纯逻辑测试够不到的地方：
-      # 「打不开」「点了没反应」「界面说了假话」
+      # Chromium 跑全量；Firefox / WebKit 跑启动与 G-code→日志关键链路。
       - run: npm run test:e2e
 
       - uses: actions/upload-artifact@v4

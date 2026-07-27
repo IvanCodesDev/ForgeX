@@ -1,0 +1,70 @@
+{
+  "format": "forgex-time-calibration-report",
+  "version": 1,
+  "sourceManifest": "validation/fixture-manifest.json",
+  "provenance": "synthetic-conformance",
+  "disclaimer": "These compact files are hand-authored compatibility fixtures. They exercise real slicer and firmware dialect syntax, but they are not captured production jobs and must not be presented as measured printer accuracy.",
+  "fixtures": [
+    {
+      "id": "cura-marlin",
+      "role": "training",
+      "slicer": "Cura_SteamEngine 5.10.0",
+      "firmware": "Marlin 2.1",
+      "plannedTimeSec": 36.424264,
+      "actualTimeSec": 135.53033
+    },
+    {
+      "id": "prusa-marlin",
+      "role": "training",
+      "slicer": "PrusaSlicer 2.8.1",
+      "firmware": "Marlin 2.1",
+      "plannedTimeSec": 72.471405,
+      "actualTimeSec": 180.589256
+    },
+    {
+      "id": "orca-klipper",
+      "role": "training",
+      "slicer": "OrcaSlicer 2.2.0",
+      "firmware": "Klipper 0.12",
+      "plannedTimeSec": 168.565685,
+      "actualTimeSec": 300.707107
+    },
+    {
+      "id": "superslicer-rrf",
+      "role": "holdout",
+      "slicer": "SuperSlicer 2.5.60",
+      "firmware": "RepRapFirmware 3.5",
+      "plannedTimeSec": 420.441942,
+      "actualTimeSec": 615.552427
+    }
+  ],
+  "model": {
+    "format": "forgex-time-calibration",
+    "version": 1,
+    "method": "theil-sen",
+    "scope": {
+      "machineId": "FX-VALIDATION-01",
+      "firmware": "mixed compatibility fixture"
+    },
+    "sampleCount": 3,
+    "motionScale": 1.25,
+    "fixedOverheadSec": 90,
+    "trainingMetrics": {
+      "sampleCount": 3,
+      "maeSec": 0,
+      "mape": 0,
+      "rmseSec": 0,
+      "maxApe": 0,
+      "r2": 1
+    },
+    "crossValidation": null
+  },
+  "holdoutMetrics": {
+    "sampleCount": 1,
+    "maeSec": 0,
+    "mape": 0,
+    "rmseSec": 0,
+    "maxApe": 0,
+    "r2": null
+  }
+}

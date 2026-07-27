@@ -1,7 +1,7 @@
 /* Playwright 配置 —— 补上仓库最大的测试盲区。
 
    `js/ui.js`（1000+ 行）与 `js/insight.js`（700+ 行）此前零覆盖：
-   纯逻辑模块有 464 项断言护着，而用户实际点到的那一层一行没测。
+   纯逻辑模块有完整断言护着，而用户实际点到的那一层仍需浏览器验证。
    这里覆盖的是「打不开 / 点了没反应 / 界面说了假话」这三类，
    它们恰恰是纯逻辑测试永远抓不到的。
 
@@ -29,17 +29,29 @@ module.exports = defineConfig({
     baseURL: "http://127.0.0.1:8899",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
-    launchOptions: {
-      args: [
-        // 无头环境没有 GPU，强制 SwiftShader 软渲染，否则 WebGL 上下文创建失败
-        "--use-gl=swiftshader",
-        "--enable-unsafe-swiftshader",
-        "--disable-gpu-sandbox",
-      ],
-    },
   },
 
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        launchOptions: {
+          args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--disable-gpu-sandbox"],
+        },
+      },
+    },
+    {
+      name: "firefox",
+      testMatch: "**/cross-browser.spec.js",
+      use: { ...devices["Desktop Firefox"] },
+    },
+    {
+      name: "webkit",
+      testMatch: "**/cross-browser.spec.js",
+      use: { ...devices["Desktop Safari"] },
+    },
+  ],
 
   webServer: {
     // 用规则引擎 + 临时数据目录：E2E 不该依赖任何外部密钥，也不该污染仓库

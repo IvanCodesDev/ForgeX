@@ -204,8 +204,13 @@
           sim.applyMaterial(k);
           if (sim.importedToolpath && this._gcodeState) {
             this._gcodeState.reconcile = FXGcodeParser.reconcile(sim.slice);
-            if (this._machineLogState)
+            if (this._machineLogState) {
               this._machineLogState.comparison = FXMachineLog.compare(sim.slice, this._machineLogState.log);
+              this._machineLogState.observation = FXTimeCalibration.observation(
+                sim.slice,
+                this._machineLogState.log
+              );
+            }
             if (this.currentNav === "import") this.renderCtx("import");
           }
           FXU.$$(".chip", matRow).forEach((x) => x.classList.toggle("on", x.textContent === k));
@@ -493,8 +498,12 @@
           const actual = el("div", "machine-log-summary");
           actual.id = "machine-log-summary";
           actual.innerHTML = `<div class="kv"><span class="k">真机日志</span><span class="v">${FXU.esc(M.log.name)} · ${FXU.esc(M.log.status)}</span></div>
-            ${rows || '<div class="kv"><span class="k">对比</span><span class="v">日志缺少可比较的任务汇总字段</span></div>'}`;
+            ${M.log.machineId ? `<div class="kv"><span class="k">设备 / 固件</span><span class="v">${FXU.esc(M.log.machineId)} · ${FXU.esc(M.log.firmware || "未声明")}</span></div>` : ""}
+            ${rows || '<div class="kv"><span class="k">对比</span><span class="v">日志缺少可比较的任务汇总字段</span></div>'}
+            ${M.observation ? `<div class="kv"><span class="k">单任务观测倍率</span><span class="v">${M.observation.rawRatio.toFixed(2)}× · ${M.observation.deltaSec >= 0 ? "+" : "−"}${FXGcodeParser.fmtSec(Math.abs(M.observation.deltaSec))}</span></div>` : ""}`;
           body.appendChild(actual);
+          if (M.observation)
+            body.appendChild(el("div", "note", M.observation.note));
           for (const warning of M.log.warnings) body.appendChild(el("div", "note", `⚠ ${warning}`));
         }
       }
@@ -780,7 +789,8 @@
         try {
           const log = FXMachineLog.parse(rd.result, { name: f.name });
           const comparison = FXMachineLog.compare(this._gcodeState.parsed, log);
-          this._machineLogState = { log, comparison };
+          const observation = FXTimeCalibration.observation(this._gcodeState.parsed, log);
+          this._machineLogState = { log, comparison, observation };
           if (this.currentNav === "import") this.renderCtx("import");
           this.toast(`真机日志已接入：生成 ${comparison.length} 项计划/实测对比`, "ok");
         } catch (e) {

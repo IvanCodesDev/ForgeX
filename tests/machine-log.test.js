@@ -30,6 +30,28 @@ check("读出耗材长度与克重", json.filamentMm === 8240 && json.filamentG 
 check("读出完成层数与状态", json.completedLayers === 120 && json.status === "success");
 check("读出温度遥测", json.samples.length === 4 && json.samples[1].nozzleC === 209.6);
 
+const linked = Log.parse(JSON.stringify({
+  format: "forgex-machine-log",
+  version: 1,
+  job: {
+    jobId: "J-1",
+    machineId: "FX-01",
+    firmware: "Klipper 0.12",
+    slicer: "OrcaSlicer 2.2",
+    gcodeSha256: "a".repeat(64),
+    durationSec: 100,
+    status: "success",
+  },
+  telemetry: [],
+}));
+check(
+  "保留任务、机型、固件与 G-code 责任链",
+  linked.jobId === "J-1" &&
+    linked.machineId === "FX-01" &&
+    linked.firmware === "Klipper 0.12" &&
+    linked.gcodeSha256 === "a".repeat(64)
+);
+
 console.log("\n[2] 通用 CSV 真机日志");
 const csv = [
   "time_s,nozzle_c,bed_c,filament_mm,filament_g,completed_layers,status",

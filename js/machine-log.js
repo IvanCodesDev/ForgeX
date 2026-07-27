@@ -110,6 +110,11 @@
     var result = {
       name: name || firstText(data.id, job.jobId, job.job_id, "machine-log"),
       format: data.format || "generic-machine-log",
+      jobId: firstText(job.jobId, job.job_id),
+      machineId: firstText(job.machineId, job.machine_id),
+      firmware: firstText(job.firmware, data.firmware),
+      slicer: firstText(job.slicer, data.slicer),
+      gcodeSha256: firstText(job.gcodeSha256, job.gcode_sha256).toLowerCase(),
       actualTimeSec: duration,
       filamentMm: firstFinite(job.filamentMm, job.filament_mm),
       filamentG: firstFinite(job.filamentG, job.filament_g),

@@ -87,6 +87,7 @@ const STATIC_ALLOW = [
   /^\/js\//,
   /^\/doc\/samples\//,
   /^\/profiles\/(?:example-bundle|profile-bundle\.schema)\.json$/,
+  /^\/validation\/(?:fixture-manifest|time-calibration-report)\.json$/,
 ];
 
 function serveStatic(req, res, root) {

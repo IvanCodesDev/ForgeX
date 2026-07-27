@@ -1,0 +1,22 @@
+{
+  "$schema": "../../logs/machine-log.schema.json",
+  "format": "forgex-machine-log",
+  "version": 1,
+  "job": {
+    "jobId": "P6-CURA-MARLIN",
+    "machineId": "FX-VALIDATION-01",
+    "firmware": "Marlin 2.1",
+    "slicer": "Cura 5.10",
+    "gcodeSha256": "0881cfdac2ef41f6df48f7f5e0f47fd632dcddec8238955ce3a59a6bd754cf07",
+    "durationSec": 135.5303300858899,
+    "filamentMm": 6,
+    "filamentG": 0.0179,
+    "completedLayers": 2,
+    "status": "success"
+  },
+  "telemetry": [
+    { "timeSec": 0, "nozzleC": 25, "bedC": 25 },
+    { "timeSec": 90, "nozzleC": 210, "bedC": 60 },
+    { "timeSec": 135.5303300858899, "nozzleC": 209.7, "bedC": 59.8 }
+  ]
+}

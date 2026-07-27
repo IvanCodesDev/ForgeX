@@ -3,7 +3,7 @@
 ### 让每一次打印，都成为可观察、可复现、可分析的数字实验
 
 [![CI](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml/badge.svg)](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.15.0-2563eb)
+![Version](https://img.shields.io/badge/version-0.16.0-2563eb)
 ![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-16a34a)
 ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-0f172a)
 [![License](https://img.shields.io/badge/license-Apache--2.0-f97316)](./LICENSE)
@@ -16,9 +16,9 @@ FORGE·X Insight 是一个面向 FDM 增材制造的浏览器端数字实验平�
 
 ## 核心体验
 
-| 数字实验                                   | 真实任务复盘                                       | 生产洞察                                |
-| ------------------------------------------ | -------------------------------------------------- | --------------------------------------- |
-| 四类运动学、逐层切片、温控、调平与故障演练 | G-code 3D 回放、切片器对账、真机 JSON/CSV 日志对比 | 仿真采集、KPI、统计检验、机群定位与分享 |
+| 数字实验                                   | 真实任务复盘                                             | 生产洞察                                |
+| ------------------------------------------ | -------------------------------------------------------- | --------------------------------------- |
+| 四类运动学、逐层切片、温控、调平与故障演练 | G-code 3D 回放、真机日志对比、配对任务时间观测与稳健校准 | 仿真采集、KPI、统计检验、机群定位与分享 |
 
 ### 从模型到洞察的一体化流程
 
@@ -26,7 +26,8 @@ FORGE·X Insight 是一个面向 FDM 增材制造的浏览器端数字实验平�
 
 - **模型准备**：内置参数化模型、摆放与缩放、图片浮雕和剪影建模。
 - **路径切片**：周界、顶底实心层、扫描线填充、支撑与裙边；任意层路径可在 2D/3D 中同步预览。
-- **真实任务复盘**：导入 Cura / PrusaSlicer 常见 G-code，保留真实 E 增量逐层回放，并与切片器声明和真机任务日志并列对比。
+- **真实任务复盘**：导入 Cura、PrusaSlicer、OrcaSlicer 与 SuperSlicer 常见方言，保留真实 E 增量逐层回放，并与切片器声明和真机任务日志并列对比。
+- **时间校准**：单个配对任务展示原始偏差与倍率；三个以上不同时长任务可用 Theil–Sen 稳健拟合固定开销和运动倍率，并保留训练/留出误差。
 - **设备仿真**：CoreXY、i3、Delta 与大幅面龙门四套运动学，覆盖预热、调平、打印、暂停、恢复和完成状态。
 - **过程监控**：喷嘴/热床温度、耗材、负载、进度和事件时间线实时更新。
 - **质量评估**：基于本次任务的温度偏差、调平残差、速度变化与故障记录生成质量报告。
@@ -45,6 +46,10 @@ FORGE·X Insight 是一个面向 FDM 增材制造的浏览器端数字实验平�
 ### 开放配置，有边界
 
 机器与材料 Profile 使用声明式 JSON：社区可以扩展构建空间、温度、密度、流量、收缩、参考价格与物理特征，但不能注入代码、覆盖内置 ID 或声明尚未实现的运动学。数据集 manifest 同步记录来源、许可证、隐私状态、复现命令与文件哈希。
+
+### 校准结果可审计
+
+G-code 与真机日志通过 SHA-256 绑定，夹具 manifest 记录切片器、固件、机型、来源、训练/留出角色和预期路径。仓库内置的是明确标注的合成兼容性夹具，用于验证流程可复现，不作为生产精度证明。
 
 ### 统计结果可解释
 
@@ -103,14 +108,14 @@ npm start
 
 ## 仿真与导出
 
-| 能力          | 实现                                                                  |
-| ------------- | --------------------------------------------------------------------- |
-| 切片          | 周界偏置、奇偶规则扫描线填充、实心层、支撑、裙边                      |
-| G-code 复盘   | 常见 Cura/Prusa 注释、绝对/相对 E、床角/中心原点、2D/3D 逐层回放      |
-| 真机日志对比  | 标准 JSON 或常见 CSV；计划与实际时长、耗材、完成层数并列              |
-| 温控与调平    | 热惯性模型；3×3 探测、5×5 补偿网格、打印时双线性插值                  |
-| Profile 扩展  | 机器/材料 JSON bundle、schema、白名单、范围校验、参考价格与本地持久化 |
-| 网格/路径导出 | 二进制 STL、ASCII OBJ、Marlin 风格 G-code                             |
+| 能力           | 实现                                                                  |
+| -------------- | --------------------------------------------------------------------- |
+| 切片           | 周界偏置、奇偶规则扫描线填充、实心层、支撑、裙边                      |
+| G-code 复盘    | 常见 Cura/Prusa 注释、绝对/相对 E、床角/中心原点、2D/3D 逐层回放      |
+| 真机日志与校准 | 标准 JSON 或常见 CSV；计划/实测并列、单任务倍率、稳健多任务时间模型   |
+| 温控与调平     | 热惯性模型；3×3 探测、5×5 补偿网格、打印时双线性插值                  |
+| Profile 扩展   | 机器/材料 JSON bundle、schema、白名单、范围校验、参考价格与本地持久化 |
+| 网格/路径导出  | 二进制 STL、ASCII OBJ、Marlin 风格 G-code                             |
 
 导出的制造文件应在进入实体设备工作流前，使用目标切片器、固件配置和设备安全流程再次校验。
 
@@ -119,7 +124,7 @@ npm start
 ```text
 Browser
 ├─ 3D scene / printer kinematics / print animation
-├─ slicer / G-code replay / machine-log comparison
+├─ slicer / G-code replay / machine-log comparison / time calibration
 ├─ profile registry / simulator / telemetry / exporters
 ├─ statistics kernel / insight engine / fleet view
 └─ API client
@@ -144,13 +149,19 @@ Node.js service
 ## 验证
 
 ```bash
-npm test             # 552 项核心逻辑与服务契约断言 + 生态文件校验
-npm run test:e2e     # 18 个 Playwright 界面场景
+npm test             # 572 项核心/服务断言 + 17 项生态、61 项夹具、13 项发布检查
+npm run test:e2e     # 24 个浏览器场景：Chromium 全量 + Firefox/WebKit 关键链路
+npm run validate:fixtures
+npm run release:check
 npm run lint
 npm run format:check
 ```
 
-测试覆盖切片、G-code、真机日志、Profile、调平、仿真状态机、导出、统计核、洞察引擎、虚拟机群、数据集完整性、后端契约以及关键界面流程。
+测试覆盖切片、G-code、真机日志、时间校准、Profile、调平、仿真状态机、导出、统计核、洞察引擎、虚拟机群、数据集完整性、后端契约以及三浏览器关键界面流程。
+
+P6 方言夹具、来源边界和真实数据贡献流程见
+[`validation/README.md`](./validation/README.md)。内置校准报告的 provenance 是
+`synthetic-conformance`；把真实机台数据加入训练前必须先作为 holdout 审查。
 
 [观看约 90 秒无声演示](./doc/assets/forgex-p5-demo.webm)，配套讲解词见
 [`doc/demo-script.md`](./doc/demo-script.md)；P5 工程复盘见
@@ -201,6 +212,7 @@ server/               HTTP service, providers and platform controls
 datasets/             reproducible virtual-farm datasets
 profiles/             machine/material profile schema and examples
 logs/                 machine-log schema and examples
+validation/           paired G-code/log fixtures and calibration reports
 tools/                headless simulation and dataset generation
 tests/                unit, contract and end-to-end tests
 doc/                   architecture and engineering notes

@@ -1,0 +1,22 @@
+{
+  "$schema": "../../logs/machine-log.schema.json",
+  "format": "forgex-machine-log",
+  "version": 1,
+  "job": {
+    "jobId": "P6-ORCA-KLIPPER",
+    "machineId": "FX-VALIDATION-01",
+    "firmware": "Klipper 0.12",
+    "slicer": "OrcaSlicer 2.2",
+    "gcodeSha256": "bc39cbac84e164415eb9902586f52cf186c1116bc270260958a2b8694dc13324",
+    "durationSec": 300.70710678118655,
+    "filamentMm": 9.6,
+    "filamentG": 0.0286,
+    "completedLayers": 3,
+    "status": "success"
+  },
+  "telemetry": [
+    { "timeSec": 0, "nozzleC": 25, "bedC": 25 },
+    { "timeSec": 90, "nozzleC": 215, "bedC": 60 },
+    { "timeSec": 300.70710678118655, "nozzleC": 214.6, "bedC": 59.7 }
+  ]
+}

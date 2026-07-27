@@ -1,0 +1,22 @@
+{
+  "$schema": "../../logs/machine-log.schema.json",
+  "format": "forgex-machine-log",
+  "version": 1,
+  "job": {
+    "jobId": "P6-PRUSA-MARLIN",
+    "machineId": "FX-VALIDATION-01",
+    "firmware": "Marlin 2.1",
+    "slicer": "PrusaSlicer 2.8",
+    "gcodeSha256": "079510b978079066a4a4328cd583bf375508a7706eb8031dafe5c4d903e4828c",
+    "durationSec": 180.5892556509888,
+    "filamentMm": 7.2,
+    "filamentG": 0.0215,
+    "completedLayers": 2,
+    "status": "success"
+  },
+  "telemetry": [
+    { "timeSec": 0, "nozzleC": 25, "bedC": 25 },
+    { "timeSec": 90, "nozzleC": 215, "bedC": 60 },
+    { "timeSec": 180.5892556509888, "nozzleC": 214.8, "bedC": 59.9 }
+  ]
+}

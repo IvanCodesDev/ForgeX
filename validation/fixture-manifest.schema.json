@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/IvanCodesDev/ForgeX/raw/main/validation/fixture-manifest.schema.json",
+  "title": "FORGE·X validation fixture set",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "version", "id", "provenance", "license", "disclaimer", "calibrationScope", "fixtures"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "format": { "const": "forgex-validation-fixture-set" },
+    "version": { "const": 1 },
+    "id": { "type": "string", "minLength": 1 },
+    "provenance": {
+      "enum": ["synthetic-conformance", "real-anonymized", "real-consented"]
+    },
+    "license": { "type": "string", "minLength": 1 },
+    "disclaimer": { "type": "string", "minLength": 20 },
+    "calibrationScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["machineId", "firmware"],
+      "properties": {
+        "machineId": { "type": "string" },
+        "firmware": { "type": "string" }
+      }
+    },
+    "fixtures": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "calibrationRole",
+          "slicer",
+          "firmware",
+          "machineId",
+          "provenance",
+          "source",
+          "bedSize",
+          "origin",
+          "files",
+          "expectations"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "calibrationRole": { "enum": ["training", "holdout"] },
+          "slicer": { "type": "string", "minLength": 1 },
+          "firmware": { "type": "string", "minLength": 1 },
+          "machineId": { "type": "string", "minLength": 1 },
+          "provenance": {
+            "enum": ["synthetic-conformance", "real-anonymized", "real-consented"]
+          },
+          "source": { "type": "string", "minLength": 20 },
+          "bedSize": { "type": "number", "exclusiveMinimum": 0 },
+          "origin": { "enum": ["corner", "center"] },
+          "files": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["gcode", "machineLog"],
+            "properties": {
+              "gcode": { "$ref": "#/$defs/file" },
+              "machineLog": { "$ref": "#/$defs/file" }
+            }
+          },
+          "expectations": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["layers", "filamentMm", "pathTypes"],
+            "properties": {
+              "layers": { "type": "integer", "minimum": 1 },
+              "filamentMm": { "type": "number", "exclusiveMinimum": 0 },
+              "pathTypes": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "enum": ["perimeter", "solid", "support", "skirt", "infill"] }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    }
+  }
+}

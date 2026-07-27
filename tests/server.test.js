@@ -114,6 +114,11 @@ async function main() {
     check("GET /js/util.js 可达", js.status === 200 && js.text.includes("FXU"));
     const profile = await jfetch(base, "/profiles/example-bundle.json");
     check("公开 Profile 示例可达", profile.status === 200 && profile.text.includes("forgex-profile-bundle"));
+    const validation = await jfetch(base, "/validation/time-calibration-report.json");
+    check(
+      "公开校准报告可达且保留 provenance",
+      validation.status === 200 && validation.text.includes("synthetic-conformance")
+    );
     const cfgFile = await jfetch(base, "/server/config.js");
     check("server/ 目录不可达", cfgFile.status === 404, String(cfgFile.status));
     const env = await jfetch(base, "/server/.env");

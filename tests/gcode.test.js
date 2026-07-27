@@ -147,6 +147,12 @@ console.log("\n[3] 切片器方言：绝对/相对 E、各家类型注释");
   check("读出自报时长 3600s", rc.claims.timeSec === 3600, String(rc.claims.timeSec));
   check("读出自报耗材 2.5m → 2500mm", rc.claims.filamentMm === 2500, String(rc.claims.filamentMm));
 
+  const flavored = G.parse(
+    [";FLAVOR:Marlin", "M83", "G28", "G1 Z0.2", "G1 X10 Y10 E0", "G1 X20 Y10 E0.5"].join("\n"),
+    { bedSize: 256 }
+  );
+  check("读出 Cura FLAVOR 固件声明", flavored.claims.firmware === "Marlin", flavored.claims.firmware);
+
   // G92 E0 归零（每层重置 E 的切片器）
   const g92 = [
     "M82", "G28", "G1 Z0.2",

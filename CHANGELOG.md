@@ -12,7 +12,34 @@
 ### 计划中
 
 - 新模块 ESM 化与 i18n 抽取
-- 跨浏览器 E2E 与更多切片器/固件方言夹具
+
+---
+
+## [0.16.0] — 2026-07-27
+
+**P6「真实验证」阶段。** 把 P5 的单任务对比升级为可审计的配对夹具、稳健时间校准、
+跨浏览器回归和一键发布门禁。
+
+### 新增
+
+- **时间校准核**：`js/time-calibration.js` 使用 Theil–Sen 中位斜率，从至少三个不同时长的
+  G-code/真机日志配对任务拟合固定开销与运动倍率，输出训练、留一交叉验证和 holdout 指标。
+- **方言夹具契约**：`validation/` 为 Cura/Marlin、PrusaSlicer/Marlin、
+  OrcaSlicer/Klipper、SuperSlicer/RepRapFirmware 建立 G-code、日志、SHA-256、来源、
+  预期路径和训练/留出角色的一体化 manifest。
+- **真实性边界**：内置夹具固定标记为 `synthetic-conformance`，只验证兼容性和校准管线，
+  不冒充生产机台精度；真实夹具贡献需要采集、匿名化、许可和同任务哈希责任链。
+- **跨浏览器关键链路**：Chromium 继续跑全量场景，Firefox 与 WebKit 增加启动、
+  WebGL、G-code 导入、真机日志和校准观测回归。
+- **发布门禁**：`npm run release:check` 串联 lint、格式、572 项核心/服务断言、
+  17 项生态检查、61 项夹具检查、13 项发布一致性检查和 24 个浏览器场景。
+
+### 变更
+
+- 真机日志 v1 可携带 `jobId`、`machineId`、`firmware`、`slicer` 与 `gcodeSha256`，
+  UI 展示设备/固件和单任务原始时差倍率，并明确单任务不能拟合完整校准模型。
+- G-code 解析器读取 Cura `;FLAVOR:` 固件声明；校准报告和 manifest 可由服务端安全白名单访问。
+- 版本提升到 `0.16.0`，浏览器资产缓存键统一为 `v16`。
 
 ---
 

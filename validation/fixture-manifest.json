@@ -1,0 +1,119 @@
+{
+  "$schema": "./fixture-manifest.schema.json",
+  "format": "forgex-validation-fixture-set",
+  "version": 1,
+  "id": "forgex-p6-dialect-calibration",
+  "provenance": "synthetic-conformance",
+  "license": "Apache-2.0",
+  "disclaimer": "These compact files are hand-authored compatibility fixtures. They exercise real slicer and firmware dialect syntax, but they are not captured production jobs and must not be presented as measured printer accuracy.",
+  "calibrationScope": {
+    "machineId": "FX-VALIDATION-01",
+    "firmware": "mixed compatibility fixture"
+  },
+  "fixtures": [
+    {
+      "id": "cura-marlin",
+      "calibrationRole": "training",
+      "slicer": "Cura_SteamEngine 5.10.0",
+      "firmware": "Marlin 2.1",
+      "machineId": "FX-VALIDATION-01",
+      "provenance": "synthetic-conformance",
+      "source": "Hand-authored from documented Cura/Marlin command and comment conventions.",
+      "bedSize": 256,
+      "origin": "corner",
+      "files": {
+        "gcode": {
+          "path": "validation/fixtures/cura-marlin.gcode",
+          "sha256": "0881cfdac2ef41f6df48f7f5e0f47fd632dcddec8238955ce3a59a6bd754cf07"
+        },
+        "machineLog": {
+          "path": "validation/fixtures/cura-marlin.machine-log.json",
+          "sha256": "cae3172797ae7b99f13faee3df65e04416ed3ff8d4e73773ecd20c5629d7f3b1"
+        }
+      },
+      "expectations": {
+        "layers": 2,
+        "filamentMm": 6,
+        "pathTypes": ["perimeter", "infill"]
+      }
+    },
+    {
+      "id": "prusa-marlin",
+      "calibrationRole": "training",
+      "slicer": "PrusaSlicer 2.8.1",
+      "firmware": "Marlin 2.1",
+      "machineId": "FX-VALIDATION-01",
+      "provenance": "synthetic-conformance",
+      "source": "Hand-authored from documented PrusaSlicer/Marlin command and comment conventions.",
+      "bedSize": 256,
+      "origin": "corner",
+      "files": {
+        "gcode": {
+          "path": "validation/fixtures/prusa-marlin.gcode",
+          "sha256": "079510b978079066a4a4328cd583bf375508a7706eb8031dafe5c4d903e4828c"
+        },
+        "machineLog": {
+          "path": "validation/fixtures/prusa-marlin.machine-log.json",
+          "sha256": "3e40d36d6e2cc80743a97e29338afbe8cb16e83a848178372962ce493fb40595"
+        }
+      },
+      "expectations": {
+        "layers": 2,
+        "filamentMm": 7.2,
+        "pathTypes": ["perimeter", "solid"]
+      }
+    },
+    {
+      "id": "orca-klipper",
+      "calibrationRole": "training",
+      "slicer": "OrcaSlicer 2.2.0",
+      "firmware": "Klipper 0.12",
+      "machineId": "FX-VALIDATION-01",
+      "provenance": "synthetic-conformance",
+      "source": "Hand-authored from documented OrcaSlicer/Klipper command and macro conventions.",
+      "bedSize": 256,
+      "origin": "corner",
+      "files": {
+        "gcode": {
+          "path": "validation/fixtures/orca-klipper.gcode",
+          "sha256": "bc39cbac84e164415eb9902586f52cf186c1116bc270260958a2b8694dc13324"
+        },
+        "machineLog": {
+          "path": "validation/fixtures/orca-klipper.machine-log.json",
+          "sha256": "646d07790c60b30050f6c9bb8e94a021cd9f35d6eea0ce26fe71f0d1d366338e"
+        }
+      },
+      "expectations": {
+        "layers": 3,
+        "filamentMm": 9.6,
+        "pathTypes": ["perimeter", "infill", "solid"]
+      }
+    },
+    {
+      "id": "superslicer-rrf",
+      "calibrationRole": "holdout",
+      "slicer": "SuperSlicer 2.5.60",
+      "firmware": "RepRapFirmware 3.5",
+      "machineId": "FX-VALIDATION-01",
+      "provenance": "synthetic-conformance",
+      "source": "Hand-authored from documented SuperSlicer/RepRapFirmware command and comment conventions.",
+      "bedSize": 256,
+      "origin": "corner",
+      "files": {
+        "gcode": {
+          "path": "validation/fixtures/superslicer-rrf.gcode",
+          "sha256": "1c652a1ff1802277cf54500764c4b78e2436c8a2a9bbaf62825ffa467cf4fac0"
+        },
+        "machineLog": {
+          "path": "validation/fixtures/superslicer-rrf.machine-log.json",
+          "sha256": "5678b1d7103121a82645b80691fbe5e799a31213576cb4ab5afbe0015d0a0dee"
+        }
+      },
+      "expectations": {
+        "layers": 4,
+        "filamentMm": 12.8,
+        "pathTypes": ["perimeter", "solid"]
+      }
+    }
+  ]
+}

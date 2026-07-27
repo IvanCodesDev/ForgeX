@@ -67,6 +67,7 @@ three.min.js
        ├─ exporter.js  STL / OBJ / G-code（纯逻辑，node 可测）
        ├─ gcode-parser.js  真实 G-code → 切片同构路径（纯逻辑）
        ├─ machine-log.js   真机 JSON/CSV 日志归一与计划/实测对比（纯逻辑）
+       ├─ time-calibration.js  配对任务稳健时间校准与误差评估（纯逻辑）
        ├─ insight-data.js    数据层（纯逻辑，node 可测）
        │    └─ insight-engine.js  规则分析引擎（纯逻辑，node 可测）
        ├─ api-client.js      后端客户端
@@ -109,6 +110,27 @@ idle → preheat → leveling → printing ⇄ paused → done
 
 热失控同理：故障演练注入的是「加热器失效」这一**物理扰动**，温度按热惯性真实下跌，
 由热失控监测器（偏差 >15°C、无回升、持续 3s）**凭实测偏差自行发现**。
+
+### 3.4 真实任务验证与时间校准
+
+P6 把一次性 G-code/日志对比扩展为可复现验证链：
+
+```
+fixture manifest
+  ├─ G-code ──SHA-256──┐
+  ├─ machine log ──────┴─► parse + pair ─► training / holdout
+  └─ provenance / slicer / firmware / expected paths
+                                      │
+                                      ▼
+                  actualSec = fixedOverhead + motionScale × plannedSec
+```
+
+`time-calibration.js` 使用 Theil–Sen 中位斜率，降低暂停、换料或异常日志对模型的破坏。
+至少需要三个不同时长的配对任务；单任务只展示原始倍率，不能分别识别固定开销和运动倍率。
+训练与 holdout 分开计算误差，报告始终保留作用域和 provenance。
+
+仓库内置夹具为 `synthetic-conformance`：它们覆盖真实切片器/固件的语法形态，但内容是
+手工构造的兼容性样例，只能证明解析、配对、拟合和复算链路稳定，不能证明生产预测精度。
 
 ---
 
@@ -397,29 +419,33 @@ OpenAI-compatible provider 使用 `/chat/completions` 风格端点，复用同�
 
 ## 7. 测试
 
-| 套件                          | 覆盖                                                                  | 断言数  |
-| ----------------------------- | --------------------------------------------------------------------- | ------- |
-| `tests/smoke.js`              | 切片引擎：几何工具 / 填充 / 等值线 / 三模型切片 / 变换                | 32      |
-| `tests/sim-calib.test.js`     | 仿真核心：床面误差场 / 调平数据链自洽 / 全流程状态机 / 遥测与实测质量 | 44      |
-| `tests/exporter.test.js`      | 导出：三角提取 / 二进制 STL 结构 / OBJ / G-code 语义与挤出量守恒      | 24      |
-| `tests/gcode.test.js`         | G-code：往返守恒 / 方言 / E 模式 / 原点 / 错误与对账                  | 50      |
-| `tests/machine-log.test.js`   | 真机日志：JSON/CSV 归一 / 计划实测比较 / 边界                         | 13      |
-| `tests/profiles.test.js`      | Profile：schema 对齐 / 白名单 / 防覆盖 / 价格与物理特征接线           | 20      |
-| `tests/stats.test.js`         | Wilson / Fisher / 偏相关 / Mann–Kendall / 证据表述                    | 75      |
-| `tests/insight.test.js`       | 洞察：数据 / 解析 / 统计守卫 / 来源标记 / 统计严谨性                  | 88      |
-| `tests/farm.test.js`          | 虚拟机群：确定性 / 故障机理 / 效应调转 / 遥测贯通                     | 48      |
-| `tests/server.test.js`        | 后端契约：provider / SSE / 持久化 / 检索 / 分享 / 鉴权 / 配额 / 指标  | 158     |
-| `tests/check-refs.js`         | HTML ↔ JS 的 DOM id 引用交叉校验                                      | —       |
-| `tools/validate-ecosystem.js` | Profile、日志、数据集 schema / 哈希 / 表头 / 行数                     | 17 检查 |
-| `tests/deploy-check.js`       | 部署后线上冒烟（需公网 URL）                                          | 10      |
-| `tests/e2e/*.spec.js`         | 浏览器启动 / file:// / G-code / 真机日志 / Profile / 洞察链路         | 18 场景 |
+| 套件                             | 覆盖                                                                  | 断言数  |
+| -------------------------------- | --------------------------------------------------------------------- | ------- |
+| `tests/smoke.js`                 | 切片引擎：几何工具 / 填充 / 等值线 / 三模型切片 / 变换                | 32      |
+| `tests/sim-calib.test.js`        | 仿真核心：床面误差场 / 调平数据链自洽 / 全流程状态机 / 遥测与实测质量 | 44      |
+| `tests/exporter.test.js`         | 导出：三角提取 / 二进制 STL 结构 / OBJ / G-code 语义与挤出量守恒      | 24      |
+| `tests/gcode.test.js`            | G-code：往返守恒 / 方言 / E 模式 / 原点 / 错误与对账                  | 51      |
+| `tests/machine-log.test.js`      | 真机日志：JSON/CSV 归一 / 任务责任链 / 计划实测比较 / 边界            | 14      |
+| `tests/time-calibration.test.js` | 时间校准：稳健拟合 / 异常点 / 配对观测 / 防御性边界                   | 17      |
+| `tests/profiles.test.js`         | Profile：schema 对齐 / 白名单 / 防覆盖 / 价格与物理特征接线           | 20      |
+| `tests/stats.test.js`            | Wilson / Fisher / 偏相关 / Mann–Kendall / 证据表述                    | 75      |
+| `tests/insight.test.js`          | 洞察：数据 / 解析 / 统计守卫 / 来源标记 / 统计严谨性                  | 88      |
+| `tests/farm.test.js`             | 虚拟机群：确定性 / 故障机理 / 效应调转 / 遥测贯通                     | 48      |
+| `tests/server.test.js`           | 后端契约：provider / SSE / 持久化 / 检索 / 分享 / 鉴权 / 配额 / 指标  | 159     |
+| `tests/check-refs.js`            | HTML ↔ JS 的 DOM id 引用交叉校验                                      | —       |
+| `tools/validate-ecosystem.js`    | Profile、日志、数据集 schema / 哈希 / 表头 / 行数                     | 17 检查 |
+| `tools/validate-fixtures.js`     | G-code/日志配对、来源、SHA-256、训练/holdout 与校准报告               | 61 检查 |
+| `tools/release-audit.js`         | 版本、缓存键、文档、provenance 与三浏览器 CI 一致性                   | 13 检查 |
+| `tests/deploy-check.js`          | 部署后线上冒烟（需公网 URL）                                          | 10      |
+| `tests/e2e/*.spec.js`            | Chromium 全量；Firefox/WebKit 启动与真实任务复盘关键链路              | 24 场景 |
 
 `sim-calib` 用 **stub 打印机**在 Node.js 中驱动完整状态机；`farm.test.js` 在此基础上验证虚拟机群与故障机理。
 
 **测试原则**：断言引擎的**性质**，不断言「生成器埋了什么就挖出什么」。
 详见 `tests/insight.test.js` 头注与 `CONTRIBUTING.md`。
 
-核心逻辑与服务契约共 552 项断言，另有 17 项生态文件检查；DOM 层有 18 个 Playwright 场景。
+核心逻辑与服务契约共 572 项断言，另有 17 项生态、61 项夹具和 13 项发布一致性检查；
+DOM 层共有 24 个 Playwright 浏览器场景。
 
 ---
 
