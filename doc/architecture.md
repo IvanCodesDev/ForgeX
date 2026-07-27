@@ -248,7 +248,7 @@ node tools/farm-sim.js --machines 8 --jobs 400 --seed 20260726   --out datasets/
 
 ### 5.1 为什么是原生 http 而非框架
 
-接口面很薄（5 组 API + SSE + 静态托管），原生实现完全够用；零依赖让任何人
+接口面适中（业务 API + SSE + 静态托管 + 健康与指标端点），原生实现完全够用；零依赖让任何人
 clone 后 `node server/index.js` 即起——无 install、无供应链风险，与前端「零构建直开」
 理念一致。`services/*` 与框架无关，若后续需要框架生态，仅需替换 `index.js` 与 `routes/*`。
 
@@ -256,126 +256,121 @@ clone 后 `node server/index.js` 即起——无 install、无供应链风险，
 
 ```
 server/
-  index.js         启动、极简路由器、CORS、限流、健康检查、优雅停机
-  config.js        读取 server/.env；引擎双模门禁在此判定
+  index.js         启动、路由、CORS、限流、健康检查、指标、优雅停机
+  config.js        读取 server/.env；provider 选择与降级策略
   routes/
     analyze.js     分析任务 + SSE 进度流 + 轮询兜底
     datasource.js  数据源上传（JSON 携带 CSV 文本）
-    knowledge.js   知识文档登记（⚠ 只存不用，无检索）
-    share.js       分享页生成 + 服务端渲染公开页
+    knowledge.js   知识文档登记 + 检索预览
+    share.js       分享页生成 / 撤销 + 服务端渲染公开页
   services/
-    infini.js      InfiniSynapse 客户端（全服务唯一持 key 处）
+    providers.js   local / InfiniSynapse / OpenAI-compatible provider 抽象
+    infini.js      InfiniSynapse 客户端
     local-engine.js 直接 require 前端纯逻辑模块（单一真源）
-    analysis.js    任务编排：事件缓存重放 SSE / 引擎路由 / TTL
-    datasource.js / knowledge.js / share.js   内存存储 + TTL
+    brief.js       将本地统计事实压缩为定长分析简报
+    retrieval.js   中文 bigram + BM25 知识检索
+    analysis.js    任务编排：SSE / provider / 缓存 / 配额 / 降级
+    datasource.js / knowledge.js / share.js   文件存储 + TTL
   lib/
+    store.js       原子文件存储 / TTL / 容量淘汰 / 损坏容错
+    auth.js        API Key 认证与调用方标识
+    quota.js       AI 并发、队列与每日额度
     logger.js      结构化 JSON 行日志（reqId + taskId 贯穿）
     http.js        限长 body / SSE / 静态 allowlist（防路径穿越）
 ```
 
 ### 5.3 对外接口
 
-| 方法/路径                     | 入参                                                                | 出参                                                                                                  |
-| ----------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `POST /api/analyze`           | `{question, datasourceId}`（question ≤500 字；缺省数据源 `sample`） | `202 {taskId, engine}`                                                                                |
-| `GET /api/analyze/:id/stream` | —                                                                   | SSE `{seq, stage, message, progress}`，终事件 `{done:true}`。事件全量缓存，断线重连/晚接入可重放      |
-| `GET /api/analyze/:id/result` | —                                                                   | `200 报告` / `202 running` / `502 失败`                                                               |
-| `GET /api/analyze/:id`        | —                                                                   | 轮询兜底 `{status, progress, message}`                                                                |
-| `POST /api/datasource`        | `{name, csv}`                                                       | `201 {datasourceId, rows, warnings?}`                                                                 |
-| `POST /api/knowledge`         | `{name, text}`                                                      | `201 {knowledgeId, retrievalEnabled: false, note}` ⚠ 只存不用                                         |
-| `POST /api/share/:taskId`     | —                                                                   | `201 {publicUrl}`（快照，进程内 24h）                                                                 |
-| `GET /share/:token`           | —                                                                   | 公开分享页（服务端渲染，零脚本）                                                                      |
-| `GET /healthz`                | —                                                                   | `{ok, engine: "rules"\|"infinisynapse", reason}`                                                      |
-| `GET /`（静态）               | —                                                                   | allowlist：`index.html` / `README.md` / `css/` / `js/` / `doc/samples/`。`server/` 与 `.env` 永不可达 |
+| 方法/路径                       | 入参                                                                | 出参                                                                                                  |
+| ------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `POST /api/analyze`             | `{question, datasourceId}`（question ≤500 字；缺省数据源 `sample`） | `202 {taskId, engine}`                                                                                |
+| `GET /api/analyze/:id/stream`   | —                                                                   | SSE `{seq, stage, message, progress}`，终事件 `{done:true}`。事件全量缓存，断线重连/晚接入可重放      |
+| `GET /api/analyze/:id/result`   | —                                                                   | `200 报告` / `202 running` / `502 失败`                                                               |
+| `GET /api/analyze/:id`          | —                                                                   | 轮询兜底 `{status, progress, message}`                                                                |
+| `POST /api/datasource`          | `{name, csv}`                                                       | `201 {datasourceId, rows, warnings?}`                                                                 |
+| `POST /api/knowledge`           | `{name, text}`                                                      | `201 {knowledgeId, retrievalEnabled, note}`                                                           |
+| `POST /api/knowledge/search`    | `{question}`                                                        | 检索预览命中及 provider 能力说明                                                                      |
+| `POST /api/share/:taskId`       | —                                                                   | `201 {publicUrl, revokeKey, expiresAt}`                                                               |
+| `POST /api/share/:token/revoke` | `{revokeKey}`                                                       | 撤销公开分享页                                                                                        |
+| `GET /share/:token`             | —                                                                   | 公开分享页（服务端渲染，零脚本）                                                                      |
+| `GET /healthz`                  | —                                                                   | provider、能力、配额与持久化状态                                                                      |
+| `GET /metrics`                  | —                                                                   | Prometheus 文本指标                                                                                   |
+| `GET /`（静态）                 | —                                                                   | allowlist：`index.html` / `README.md` / `css/` / `js/` / `doc/samples/`。`server/` 与 `.env` 永不可达 |
 
-### 5.4 引擎双模门禁
+### 5.4 Provider 选择与自动降级
 
 ```
-mode = "infinisynapse"  需同时满足：
-  ① INFINI_API_KEY 已配置
-  ② INFINI_VERIFIED=1（端点核准通过）
-  ③ 未设 INFINI_MOCK=1
-否则 mode = "rules"（规则引擎）
+ANALYSIS_PROVIDER=auto（默认）
+  → InfiniSynapse 已配置且核准：infinisynapse
+  → 否则 OpenAI-compatible endpoint 已配置：openai
+  → 否则：local rules
+
+也可显式指定 local / infinisynapse / openai。
+配置不完整、启动探活失败、额度耗尽或云端叙述失败时，保留本地统计产物并说明降级原因。
 ```
 
-门禁的作用是**防止未经核准的假设端点进入生产**。
-`[计划 P4.7]` 改为启动时自动探活 + 失败自动降级，去掉人工 `INFINI_VERIFIED` 开关。
+本地统计核始终负责数字、图表、证据和视口高亮；AI provider 只组织叙述，不覆盖已核验事实。
 
-### 5.5 已知运维缺口（公网部署前必读）
+### 5.5 生产控制
 
-| 缺口                           | 影响                                             | 计划        |
-| ------------------------------ | ------------------------------------------------ | ----------- |
-| 全内存存储                     | 重启即全丢；分享页失效                           | P4.1 SQLite |
-| **无鉴权、无配额、无并发上限** | 公网 + 已配密钥 = 任何人可持续烧维护者的云端额度 | P4.2 / P4.3 |
-| 单一防护是同 IP 5s 冷却        | 挡不住分布式请求                                 | P4.3        |
-| 分析历史仅前端内存，上限 5 条  | 刷新即失                                         | P4.1        |
+| 控制     | 当前实现                                                          |
+| -------- | ----------------------------------------------------------------- |
+| 持久化   | 默认写入 `data/`；可通过 `DATA_DIR` 指定目录或显式退回纯内存      |
+| 鉴权     | `API_KEYS` + `REQUIRE_AUTH`，支持 Bearer 与 `X-API-Key`           |
+| 成本     | AI 并发、队列、调用方日额度、全局日额度；规则引擎不受 AI 额度限制 |
+| 缓存     | 相同问题 + 数据集 + provider 命中结果缓存，减少重复计费           |
+| 可观测性 | JSON 行日志、`/healthz`、`/metrics`                               |
+| 分享     | 持久化快照、过期时间、撤销密钥                                    |
 
 ---
 
-## 6. InfiniSynapse 集成
+## 6. AI Provider 集成
 
-### 6.1 两套 API 辨析（容易用错）
+### 6.1 Provider 边界
 
-| API                                | 地址                                                            | 说明                                                     |
-| ---------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------- |
-| ❌ GenStudio 纯 LLM（OpenAI 兼容） | `cloud.infini-ai.com/maas/...`                                  | 是「大模型 API」，不是数据智能体                         |
-| ✅ InfiniSynapse Server API        | 业务 `app.infinisynapse.cn`、Console `api.infinisynapse.cn/api` | 数据智能体，任务日志在 `app.infinisynapse.cn/tasks` 可查 |
+| Provider        | 用途                                      | 配置                                                  |
+| --------------- | ----------------------------------------- | ----------------------------------------------------- |
+| `local`         | 确定性统计与规则叙述；默认、无外部计费    | `ANALYSIS_PROVIDER=local`                             |
+| `infinisynapse` | InfiniSynapse 任务式分析叙述              | `INFINI_API_KEY` + `INFINI_VERIFIED=1`                |
+| `openai`        | OpenAI / Azure / Ollama / vLLM 等兼容端点 | `OPENAI_API_KEY` + `OPENAI_BASE_URL` + `OPENAI_MODEL` |
 
-### 6.2 端点（2026-07-21 实测核准）
+所有 provider 返回同构报告。云端只接收本地生成的统计简报与相关知识片段，不接管数值计算。
 
-| 用途                             | 方法/路径                                                                                        | 说明                                                                                        |
-| -------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| 取用户信息                       | `GET {console}/user/profile`                                                                     | 200，`data.userId`                                                                          |
-| 事件流（**必须先于建任务订阅**） | `GET {server}/api/ai/events?connId=<uuid>`                                                       | 标准 SSE；事件类型 `message.add/partial/update`、`state.ready`、`notification`、`heartbeat` |
-| 创建分析任务                     | `POST {server}/api/ai/message`，body `{type:"newTask", connId, text, chatSettings:{mode:"act"}}` | 201；**taskId 不在响应体**，由 SSE 事件 `data.taskId` 带回                                  |
-| 任务终结标志                     | SSE `message.say === "completion_result"` 且 `partial:false`                                     | `text` 即最终结论                                                                           |
-| 取产物                           | `GET {server}/api/ai_task/getTaskWorkspace/<taskId>`                                             | `data:{cwd, files[]}`                                                                       |
-| ~~任务轮询~~                     | ~~`GET {server}/api/ai_task/tasks`~~                                                             | ❌ 实测 408 超时，弃用；SSE 是唯一进度通道                                                  |
+### 6.2 InfiniSynapse 时序
 
-### 6.3 时序（顺序不可颠倒）
-
-```
-后端生成 connId → 订阅 SSE（先订阅！反过来会丢早期事件）
-  → POST newTask
-  → 云端多步执行：inline JSON 建表 → SQL 聚合 → 生成结论（实测 160–230s）
-  → completion_result(partial:false) → 解析约定 JSON → 同构报告（失败降级纯文本）
-  → getTaskWorkspace 拉产物清单
+```text
+生成 connId → 先订阅上游 SSE → 创建任务
+  → 推送本地统计简报与检索片段
+  → 接收进度与 completion_result
+  → 提取叙述 → 与本地图表 / 证据 / highlight 合并
+  → 失败时保留本地完整报告并标注原因
 ```
 
-**实测教训**（已固化进 `services/infini.js` 的提示词）：不提示加载方式时，云端会先尝试
-创建 `.csv` 文件（平台禁止，白耗 ~45s 才自行改道）；明示「转 inline JSON 用
-`execute_infinity_sql` 加载」可直达。任务级超时应 ≥360s。
-
-### 6.4 已知设计债
-
-| 问题                   | 说明                                                | 计划                               |
-| ---------------------- | --------------------------------------------------- | ---------------------------------- |
-| 整份 CSV 内联进 prompt | token 成本随数据量线性增长，上万行直接超限          | P3.7 改传 schema + 统计摘要 + 采样 |
-| 结构化产物靠口头约定   | 「请输出 JSON」写在提示词里，无 schema 校验、无重试 | P3.6                               |
-| 单一厂商               | 分析能力硬绑 InfiniSynapse                          | P3.5 `AnalysisProvider` 抽象       |
-| 无结果缓存             | 同一问题问两次 = 两次真实云端任务                   | P3.8                               |
+OpenAI-compatible provider 使用 `/chat/completions` 风格端点，复用同一份统计简报、知识检索与报告合并逻辑。
 
 ---
 
 ## 7. 测试
 
-| 套件                      | 覆盖                                                                                                             | 断言数 |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------ |
-| `tests/smoke.js`          | 切片引擎：几何工具 / 填充 / 等值线 / 三模型切片 / 变换                                                           | 32     |
-| `tests/sim-calib.test.js` | 仿真核心：床面误差场 / 调平数据链自洽 / 全流程状态机 / 遥测与实测质量                                            | 44     |
-| `tests/exporter.test.js`  | 导出：三角提取 / 二进制 STL 结构 / OBJ / G-code 语义与挤出量守恒                                                 | 24     |
-| `tests/insight.test.js`   | 洞察：数据 / 解析 / 统计 / **统计守卫** / **来源标记** / **诚实性**                                              | 64     |
-| `tests/server.test.js`    | 后端契约：healthz / 静态 allowlist 与路径穿越 / 数据源 / 分析端到端（SSE + 重放 + 轮询）/ 知识库 / 分享页 / 限流 | 46     |
-| `tests/check-refs.js`     | HTML ↔ JS 的 DOM id 引用交叉校验                                                                                 | —      |
-| `tests/deploy-check.js`   | 部署后线上冒烟（需公网 URL）                                                                                     | 10     |
+| 套件                      | 覆盖                                                                  | 断言数  |
+| ------------------------- | --------------------------------------------------------------------- | ------- |
+| `tests/smoke.js`          | 切片引擎：几何工具 / 填充 / 等值线 / 三模型切片 / 变换                | 32      |
+| `tests/sim-calib.test.js` | 仿真核心：床面误差场 / 调平数据链自洽 / 全流程状态机 / 遥测与实测质量 | 44      |
+| `tests/exporter.test.js`  | 导出：三角提取 / 二进制 STL 结构 / OBJ / G-code 语义与挤出量守恒      | 24      |
+| `tests/stats.test.js`     | Wilson / Fisher / 偏相关 / Mann–Kendall / 证据表述                    | 75      |
+| `tests/insight.test.js`   | 洞察：数据 / 解析 / 统计守卫 / 来源标记 / 统计严谨性                  | 88      |
+| `tests/farm.test.js`      | 虚拟机群：确定性 / 故障机理 / 效应调转 / 遥测贯通                     | 48      |
+| `tests/server.test.js`    | 后端契约：provider / SSE / 持久化 / 检索 / 分享 / 鉴权 / 配额 / 指标  | 157     |
+| `tests/check-refs.js`     | HTML ↔ JS 的 DOM id 引用交叉校验                                      | —       |
+| `tests/deploy-check.js`   | 部署后线上冒烟（需公网 URL）                                          | 10      |
+| `tests/e2e/*.spec.js`     | 浏览器启动 / file:// / 流程页 / 统计披露 / 机群视图 / 服务端进度      | 16 场景 |
 
-`sim-calib` 用 **stub 打印机**在 node 里驱动完整状态机——这也是 `[计划 P2]`
-虚拟机群的技术基础：仿真状态机本就能无头批量运行。
+`sim-calib` 用 **stub 打印机**在 Node.js 中驱动完整状态机；`farm.test.js` 在此基础上验证虚拟机群与故障机理。
 
 **测试原则**：断言引擎的**性质**，不断言「生成器埋了什么就挖出什么」。
 详见 `tests/insight.test.js` 头注与 `CONTRIBUTING.md`。
 
-`[计划 P1.7]` 补 DOM 层测试——`ui.js`（1000+ 行）与 `insight.js`（500+ 行）当前零覆盖。
+核心逻辑与服务契约共 468 项断言；DOM 层另有 16 个 Playwright 场景。
 
 ---
 

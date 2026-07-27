@@ -93,7 +93,9 @@
     const extArea = st.extrusionWidth * st.layerHeight;
     const eScale = extArea / FILAMENT_AREA;             // 路径 mm → 耗材 mm（相对挤出）
     const fanPWM = Math.round(FXU.clamp(st.fanSpeed, 0, 100) * 2.55);
-    const TYPE_TAG = { perimeter: "WALL-OUTER", solid: "FILL", infill: "FILL", support: "SUPPORT", skirt: "SKIRT" };
+    // solid 与 infill 必须区分：都写成 FILL 的话，导出再导入就丢了实心层信息。
+    // SKIN 是 Cura 对顶底实心层的标准标签，用它既忠实又可还原。
+    const TYPE_TAG = { perimeter: "WALL-OUTER", solid: "SKIN", infill: "FILL", support: "SUPPORT", skirt: "SKIRT" };
     const totalG = slice.stats.volumeCm3 * (meta.densityG || 1.24);
 
     lines.push(
