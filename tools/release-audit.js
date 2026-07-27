@@ -1,4 +1,4 @@
-/* P6 发布一致性门禁：版本、缓存键、文档、校准报告和跨浏览器 CI 必须同频。 */
+/* 发布一致性门禁：版本、缓存、文档、校准生命周期和跨浏览器 CI 必须同频。 */
 "use strict";
 
 const fs = require("fs");
@@ -59,6 +59,27 @@ check(
   manifest.provenance !== "synthetic-conformance" || /not.*production|不是.*生产/i.test(manifest.disclaimer)
 );
 check("发布脚本包含完整验证入口", pkg.scripts["release:check"] === "npm run check && npm run test:e2e");
+
+console.log("\n[release] P7 calibration lifecycle");
+const bundle = json("calibration/example-bundle.json");
+const bundleSchema = json("calibration/calibration-bundle.schema.json");
+check("校准示例使用受控 bundle 格式", bundle.format === "forgex-calibration-bundle" && bundle.version === 1);
+check(
+  "合成模型只能作为 demonstration",
+  bundle.provenance !== "synthetic-conformance" || bundle.models.every((model) => model.status === "demonstration-only")
+);
+check("bundle schema 默认拒绝未知字段", bundleSchema.additionalProperties === false);
+check(
+  "主测试链包含校准注册表与运营门禁",
+  pkg.scripts.test.includes("tests/calibration-registry.test.js") &&
+    pkg.scripts.test.includes("tools/validate-calibrations.js")
+);
+check(
+  "注册表在 UI 之前加载",
+  html.indexOf("js/calibration-registry.js") > -1 &&
+    html.indexOf("js/calibration-registry.js") < html.indexOf("js/ui.js")
+);
+check("浏览器回归覆盖 P7 校准生命周期", fs.existsSync(path.join(ROOT, "tests/e2e/p7.spec.js")));
 
 const workflow = text(".github/workflows/ci.yml");
 check("CI 安装 Chromium、Firefox 与 WebKit", /playwright install --with-deps chromium firefox webkit/.test(workflow));

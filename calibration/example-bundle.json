@@ -1,0 +1,43 @@
+{
+  "$schema": "./calibration-bundle.schema.json",
+  "format": "forgex-calibration-bundle",
+  "version": 1,
+  "id": "forgex-p6-demonstration",
+  "revision": 1,
+  "createdAt": "2026-07-28T00:00:00Z",
+  "provenance": "synthetic-conformance",
+  "source": {
+    "license": "Apache-2.0",
+    "note": "Derived from the P6 synthetic compatibility fixtures; this is not a production timing model."
+  },
+  "models": [
+    {
+      "id": "demo-fx-validation-mixed",
+      "status": "demonstration-only",
+      "scope": {
+        "machineId": "FX-VALIDATION-01",
+        "firmware": "mixed compatibility fixture"
+      },
+      "algorithm": "theil-sen",
+      "trainedAt": "2026-07-28T00:00:00Z",
+      "coefficients": {
+        "motionScale": 1.25,
+        "fixedOverheadSec": 90,
+        "sampleCount": 3
+      },
+      "validation": {
+        "holdoutSamples": 1,
+        "mape": 0,
+        "maxApe": 0,
+        "medianBias": 0,
+        "evaluatedAt": "2026-07-28T00:00:00Z"
+      },
+      "thresholds": {
+        "maxMape": 0.2,
+        "maxBias": 0.12,
+        "minDriftSamples": 5
+      },
+      "trainingSetSha256": "553d94228b7cdb15f384a42fa4465fa1ae1e1cb93429fd37a493d55e30e2563b"
+    }
+  ]
+}

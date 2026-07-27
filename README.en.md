@@ -3,7 +3,7 @@
 ### Turn every print into an observable, reproducible, and analyzable digital experiment
 
 [![CI](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml/badge.svg)](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.16.0-2563eb)
+![Version](https://img.shields.io/badge/version-0.17.0-2563eb)
 ![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-16a34a)
 ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-0f172a)
 [![License](https://img.shields.io/badge/license-Apache--2.0-f97316)](./LICENSE)
@@ -16,9 +16,9 @@ The platform runs offline and can optionally use a lightweight Node.js service f
 
 ## Core experience
 
-| Digital experiments                                                      | Real-job review                                                                       | Production insight                                             |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Four kinematics, layer slicing, thermal behavior, leveling, fault drills | 3D G-code replay, machine-log comparison, paired-job observations, robust calibration | Simulation capture, statistical tests, fleet analysis, sharing |
+| Digital experiments                                                      | Real-job review                                                                    | Production insight                                             |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Four kinematics, layer slicing, thermal behavior, leveling, fault drills | 3D G-code replay, machine-log comparison, scoped calibration, and drift monitoring | Simulation capture, statistical tests, fleet analysis, sharing |
 
 ### One workflow from model to insight
 
@@ -27,7 +27,7 @@ The platform runs offline and can optionally use a lightweight Node.js service f
 - **Model preparation**: built-in parametric models, placement and scaling, image reliefs, and silhouette extrusion.
 - **Slicing**: perimeters, solid skin, scanline infill, support, and skirt, with synchronized 2D/3D layer previews.
 - **Real-job review**: import common Cura, PrusaSlicer, OrcaSlicer, and SuperSlicer dialects, preserve real E increments for replay, and compare slicer claims with machine logs.
-- **Time calibration**: one paired job exposes its raw delta and ratio; three or more distinct durations can fit fixed overhead and motion scale with a robust Theil–Sen model and separate training/holdout errors.
+- **Time calibration**: import versioned bundles and match exact machine, firmware, and material scopes. Only real-provenance `active` models that pass at least five holdout jobs are applied automatically; later jobs continuously check error and drift.
 - **Machine simulation**: separate CoreXY, i3, Delta, and large-format gantry kinematics across preheat, leveling, printing, pause, recovery, and completion.
 - **Process monitoring**: live nozzle and bed temperatures, filament, load, progress, and event timeline.
 - **Quality assessment**: task-level reports based on thermal deviation, leveling residuals, speed changes, and recorded faults.
@@ -47,9 +47,9 @@ A single-machine run can become a production record, while the virtual-farm tool
 
 Machine and material profiles are declarative JSON. Community bundles can extend build volumes, temperatures, density, flow, shrinkage, reference pricing, and physical traits, but cannot execute code, replace built-in IDs, or claim an unsupported kinematic model. Dataset manifests record provenance, licensing, privacy, reproduction commands, and file hashes.
 
-### Auditable calibration
+### Operational calibration
 
-Each G-code/machine-log pair is linked by SHA-256. Its fixture manifest records slicer, firmware, machine, source, training/holdout role, and expected paths. Bundled fixtures are explicitly synthetic conformance cases: they prove that the pipeline is reproducible, not that it predicts production timing accurately.
+Each G-code/machine-log pair is linked by SHA-256. Calibration bundles preserve the training-set fingerprint, provenance, scope, revision, holdout metrics, and admission thresholds. Later paired jobs produce `stable`, `warning`, or `drift`; drifted models stop matching automatically. The bundled synthetic example demonstrates the format and makes no production-accuracy claim.
 
 ### Explainable statistics
 
@@ -108,14 +108,14 @@ Each report combines a verdict, evidence, charts, confidence, and actionable rec
 
 ## Simulation and export
 
-| Capability              | Implementation                                                                                       |
-| ----------------------- | ---------------------------------------------------------------------------------------------------- |
-| Slicing                 | Perimeter offset, even-odd scanline infill, solid skin, support, and skirt                           |
-| G-code review           | Common Cura/Prusa comments, absolute/relative E, corner/center origin, 2D/3D replay                  |
-| Machine logs and timing | Standard JSON or common CSV; planned/actual values, one-job ratio, robust multi-job timing model     |
-| Thermal and leveling    | Inertial thermal model; 3×3 probing, 5×5 mesh, bilinear compensation                                 |
-| Profile extensions      | Machine/material JSON bundles, schema, allowlist, range checks, reference pricing, local persistence |
-| Export                  | Binary STL, ASCII OBJ, and Marlin-style G-code                                                       |
+| Capability              | Implementation                                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------------------------------- |
+| Slicing                 | Perimeter offset, even-odd scanline infill, solid skin, support, and skirt                            |
+| G-code review           | Common Cura/Prusa comments, absolute/relative E, corner/center origin, 2D/3D replay                   |
+| Machine logs and timing | Standard JSON or common CSV; versioned bundles, exact scopes, holdout admission, and drift monitoring |
+| Thermal and leveling    | Inertial thermal model; 3×3 probing, 5×5 mesh, bilinear compensation                                  |
+| Profile extensions      | Machine/material JSON bundles, schema, allowlist, range checks, reference pricing, local persistence  |
+| Export                  | Binary STL, ASCII OBJ, and Marlin-style G-code                                                        |
 
 Manufacturing files should be revalidated against the target slicer, firmware configuration, and machine-safety process before use on physical equipment.
 
@@ -125,7 +125,7 @@ Manufacturing files should be revalidated against the target slicer, firmware co
 Browser
 ├─ 3D scene / printer kinematics / print animation
 ├─ slicer / G-code replay / machine-log comparison / time calibration
-├─ profile registry / simulator / telemetry / exporters
+├─ profile + calibration registries / simulator / telemetry / exporters
 ├─ statistics kernel / insight engine / fleet view
 └─ API client
         │
@@ -149,9 +149,10 @@ See [`doc/architecture.md`](./doc/architecture.md) for design details.
 ## Verification
 
 ```bash
-npm test             # 572 core/service assertions + 17 ecosystem, 61 fixture, 13 release checks
-npm run test:e2e     # 24 browser scenarios: full Chromium + critical Firefox/WebKit paths
+npm test             # 596 core/service assertions + 17 ecosystem, 61 fixture, 16 calibration, 19 release checks
+npm run test:e2e     # 25 browser scenarios: full Chromium + critical Firefox/WebKit paths
 npm run validate:fixtures
+npm run validate:calibrations
 npm run release:check
 npm run lint
 npm run format:check
@@ -159,10 +160,10 @@ npm run format:check
 
 Coverage includes slicing, G-code, machine logs, time calibration, profiles, leveling, simulation, exports, statistics, insights, virtual-farm datasets, backend contracts, and critical UI flows across three browser engines.
 
-See [`validation/README.md`](./validation/README.md) for dialect fixtures,
-provenance boundaries, and the real-data contribution workflow. The bundled
-report is `synthetic-conformance`; production observations must enter as
-holdout data and be reviewed before training.
+See [`validation/README.md`](./validation/README.md) for dialect fixtures and
+the real-data contribution workflow, and [`calibration/README.md`](./calibration/README.md)
+for the P7 bundle, admission, and drift lifecycle. Bundled reports and models
+are `synthetic-conformance` and never match user jobs automatically.
 
 [Watch the ~90-second silent demo](./doc/assets/forgex-p5-demo.webm), then use the
 [bilingual voice-over script](./doc/demo-script.md) or read the
@@ -214,6 +215,7 @@ datasets/             reproducible virtual-farm datasets
 profiles/             machine/material profile schema and examples
 logs/                 machine-log schema and examples
 validation/           paired G-code/log fixtures and calibration reports
+calibration/          versioned calibration bundle schema and demonstration
 tools/                headless simulation and dataset generation
 tests/                unit, contract and end-to-end tests
 doc/                   architecture and engineering notes

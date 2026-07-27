@@ -28,6 +28,7 @@ const FRONTEND_GLOBALS = {
   FXGcodeParser: "readonly", // js/gcode-parser.js
   FXMachineLog: "readonly", // js/machine-log.js
   FXTimeCalibration: "readonly", // js/time-calibration.js
+  FXCalibrationRegistry: "readonly", // js/calibration-registry.js
   FXProfiles: "readonly", // js/profile-registry.js
   FXStats: "readonly", // js/stats-kernel.js
   FXMachineProfile: "readonly", // js/machine-profile.js

@@ -182,5 +182,59 @@
     };
   };
 
+  /**
+   * 用后续生产观测检查已发布模型是否漂移。
+   * 少于 minSamples 只返回 insufficient，不用一两次偶然暂停宣布模型失效。
+   */
+  C.detectDrift = function (model, samples, opt) {
+    opt = opt || {};
+    var rows = normalize(samples);
+    var minSamples = Math.max(3, Math.floor(finite(opt.minSamples) || 5));
+    var maxMape = finite(opt.maxMape);
+    var maxBias = finite(opt.maxBias);
+    if (maxMape == null) maxMape = 0.2;
+    if (maxBias == null) maxBias = 0.12;
+    if (rows.length < minSamples) {
+      return {
+        status: "insufficient",
+        sampleCount: rows.length,
+        requiredSamples: minSamples,
+        medianApe: null,
+        medianBias: null,
+        p90Ape: null,
+        note: "观测不足，继续收集同一机型与固件的配对任务。",
+      };
+    }
+
+    var signed = [];
+    var absolute = [];
+    rows.forEach(function (row) {
+      var predicted = C.predict(model, row.plannedTimeSec);
+      var err = predicted > 0 ? (row.actualTimeSec - predicted) / predicted : 0;
+      signed.push(err);
+      absolute.push(Math.abs(err));
+    });
+    var sortedAbs = absolute.slice().sort(function (a, b) { return a - b; });
+    var p90Index = Math.min(sortedAbs.length - 1, Math.ceil(sortedAbs.length * 0.9) - 1);
+    var medianApe = median(absolute);
+    var medianBias = median(signed);
+    var warning = medianApe > maxMape * 0.8 || Math.abs(medianBias) > maxBias * 0.8;
+    var drift = medianApe > maxMape || Math.abs(medianBias) > maxBias;
+    return {
+      status: drift ? "drift" : warning ? "warning" : "stable",
+      sampleCount: rows.length,
+      requiredSamples: minSamples,
+      medianApe: medianApe,
+      medianBias: medianBias,
+      p90Ape: sortedAbs[p90Index],
+      thresholds: { maxMape: maxMape, maxBias: maxBias },
+      note: drift
+        ? "后续观测已超过模型阈值，应停止自动应用并重新审查训练集。"
+        : warning
+          ? "误差接近阈值，建议增加 holdout 并检查固件或工艺变更。"
+          : "后续观测仍在声明阈值内。",
+    };
+  };
+
   root.FXTimeCalibration = C;
 })(typeof window !== "undefined" ? window : globalThis);

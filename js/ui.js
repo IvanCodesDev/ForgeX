@@ -210,6 +210,11 @@
                 sim.slice,
                 this._machineLogState.log
               );
+              this._machineLogState.calibration = this._calibrationFor(
+                sim.slice,
+                this._machineLogState.log,
+                false
+              );
             }
             if (this.currentNav === "import") this.renderCtx("import");
           }
@@ -414,6 +419,26 @@
       body.appendChild(profileRow);
       body.appendChild(el("div", "note", `仅接受声明式 JSON 与已实现运动学，不执行社区代码。当前已载入 ${profileCount} 个社区 Profile。`));
 
+      body.appendChild(el("div", "sec-label", "时间校准包"));
+      const calibrationModels = FXCalibrationRegistry.list();
+      const activeCalibrations = calibrationModels.filter((model) => model.status === "active").length;
+      const calibrationRow = el("div", "chip-row");
+      const calibrationUpload = el("button", "btn btn-ghost", "导入校准包 JSON");
+      calibrationUpload.type = "button";
+      calibrationUpload.id = "calibration-upload";
+      calibrationUpload.addEventListener("click", () => $("#calibration-input").click());
+      const calibrationExample = el("a", "btn btn-ghost", "查看示例");
+      calibrationExample.href = "calibration/example-bundle.json";
+      calibrationExample.target = "_blank";
+      calibrationExample.rel = "noopener";
+      calibrationRow.append(calibrationUpload, calibrationExample);
+      body.appendChild(calibrationRow);
+      body.appendChild(el(
+        "div",
+        "note",
+        `按机型、固件和材料精确匹配；合成模型不自动生效。当前 ${calibrationModels.length} 个模型，${activeCalibrations} 个 active。`
+      ));
+
       body.appendChild(el("div", "sec-label", "内置工程模型"));
       const grid = el("div", "model-grid");
       const icons = {
@@ -500,10 +525,25 @@
           actual.innerHTML = `<div class="kv"><span class="k">真机日志</span><span class="v">${FXU.esc(M.log.name)} · ${FXU.esc(M.log.status)}</span></div>
             ${M.log.machineId ? `<div class="kv"><span class="k">设备 / 固件</span><span class="v">${FXU.esc(M.log.machineId)} · ${FXU.esc(M.log.firmware || "未声明")}</span></div>` : ""}
             ${rows || '<div class="kv"><span class="k">对比</span><span class="v">日志缺少可比较的任务汇总字段</span></div>'}
-            ${M.observation ? `<div class="kv"><span class="k">单任务观测倍率</span><span class="v">${M.observation.rawRatio.toFixed(2)}× · ${M.observation.deltaSec >= 0 ? "+" : "−"}${FXGcodeParser.fmtSec(Math.abs(M.observation.deltaSec))}</span></div>` : ""}`;
+            ${M.observation ? `<div class="kv"><span class="k">单任务观测倍率</span><span class="v">${M.observation.rawRatio.toFixed(2)}× · ${M.observation.deltaSec >= 0 ? "+" : "−"}${FXGcodeParser.fmtSec(Math.abs(M.observation.deltaSec))}</span></div>` : ""}
+            ${M.calibration ? `<div class="kv"><span class="k">作用域校准</span><span class="v hl">${FXU.esc(M.calibration.model.id)} r${M.calibration.model.bundleRevision} · ${FXGcodeParser.fmtSec(M.calibration.estimate.predictedTimeSec)}</span></div>
+              <div class="kv"><span class="k">holdout 区间</span><span class="v">${FXGcodeParser.fmtSec(M.calibration.estimate.lowerTimeSec)} – ${FXGcodeParser.fmtSec(M.calibration.estimate.upperTimeSec)} · 漂移 ${FXU.esc(M.calibration.drift.status)}</span></div>` : ""}`;
           body.appendChild(actual);
           if (M.observation)
             body.appendChild(el("div", "note", M.observation.note));
+          if (M.calibration) {
+            body.appendChild(el(
+              "div",
+              "note",
+              M.calibration.drift.note + " 校准值只适用于该模型声明的机型、固件和材料范围。"
+            ));
+          } else if (M.log.machineId && M.log.firmware) {
+            body.appendChild(el(
+              "div",
+              "note",
+              "未找到通过准入且未漂移的精确作用域校准模型；当前仍保留原始 G-code 估算与实测对比。"
+            ));
+          }
           for (const warning of M.log.warnings) body.appendChild(el("div", "note", `⚠ ${warning}`));
         }
       }
@@ -722,6 +762,11 @@
         if (f) this._handleProfileFile(f);
         e.target.value = "";
       });
+      $("#calibration-input").addEventListener("change", (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (f) this._handleCalibrationFile(f);
+        e.target.value = "";
+      });
     }
 
     _handleFile(f) {
@@ -790,12 +835,63 @@
           const log = FXMachineLog.parse(rd.result, { name: f.name });
           const comparison = FXMachineLog.compare(this._gcodeState.parsed, log);
           const observation = FXTimeCalibration.observation(this._gcodeState.parsed, log);
-          this._machineLogState = { log, comparison, observation };
+          const calibration = this._calibrationFor(this._gcodeState.parsed, log, true);
+          this._machineLogState = { log, comparison, observation, calibration };
           if (this.currentNav === "import") this.renderCtx("import");
           this.toast(`真机日志已接入：生成 ${comparison.length} 项计划/实测对比`, "ok");
         } catch (e) {
           console.error("[machine-log]", e);
           this.toast("真机日志导入失败：" + (e && e.message || e), "err");
+        }
+      };
+      rd.readAsText(f);
+    }
+
+    _calibrationFor(parsed, log, record) {
+      const model = FXCalibrationRegistry.match({
+        machineId: log.machineId,
+        firmware: log.firmware,
+        material: this.sim.settings.material,
+      });
+      if (!model) return null;
+      const observation = FXTimeCalibration.fromPair(parsed, log, {
+        id: log.jobId || log.name,
+        machineId: log.machineId,
+        firmware: log.firmware,
+      });
+      return {
+        model,
+        estimate: FXCalibrationRegistry.estimate(model, parsed.stats.timeSec),
+        drift: record
+          ? FXCalibrationRegistry.recordObservation(model, observation)
+          : FXCalibrationRegistry.drift(model),
+      };
+    }
+
+    _handleCalibrationFile(f) {
+      if (!/\.json$/i.test(f.name || "")) return this.toast("校准包必须是 JSON 文件", "err");
+      if (f.size > FXCalibrationRegistry.MAX_BYTES)
+        return this.toast("校准包 JSON 超过 2MB", "err");
+      const rd = new FileReader();
+      rd.onerror = () => this.toast("校准包读取失败", "err");
+      rd.onload = () => {
+        try {
+          const imported = FXCalibrationRegistry.importBundle(JSON.parse(rd.result));
+          if (this._machineLogState && this._gcodeState) {
+            this._machineLogState.calibration = this._calibrationFor(
+              this._gcodeState.parsed,
+              this._machineLogState.log,
+              false
+            );
+          }
+          if (this.currentNav === "import") this.renderCtx("import");
+          this.toast(
+            `校准包已导入：${imported.id} r${imported.revision} · ${imported.models.length} 个模型`,
+            "ok"
+          );
+        } catch (e) {
+          console.error("[calibration-import]", e);
+          this.toast("校准包导入失败：" + (e && e.message || e), "err");
         }
       };
       rd.readAsText(f);

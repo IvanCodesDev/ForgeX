@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/IvanCodesDev/ForgeX/raw/main/calibration/calibration-bundle.schema.json",
+  "title": "FORGE·X time-calibration bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "version", "id", "revision", "createdAt", "provenance", "source", "models"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "format": { "const": "forgex-calibration-bundle" },
+    "version": { "const": 1 },
+    "id": { "$ref": "#/$defs/id" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "provenance": {
+      "enum": ["synthetic-conformance", "real-anonymized", "real-consented"]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["license", "note"],
+      "properties": {
+        "license": { "type": "string", "minLength": 1 },
+        "note": { "type": "string", "minLength": 20 }
+      }
+    },
+    "models": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/model" }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$"
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status",
+        "scope",
+        "algorithm",
+        "trainedAt",
+        "coefficients",
+        "validation",
+        "thresholds",
+        "trainingSetSha256"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "status": {
+          "enum": ["candidate", "active", "retired", "demonstration-only"]
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["machineId", "firmware"],
+          "properties": {
+            "machineId": { "type": "string", "minLength": 1 },
+            "firmware": { "type": "string", "minLength": 1 },
+            "material": { "type": "string", "minLength": 1 }
+          }
+        },
+        "algorithm": { "const": "theil-sen" },
+        "trainedAt": { "type": "string", "format": "date-time" },
+        "coefficients": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["motionScale", "fixedOverheadSec", "sampleCount"],
+          "properties": {
+            "motionScale": { "type": "number", "minimum": 0.1, "maximum": 10 },
+            "fixedOverheadSec": { "type": "number", "minimum": 0, "maximum": 7200 },
+            "sampleCount": { "type": "integer", "minimum": 3 }
+          }
+        },
+        "validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["holdoutSamples", "mape", "maxApe", "medianBias", "evaluatedAt"],
+          "properties": {
+            "holdoutSamples": { "type": "integer", "minimum": 0 },
+            "mape": { "type": "number", "minimum": 0, "maximum": 1 },
+            "maxApe": { "type": "number", "minimum": 0, "maximum": 5 },
+            "medianBias": { "type": "number", "minimum": -1, "maximum": 1 },
+            "evaluatedAt": { "type": "string", "format": "date-time" }
+          }
+        },
+        "thresholds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxMape", "maxBias", "minDriftSamples"],
+          "properties": {
+            "maxMape": { "type": "number", "minimum": 0.01, "maximum": 0.5 },
+            "maxBias": { "type": "number", "minimum": 0.01, "maximum": 0.5 },
+            "minDriftSamples": { "type": "integer", "minimum": 3 }
+          }
+        },
+        "trainingSetSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    }
+  }
+}
