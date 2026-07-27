@@ -436,7 +436,10 @@
       body.appendChild(el(
         "div",
         "note",
-        `按机型、固件和材料精确匹配；合成模型不自动生效。当前 ${calibrationModels.length} 个模型，${activeCalibrations} 个 active。`
+        `按机型、固件和材料精确匹配；合成模型不自动生效。当前 ${calibrationModels.length} 个模型，${activeCalibrations} 个 active。` +
+          (FXApiClient.calibrationSync && FXApiClient.calibrationSync.status === "ready"
+            ? ` 服务端已审核目录 ${FXApiClient.calibrationSync.count} 个 bundle。`
+            : "")
       ));
 
       body.appendChild(el("div", "sec-label", "内置工程模型"));

@@ -25,6 +25,11 @@ const Registry = global.FXCalibrationRegistry;
 const example = JSON.parse(fs.readFileSync(path.join(ROOT, "calibration", "example-bundle.json"), "utf8"));
 const schema = JSON.parse(fs.readFileSync(path.join(ROOT, "calibration", "calibration-bundle.schema.json"), "utf8"));
 const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+const serverIndex = fs.readFileSync(path.join(ROOT, "server", "index.js"), "utf8");
+const serverService = fs.readFileSync(path.join(ROOT, "server", "services", "calibration.js"), "utf8");
+const serverRoute = fs.readFileSync(path.join(ROOT, "server", "routes", "calibration.js"), "utf8");
+const apiClient = fs.readFileSync(path.join(ROOT, "js", "api-client.js"), "utf8");
+const main = fs.readFileSync(path.join(ROOT, "js", "main.js"), "utf8");
 
 let passed = 0;
 let failed = 0;
@@ -102,5 +107,16 @@ check(
   require(path.join(ROOT, "package.json")).scripts.test.includes("tools/validate-calibrations.js")
 );
 
-console.log(`\n═══ P7 校准门禁：${passed} 通过 / ${failed} 失败 ═══`);
+console.log("\n[P8 calibration] Review and distribution");
+check("服务端注册校准发布路由", /routes\/calibration/.test(serverIndex));
+check("写接口要求已配置 API Key", /auth\.enabled/.test(serverRoute) && /校准审批需要有效 API Key/.test(serverRoute));
+check("候选审批执行四眼原则", /提交者不能审批自己/.test(serverService));
+check(
+  "批准时重新执行 active 准入校验",
+  /model\.status = "active"/.test(serverService) && /validateBundle\(published\)/.test(serverService)
+);
+check("浏览器只拉取公开已审核目录", /\/api\/calibrations/.test(apiClient) && /pullCalibrations/.test(main));
+check("P8 浏览器回归覆盖提交审核与同步", fs.existsSync(path.join(ROOT, "tests", "e2e", "p8.spec.js")));
+
+console.log(`\n═══ P7/P8 校准门禁：${passed} 通过 / ${failed} 失败 ═══`);
 process.exit(failed ? 1 : 0);

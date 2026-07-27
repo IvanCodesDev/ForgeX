@@ -17,6 +17,7 @@ const { DatasourceStore } = require("./services/datasource");
 const { TaskStore } = require("./services/analysis");
 const { KnowledgeStore } = require("./services/knowledge");
 const { ShareStore } = require("./services/share");
+const { CalibrationStore } = require("./services/calibration");
 const { InfiniClient } = require("./services/infini");
 const { CostGate } = require("./lib/quota");
 const { Auth } = require("./lib/auth");
@@ -52,6 +53,7 @@ function createApp(overrides) {
   const knowledge = new KnowledgeStore(cfg, log);
   const tasks = new TaskStore(cfg, log, infini, knowledge, gate);
   const shares = new ShareStore(cfg, log);
+  const calibrations = new CalibrationStore(cfg, log);
 
   /* 运行指标。不引依赖，就是几个计数器——够 /metrics 用，也够排查线上问题。 */
   const metrics = {
@@ -81,7 +83,20 @@ function createApp(overrides) {
     }
   }
 
-  const ctx = { cfg, log, infini, datasources, tasks, knowledge, shares, rateLimit, gate, auth, metrics };
+  const ctx = {
+    cfg,
+    log,
+    infini,
+    datasources,
+    tasks,
+    knowledge,
+    shares,
+    calibrations,
+    rateLimit,
+    gate,
+    auth,
+    metrics,
+  };
   const router = new Router();
 
   router.add("GET", /^\/healthz$/, (req, res) => {
@@ -98,6 +113,11 @@ function createApp(overrides) {
       quota: p.capabilities.ai ? gate.snapshot() : null,
       auth: { enabled: auth.enabled, required: auth.required },
       persistence: cfg.dataDir ? "file" : "memory",
+      calibrations: {
+        approved: calibrations.approvedCount,
+        pending: calibrations.pendingCount,
+        writesEnabled: auth.enabled,
+      },
       now: Date.now(),
     });
   });
@@ -132,6 +152,8 @@ function createApp(overrides) {
     g("forgex_datasources", "已存数据源数", datasources.size);
     g("forgex_knowledge_docs", "已存知识文档数", knowledge.size);
     g("forgex_shares", "有效分享页数", shares.size);
+    g("forgex_calibrations_approved", "已发布校准 bundle 数", calibrations.approvedCount);
+    g("forgex_calibrations_pending", "待审核校准 bundle 数", calibrations.pendingCount);
     res.writeHead(200, { "Content-Type": "text/plain; version=0.0.4; charset=utf-8" });
     res.end(L.join("\n") + "\n");
   });
@@ -139,6 +161,7 @@ function createApp(overrides) {
   require("./routes/datasource").register(router, ctx);
   require("./routes/knowledge").register(router, ctx);
   require("./routes/share").register(router, ctx);
+  require("./routes/calibration").register(router, ctx);
 
   function applyCors(req, res) {
     const origin = req.headers.origin;
@@ -146,7 +169,7 @@ function createApp(overrides) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key");
       res.setHeader("Access-Control-Max-Age", "600");
     }
   }

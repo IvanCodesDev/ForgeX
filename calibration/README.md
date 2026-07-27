@@ -23,6 +23,21 @@
 仓库内的 [`example-bundle.json`](./example-bundle.json) 来自 P6 合成兼容性夹具，只演示格式，
 不具备生产匹配资格。
 
+## P8 服务端审核发布
+
+服务模式提供以下接口：
+
+- `GET /api/calibrations`：公开读取已经批准的 active bundle；
+- `POST /api/calibrations/submissions`：使用 API Key 提交全部为 `candidate` 的 bundle；
+- `GET /api/calibrations/submissions`：使用 API Key 查看候选与审计记录；
+- `POST /api/calibrations/:id/revisions/:revision/review`：使用另一把 API Key
+  提交 `{ "decision": "approve|reject", "reason": "..." }`。
+
+写接口在未配置 `API_KEYS` 时返回 503。批准遵守四眼原则，提交者不能自批；服务端会重新执行
+P7 active 准入校验，而不是采信客户端的状态。审核状态、内容摘要和当前发布版本原子写入
+`DATA_DIR/calibrations.json`。这套机制提供可追溯复核，但不会自动验证数据权利或匿名化是否真实，
+审核人仍需检查外部证据。
+
 ## English
 
 Calibration bundles are versioned, declarative JSON packages for scoped print
@@ -59,3 +74,12 @@ automatic selection will be blocked by the UI lifecycle.
 The bundled [`example-bundle.json`](./example-bundle.json) is derived from P6
 synthetic compatibility fixtures. It demonstrates the format and is not
 eligible for production matching.
+
+## P8 server review and distribution
+
+`GET /api/calibrations` publicly serves approved active bundles. Candidate
+submission, review-queue access, and approve/reject actions require configured
+API keys. Approval follows a four-eyes rule: the submitting key cannot approve
+its own bundle. The server promotes candidates to active only after re-running
+the P7 provenance and holdout gates, then atomically persists the release and
+audit events in `DATA_DIR/calibrations.json`.

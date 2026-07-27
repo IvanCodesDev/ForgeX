@@ -57,12 +57,23 @@ Please do **not** report security issues through public issues.
 
 ### ℹ️ 存储与分享页
 
-P4 起数据源、知识文档、分享页与用量计数都会落盘到 `DATA_DIR`（默认 `server/../data`）。
+P4 起数据源、知识文档、分享页与用量计数都会落盘到 `DATA_DIR`（默认 `server/../data`）；
+P8 增加 `calibrations.json`，其中包含候选 bundle、审核事件和当前发布版本。
 容器部署时**务必挂卷**到该目录，否则重建容器仍会丢数据。
 设 `DATA_DIR=` 为空可显式退回纯内存（`/healthz` 会如实报告 `persistence`）。
 
 分享页支持撤销：创建时返回的 `revokeKey` 只出现一次，服务端只存哈希。
 `POST /api/share/:token/revoke` 携带它即可立刻失效。
+
+### ℹ️ 校准审批身份边界
+
+校准候选提交、候选队列读取和 approve/reject 始终要求合法 API Key，不受
+`REQUIRE_AUTH=0` 影响。批准要求与提交不同的 key；请为提交者和审核者分别分配凭据。
+服务端只记录 key 的 SHA-256 摘要前缀，不保存或返回完整 key。
+
+四眼规则只能证明两个不同凭据参与，不能证明是两个自然人，也不会自动验证
+`real-anonymized` / `real-consented` 声明。审核者必须另行核查数据授权、匿名化和采集责任链。
+公开 `GET /api/calibrations` 仅包含已批准模型参数和来源说明，不包含训练原始记录。
 
 ### ℹ️ 已实现的防护
 

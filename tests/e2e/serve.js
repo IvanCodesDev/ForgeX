@@ -21,6 +21,7 @@ const app = createApp({
   mockDelayMs: 0,
   logLevel: "error",
   probeProvider: false,
+  apiKeys: "e2e-calibration-submitter,e2e-calibration-reviewer",
 });
 
 app.server.listen(8899, "127.0.0.1", () => {

@@ -150,6 +150,28 @@ candidate ──真实来源 + ≥5 holdout + 误差过线──► active
 和后续观测保存在浏览器 localStorage，同任务 ID 去重并最多保留 50 条观测。漂移判定使用
 稳健的中位绝对相对误差和中位偏差，样本不足时只返回 `insufficient`，避免被单次暂停误导。
 
+P8 把发布权从浏览器导入动作中分离出来：
+
+```
+candidate bundle
+       │  POST + submitter API key
+       ▼
+ pending + content SHA-256 + audit event
+       │
+       ├─ reject ─► retained audit record
+       │
+       └─ approve by a different API key
+                    │ re-run active admission
+                    ▼
+          atomic reviewed release ──GET /api/calibrations──► browser registry
+```
+
+`CalibrationStore` 把候选队列、当前发布版本和审计事件保存在同一个
+`DATA_DIR/calibrations.json`，每次状态变更通过临时文件 + rename 原子落盘。客户端只能提交
+`candidate`，服务端批准时才转换为 `active` 并重新执行来源与 holdout 门槛。公开目录只读；
+所有写操作都要求 API Key，并禁止提交 key 审批自己的 bundle。这个四眼规则证明发生过两个
+独立凭据动作，但数据权利、匿名化和采集过程仍需审核者检查外部证据。
+
 ---
 
 ## 4. 分析层
@@ -348,6 +370,7 @@ server/
     datasource.js  数据源上传（JSON 携带 CSV 文本）
     knowledge.js   知识文档登记 + 检索预览
     share.js       分享页生成 / 撤销 + 服务端渲染公开页
+    calibration.js 候选提交 / 审核队列 / active 公开目录
   services/
     providers.js   local / InfiniSynapse / OpenAI-compatible provider 抽象
     infini.js      InfiniSynapse 客户端
@@ -356,6 +379,7 @@ server/
     retrieval.js   中文 bigram + BM25 知识检索
     analysis.js    任务编排：SSE / provider / 缓存 / 配额 / 降级
     datasource.js / knowledge.js / share.js   文件存储 + TTL
+    calibration.js 候选状态机 / 四眼审核 / 原子发布
   lib/
     store.js       原子文件存储 / TTL / 容量淘汰 / 损坏容错
     auth.js        API Key 认证与调用方标识
@@ -366,21 +390,25 @@ server/
 
 ### 5.3 对外接口
 
-| 方法/路径                       | 入参                                                                | 出参                                                                                                  |
-| ------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `POST /api/analyze`             | `{question, datasourceId}`（question ≤500 字；缺省数据源 `sample`） | `202 {taskId, engine}`                                                                                |
-| `GET /api/analyze/:id/stream`   | —                                                                   | SSE `{seq, stage, message, progress}`，终事件 `{done:true}`。事件全量缓存，断线重连/晚接入可重放      |
-| `GET /api/analyze/:id/result`   | —                                                                   | `200 报告` / `202 running` / `502 失败`                                                               |
-| `GET /api/analyze/:id`          | —                                                                   | 轮询兜底 `{status, progress, message}`                                                                |
-| `POST /api/datasource`          | `{name, csv}`                                                       | `201 {datasourceId, rows, warnings?}`                                                                 |
-| `POST /api/knowledge`           | `{name, text}`                                                      | `201 {knowledgeId, retrievalEnabled, note}`                                                           |
-| `POST /api/knowledge/search`    | `{question}`                                                        | 检索预览命中及 provider 能力说明                                                                      |
-| `POST /api/share/:taskId`       | —                                                                   | `201 {publicUrl, revokeKey, expiresAt}`                                                               |
-| `POST /api/share/:token/revoke` | `{revokeKey}`                                                       | 撤销公开分享页                                                                                        |
-| `GET /share/:token`             | —                                                                   | 公开分享页（服务端渲染，零脚本）                                                                      |
-| `GET /healthz`                  | —                                                                   | provider、能力、配额与持久化状态                                                                      |
-| `GET /metrics`                  | —                                                                   | Prometheus 文本指标                                                                                   |
-| `GET /`（静态）                 | —                                                                   | allowlist：`index.html` / `README.md` / `css/` / `js/` / `doc/samples/`。`server/` 与 `.env` 永不可达 |
+| 方法/路径                                               | 入参                                                                | 出参                                                                                                  |
+| ------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `POST /api/analyze`                                     | `{question, datasourceId}`（question ≤500 字；缺省数据源 `sample`） | `202 {taskId, engine}`                                                                                |
+| `GET /api/analyze/:id/stream`                           | —                                                                   | SSE `{seq, stage, message, progress}`，终事件 `{done:true}`。事件全量缓存，断线重连/晚接入可重放      |
+| `GET /api/analyze/:id/result`                           | —                                                                   | `200 报告` / `202 running` / `502 失败`                                                               |
+| `GET /api/analyze/:id`                                  | —                                                                   | 轮询兜底 `{status, progress, message}`                                                                |
+| `POST /api/datasource`                                  | `{name, csv}`                                                       | `201 {datasourceId, rows, warnings?}`                                                                 |
+| `POST /api/knowledge`                                   | `{name, text}`                                                      | `201 {knowledgeId, retrievalEnabled, note}`                                                           |
+| `POST /api/knowledge/search`                            | `{question}`                                                        | 检索预览命中及 provider 能力说明                                                                      |
+| `POST /api/share/:taskId`                               | —                                                                   | `201 {publicUrl, revokeKey, expiresAt}`                                                               |
+| `POST /api/share/:token/revoke`                         | `{revokeKey}`                                                       | 撤销公开分享页                                                                                        |
+| `GET /api/calibrations`                                 | —                                                                   | 已审核 active bundle 公开目录                                                                         |
+| `POST /api/calibrations/submissions`                    | `{bundle, note}` + API Key                                          | 创建 pending 候选；只接受真实来源声明与 `candidate`                                                   |
+| `GET /api/calibrations/submissions`                     | API Key                                                             | 候选 bundle、状态与审计事件                                                                           |
+| `POST /api/calibrations/:id/revisions/:revision/review` | `{decision, reason}` + 不同 API Key                                 | approve/reject；批准时重新执行 active 准入并原子发布                                                  |
+| `GET /share/:token`                                     | —                                                                   | 公开分享页（服务端渲染，零脚本）                                                                      |
+| `GET /healthz`                                          | —                                                                   | provider、能力、配额与持久化状态                                                                      |
+| `GET /metrics`                                          | —                                                                   | Prometheus 文本指标                                                                                   |
+| `GET /`（静态）                                         | —                                                                   | allowlist：`index.html` / `README.md` / `css/` / `js/` / `doc/samples/`。`server/` 与 `.env` 永不可达 |
 
 ### 5.4 Provider 选择与自动降级
 
@@ -401,7 +429,7 @@ ANALYSIS_PROVIDER=auto（默认）
 | 控制     | 当前实现                                                          |
 | -------- | ----------------------------------------------------------------- |
 | 持久化   | 默认写入 `data/`；可通过 `DATA_DIR` 指定目录或显式退回纯内存      |
-| 鉴权     | `API_KEYS` + `REQUIRE_AUTH`，支持 Bearer 与 `X-API-Key`           |
+| 鉴权     | `API_KEYS` + `REQUIRE_AUTH`；校准写入始终鉴权并要求不同 key 复核  |
 | 成本     | AI 并发、队列、调用方日额度、全局日额度；规则引擎不受 AI 额度限制 |
 | 缓存     | 相同问题 + 数据集 + provider 命中结果缓存，减少重复计费           |
 | 可观测性 | JSON 行日志、`/healthz`、`/metrics`                               |
@@ -446,6 +474,7 @@ OpenAI-compatible provider 使用 `/chat/completions` 风格端点，复用同�
 | `tests/machine-log.test.js`          | 真机日志：JSON/CSV 归一 / 任务责任链 / 计划实测比较 / 边界            | 14      |
 | `tests/time-calibration.test.js`     | 时间校准：稳健拟合 / 异常点 / 配对观测 / 防御性边界                   | 17      |
 | `tests/calibration-registry.test.js` | 校准包：来源/holdout 准入、精确作用域、revision、持久化与漂移         | 23      |
+| `tests/calibration-service.test.js`  | 服务端校准：候选、四眼审核、原子发布、持久化、API Key 与公开目录      | 26      |
 | `tests/profiles.test.js`             | Profile：schema 对齐 / 白名单 / 防覆盖 / 价格与物理特征接线           | 20      |
 | `tests/stats.test.js`                | Wilson / Fisher / 偏相关 / Mann–Kendall / 证据表述                    | 75      |
 | `tests/insight.test.js`              | 洞察：数据 / 解析 / 统计守卫 / 来源标记 / 统计严谨性                  | 88      |
@@ -454,18 +483,18 @@ OpenAI-compatible provider 使用 `/chat/completions` 风格端点，复用同�
 | `tests/check-refs.js`                | HTML ↔ JS 的 DOM id 引用交叉校验                                      | —       |
 | `tools/validate-ecosystem.js`        | Profile、日志、数据集 schema / 哈希 / 表头 / 行数                     | 17 检查 |
 | `tools/validate-fixtures.js`         | G-code/日志配对、来源、SHA-256、训练/holdout 与校准报告               | 61 检查 |
-| `tools/validate-calibrations.js`     | bundle schema、来源边界、训练指纹、自动匹配与浏览器接线               | 16 检查 |
-| `tools/release-audit.js`             | 版本、缓存键、文档、校准生命周期与三浏览器 CI 一致性                  | 19 检查 |
+| `tools/validate-calibrations.js`     | bundle、来源边界、审核发布、自动匹配与浏览器同步                      | 22 检查 |
+| `tools/release-audit.js`             | 版本、缓存、文档、审核生命周期与三浏览器 CI 一致性                    | 25 检查 |
 | `tests/deploy-check.js`              | 部署后线上冒烟（需公网 URL）                                          | 10      |
-| `tests/e2e/*.spec.js`                | Chromium 全量；Firefox/WebKit 启动与真实任务复盘关键链路              | 25 场景 |
+| `tests/e2e/*.spec.js`                | Chromium 全量；Firefox/WebKit 启动与真实任务复盘关键链路              | 26 场景 |
 
 `sim-calib` 用 **stub 打印机**在 Node.js 中驱动完整状态机；`farm.test.js` 在此基础上验证虚拟机群与故障机理。
 
 **测试原则**：断言引擎的**性质**，不断言「生成器埋了什么就挖出什么」。
 详见 `tests/insight.test.js` 头注与 `CONTRIBUTING.md`。
 
-核心逻辑与服务契约共 596 项断言，另有 17 项生态、61 项夹具、16 项校准运营和
-19 项发布一致性检查；DOM 层共有 25 个 Playwright 浏览器场景。
+核心逻辑与服务契约共 622 项断言，另有 17 项生态、61 项夹具、22 项校准运营和
+25 项发布一致性检查；DOM 层共有 26 个 Playwright 浏览器场景。
 
 ---
 

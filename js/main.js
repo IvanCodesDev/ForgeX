@@ -47,6 +47,32 @@
     sim.log("info", "载入默认模型「行星齿轮」，切片完成，等待任务指令");
     sim.log("info", "智造洞察已就绪 · 内置示例生产数据 · 顶部「洞察」可开始数据分析");
 
+    // 服务模式下只拉取已经人工审核并发布的 active 校准包。
+    // file://、服务离线或单包冲突时保留 P7 本地注册表，不阻塞仿真器启动。
+    if (typeof FXApiClient !== "undefined" && typeof FXCalibrationRegistry !== "undefined") {
+      FXApiClient.probe()
+        .then((available) => (available ? FXApiClient.pullCalibrations() : []))
+        .then((bundles) => {
+          let changed = 0;
+          for (const bundle of bundles) {
+            try {
+              FXCalibrationRegistry.importBundle(bundle);
+              changed++;
+            } catch (e) {
+              if (!/revision 必须高于/.test(String((e && e.message) || e)))
+                console.warn("[calibration-sync]", e);
+            }
+          }
+          if (changed) {
+            if (ui.currentNav === "import") ui.renderCtx("import");
+            ui.toast(`已同步 ${changed} 个服务端审核校准包`, "ok");
+          }
+        })
+        .catch(() => {
+          // 离线降级是预期路径，本地 bundle 保持可用。
+        });
+    }
+
     // 启动动画结束后移除 boot 类，避免动画重放
     setTimeout(() => document.body.classList.remove("boot"), 1600);
 

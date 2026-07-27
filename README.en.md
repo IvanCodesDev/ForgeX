@@ -3,7 +3,7 @@
 ### Turn every print into an observable, reproducible, and analyzable digital experiment
 
 [![CI](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml/badge.svg)](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.17.0-2563eb)
+![Version](https://img.shields.io/badge/version-0.18.0-2563eb)
 ![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-16a34a)
 ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-0f172a)
 [![License](https://img.shields.io/badge/license-Apache--2.0-f97316)](./LICENSE)
@@ -16,9 +16,9 @@ The platform runs offline and can optionally use a lightweight Node.js service f
 
 ## Core experience
 
-| Digital experiments                                                      | Real-job review                                                                    | Production insight                                             |
-| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Four kinematics, layer slicing, thermal behavior, leveling, fault drills | 3D G-code replay, machine-log comparison, scoped calibration, and drift monitoring | Simulation capture, statistical tests, fleet analysis, sharing |
+| Digital experiments                                                      | Real-job review                                                                     | Production insight                                             |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Four kinematics, layer slicing, thermal behavior, leveling, fault drills | 3D G-code replay, machine logs, reviewed calibration releases, and drift monitoring | Simulation capture, statistical tests, fleet analysis, sharing |
 
 ### One workflow from model to insight
 
@@ -27,7 +27,7 @@ The platform runs offline and can optionally use a lightweight Node.js service f
 - **Model preparation**: built-in parametric models, placement and scaling, image reliefs, and silhouette extrusion.
 - **Slicing**: perimeters, solid skin, scanline infill, support, and skirt, with synchronized 2D/3D layer previews.
 - **Real-job review**: import common Cura, PrusaSlicer, OrcaSlicer, and SuperSlicer dialects, preserve real E increments for replay, and compare slicer claims with machine logs.
-- **Time calibration**: import versioned bundles and match exact machine, firmware, and material scopes. Only real-provenance `active` models that pass at least five holdout jobs are applied automatically; later jobs continuously check error and drift.
+- **Time calibration**: publish versioned candidates through two-key review, then match exact machine, firmware, and material scopes. Only real-provenance `active` models that pass at least five holdout jobs are applied automatically; later jobs continuously check error and drift.
 - **Machine simulation**: separate CoreXY, i3, Delta, and large-format gantry kinematics across preheat, leveling, printing, pause, recovery, and completion.
 - **Process monitoring**: live nozzle and bed temperatures, filament, load, progress, and event timeline.
 - **Quality assessment**: task-level reports based on thermal deviation, leveling residuals, speed changes, and recorded faults.
@@ -49,7 +49,7 @@ Machine and material profiles are declarative JSON. Community bundles can extend
 
 ### Operational calibration
 
-Each G-code/machine-log pair is linked by SHA-256. Calibration bundles preserve the training-set fingerprint, provenance, scope, revision, holdout metrics, and admission thresholds. Later paired jobs produce `stable`, `warning`, or `drift`; drifted models stop matching automatically. The bundled synthetic example demonstrates the format and makes no production-accuracy claim.
+Each G-code/machine-log pair is linked by SHA-256. Calibration bundles preserve the training-set fingerprint, provenance, scope, revision, holdout metrics, and admission thresholds. The service records submit, review, reject, and release events and prevents self-approval. Later paired jobs produce `stable`, `warning`, or `drift`; drifted models stop matching automatically. The bundled synthetic example demonstrates the format and makes no production-accuracy claim.
 
 ### Explainable statistics
 
@@ -80,7 +80,8 @@ Service mode also enables:
 - persistent data sources, knowledge documents, share pages, and usage records;
 - analysis progress events and result caching;
 - API-key authentication plus AI concurrency and daily budget controls;
-- `/healthz` health checks and Prometheus metrics at `/metrics`.
+- `/healthz` health checks and Prometheus metrics at `/metrics`;
+- candidate calibration submission, two-key review, atomic release, and browser synchronization.
 
 > Node.js 18 or newer is required. The application has no npm runtime dependencies; ESLint, Prettier, and Playwright are development-only tools.
 
@@ -125,13 +126,13 @@ Manufacturing files should be revalidated against the target slicer, firmware co
 Browser
 ├─ 3D scene / printer kinematics / print animation
 ├─ slicer / G-code replay / machine-log comparison / time calibration
-├─ profile + calibration registries / simulator / telemetry / exporters
+├─ profile + calibration registries / reviewed releases / simulator
 ├─ statistics kernel / insight engine / fleet view
 └─ API client
         │
         ▼
 Node.js service
-├─ datasource / analysis / knowledge / share
+├─ datasource / analysis / knowledge / share / calibration review
 ├─ file store / cache / auth / quota / metrics
 └─ providers
    ├─ local rules
@@ -149,8 +150,8 @@ See [`doc/architecture.md`](./doc/architecture.md) for design details.
 ## Verification
 
 ```bash
-npm test             # 596 core/service assertions + 17 ecosystem, 61 fixture, 16 calibration, 19 release checks
-npm run test:e2e     # 25 browser scenarios: full Chromium + critical Firefox/WebKit paths
+npm test             # 622 core/service assertions + 17 ecosystem, 61 fixture, 22 calibration, 25 release checks
+npm run test:e2e     # 26 browser scenarios: full Chromium + critical Firefox/WebKit paths
 npm run validate:fixtures
 npm run validate:calibrations
 npm run release:check
@@ -162,7 +163,7 @@ Coverage includes slicing, G-code, machine logs, time calibration, profiles, lev
 
 See [`validation/README.md`](./validation/README.md) for dialect fixtures and
 the real-data contribution workflow, and [`calibration/README.md`](./calibration/README.md)
-for the P7 bundle, admission, and drift lifecycle. Bundled reports and models
+for the P7/P8 bundle, admission, reviewed-release, and drift lifecycle. Bundled reports and models
 are `synthetic-conformance` and never match user jobs automatically.
 
 [Watch the ~90-second silent demo](./doc/assets/forgex-p5-demo.webm), then use the
@@ -198,7 +199,7 @@ Common environment variables:
 | ----------------------------------------- | --------------------------------------------------------------------------- |
 | `ANALYSIS_PROVIDER`                       | `auto`, `local`, `infinisynapse`, or `openai`                               |
 | `DATA_DIR`                                | Persistence directory; defaults to the project `data/` directory when unset |
-| `API_KEYS` / `REQUIRE_AUTH`               | API keys and enforced authentication                                        |
+| `API_KEYS` / `REQUIRE_AUTH`               | API keys, global authentication, and two-key calibration review             |
 | `AI_CONCURRENCY` / `AI_QUEUE_MAX`         | AI concurrency and queue limits                                             |
 | `AI_DAILY_PER_CALLER` / `AI_DAILY_GLOBAL` | Per-caller and instance-wide daily budgets                                  |
 | `PUBLIC_BASE`                             | Public base URL used for share links                                        |

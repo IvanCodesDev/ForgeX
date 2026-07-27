@@ -3,7 +3,7 @@
 ### 让每一次打印，都成为可观察、可复现、可分析的数字实验
 
 [![CI](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml/badge.svg)](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.17.0-2563eb)
+![Version](https://img.shields.io/badge/version-0.18.0-2563eb)
 ![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-16a34a)
 ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-0f172a)
 [![License](https://img.shields.io/badge/license-Apache--2.0-f97316)](./LICENSE)
@@ -16,9 +16,9 @@ FORGE·X Insight 是一个面向 FDM 增材制造的浏览器端数字实验平�
 
 ## 核心体验
 
-| 数字实验                                   | 真实任务复盘                                                 | 生产洞察                                |
-| ------------------------------------------ | ------------------------------------------------------------ | --------------------------------------- |
-| 四类运动学、逐层切片、温控、调平与故障演练 | G-code 3D 回放、真机日志对比、版本化作用域校准与后续漂移监测 | 仿真采集、KPI、统计检验、机群定位与分享 |
+| 数字实验                                   | 真实任务复盘                                             | 生产洞察                                |
+| ------------------------------------------ | -------------------------------------------------------- | --------------------------------------- |
+| 四类运动学、逐层切片、温控、调平与故障演练 | G-code 3D 回放、真机日志对比、审核校准发布与后续漂移监测 | 仿真采集、KPI、统计检验、机群定位与分享 |
 
 ### 从模型到洞察的一体化流程
 
@@ -27,7 +27,7 @@ FORGE·X Insight 是一个面向 FDM 增材制造的浏览器端数字实验平�
 - **模型准备**：内置参数化模型、摆放与缩放、图片浮雕和剪影建模。
 - **路径切片**：周界、顶底实心层、扫描线填充、支撑与裙边；任意层路径可在 2D/3D 中同步预览。
 - **真实任务复盘**：导入 Cura、PrusaSlicer、OrcaSlicer 与 SuperSlicer 常见方言，保留真实 E 增量逐层回放，并与切片器声明和真机任务日志并列对比。
-- **时间校准**：导入版本化校准包，按机型、固件和材料精确匹配；只有真实来源且通过至少五个 holdout 的 `active` 模型会自动生效，后续任务持续检查误差和漂移。
+- **时间校准**：版本化候选包经 API Key 双人审核后发布，按机型、固件和材料精确匹配；只有真实来源且通过至少五个 holdout 的 `active` 模型会自动生效，后续任务持续检查误差和漂移。
 - **设备仿真**：CoreXY、i3、Delta 与大幅面龙门四套运动学，覆盖预热、调平、打印、暂停、恢复和完成状态。
 - **过程监控**：喷嘴/热床温度、耗材、负载、进度和事件时间线实时更新。
 - **质量评估**：基于本次任务的温度偏差、调平残差、速度变化与故障记录生成质量报告。
@@ -49,7 +49,7 @@ FORGE·X Insight 是一个面向 FDM 增材制造的浏览器端数字实验平�
 
 ### 校准结果可运营
 
-G-code 与真机日志通过 SHA-256 绑定；校准包继续记录训练集指纹、来源、作用域、版本、holdout 指标和启用阈值。后续配对任务会形成 `stable`、`warning` 或 `drift` 状态，漂移模型停止自动匹配。仓库内置示例明确标为合成演示，不作为生产精度证明。
+G-code 与真机日志通过 SHA-256 绑定；校准包继续记录训练集指纹、来源、作用域、版本、holdout 指标和启用阈值。服务端保留提交、审核、拒绝与发布审计事件，禁止提交者自批。后续配对任务会形成 `stable`、`warning` 或 `drift` 状态，漂移模型停止自动匹配。仓库内置示例明确标为合成演示，不作为生产精度证明。
 
 ### 统计结果可解释
 
@@ -80,7 +80,8 @@ npm start
 - 数据源、知识文档、分享页和用量信息持久化；
 - 分析任务进度与结果缓存；
 - API Key 鉴权、AI 并发与每日额度保护；
-- `/healthz` 健康检查和 `/metrics` Prometheus 指标。
+- `/healthz` 健康检查和 `/metrics` Prometheus 指标；
+- 校准候选提交、双人审核、原子发布与浏览器只读同步。
 
 > Node.js 仅需 18 或更高版本。应用运行时没有 npm 依赖；ESLint、Prettier 与 Playwright 仅用于开发和测试。
 
@@ -125,13 +126,13 @@ npm start
 Browser
 ├─ 3D scene / printer kinematics / print animation
 ├─ slicer / G-code replay / machine-log comparison / time calibration
-├─ profile + calibration registries / simulator / telemetry / exporters
+├─ profile + calibration registries / reviewed releases / simulator
 ├─ statistics kernel / insight engine / fleet view
 └─ API client
         │
         ▼
 Node.js service
-├─ datasource / analysis / knowledge / share
+├─ datasource / analysis / knowledge / share / calibration review
 ├─ file store / cache / auth / quota / metrics
 └─ providers
    ├─ local rules
@@ -149,8 +150,8 @@ Node.js service
 ## 验证
 
 ```bash
-npm test             # 596 项核心/服务断言 + 17 项生态、61 项夹具、16 项校准、19 项发布检查
-npm run test:e2e     # 25 个浏览器场景：Chromium 全量 + Firefox/WebKit 关键链路
+npm test             # 622 项核心/服务断言 + 17 项生态、61 项夹具、22 项校准、25 项发布检查
+npm run test:e2e     # 26 个浏览器场景：Chromium 全量 + Firefox/WebKit 关键链路
 npm run validate:fixtures
 npm run validate:calibrations
 npm run release:check
@@ -161,7 +162,7 @@ npm run format:check
 测试覆盖切片、G-code、真机日志、时间校准、Profile、调平、仿真状态机、导出、统计核、洞察引擎、虚拟机群、数据集完整性、后端契约以及三浏览器关键界面流程。
 
 P6 方言夹具与真实数据贡献流程见 [`validation/README.md`](./validation/README.md)；
-P7 校准包格式、准入和漂移生命周期见 [`calibration/README.md`](./calibration/README.md)。
+P7/P8 校准包格式、准入、审核发布和漂移生命周期见 [`calibration/README.md`](./calibration/README.md)。
 内置报告和 bundle 都是 `synthetic-conformance`，不会自动用于用户任务。
 
 [观看约 90 秒无声演示](./doc/assets/forgex-p5-demo.webm)，配套讲解词见
@@ -197,7 +198,7 @@ node server/index.js
 | ----------------------------------------- | -------------------------------------------- |
 | `ANALYSIS_PROVIDER`                       | `auto`、`local`、`infinisynapse` 或 `openai` |
 | `DATA_DIR`                                | 持久化目录；未设置时默认为项目下的 `data/`   |
-| `API_KEYS` / `REQUIRE_AUTH`               | API Key 与强制鉴权                           |
+| `API_KEYS` / `REQUIRE_AUTH`               | API Key、全局鉴权及双 key 校准审批           |
 | `AI_CONCURRENCY` / `AI_QUEUE_MAX`         | AI 并发与排队上限                            |
 | `AI_DAILY_PER_CALLER` / `AI_DAILY_GLOBAL` | 调用方与实例级每日额度                       |
 | `PUBLIC_BASE`                             | 分享链接的公网地址前缀                       |

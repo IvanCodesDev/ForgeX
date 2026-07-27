@@ -81,6 +81,16 @@ check(
 );
 check("浏览器回归覆盖 P7 校准生命周期", fs.existsSync(path.join(ROOT, "tests/e2e/p7.spec.js")));
 
+console.log("\n[release] P8 reviewed distribution");
+const calibrationService = text("server/services/calibration.js");
+const calibrationRoute = text("server/routes/calibration.js");
+check("主测试链包含服务端校准审批契约", pkg.scripts.test.includes("tests/calibration-service.test.js"));
+check("服务端组装公开校准目录", text("server/index.js").includes("routes/calibration"));
+check("审批写接口强制 API Key", /auth\.enabled/.test(calibrationRoute));
+check("审批禁止提交者自批", /提交者不能审批自己/.test(calibrationService));
+check("浏览器启动时同步审核目录", /pullCalibrations/.test(text("js/main.js")));
+check("浏览器回归覆盖服务端发布", fs.existsSync(path.join(ROOT, "tests/e2e/p8.spec.js")));
+
 const workflow = text(".github/workflows/ci.yml");
 check("CI 安装 Chromium、Firefox 与 WebKit", /playwright install --with-deps chromium firefox webkit/.test(workflow));
 check(

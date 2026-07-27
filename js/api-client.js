@@ -11,18 +11,21 @@
     engineMode: "",         // 后端引擎 id（server-rules / infinisynapse / openai-compatible）
     providerLabel: "",      // 人类可读的 provider 名称
     capabilities: null,     // {ai, streaming, structuredOutput}
+    calibrationSync: { status: "idle", count: 0, error: "" },
     _probed: false,
+    _probePromise: null,
   };
 
   function join(p) { return C.base + p; }
 
   /** 探测后端可用性（file:// 直开 / 后端未部署时静默失败） */
   C.probe = function () {
+    if (C._probePromise) return C._probePromise;
     if (typeof fetch === "undefined" || (location.protocol === "file:" && !C.base)) {
       C._probed = true;
       return Promise.resolve(false);
     }
-    return fetch(join("/healthz"), { method: "GET" })
+    C._probePromise = fetch(join("/healthz"), { method: "GET" })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         C.available = !!(j && j.ok);
@@ -33,7 +36,37 @@
         C._probed = true;
         return C.available;
       })
-      .catch(function () { C.available = false; C._probed = true; return false; });
+      .catch(function () { C.available = false; C._probed = true; return false; })
+      .then(function (available) {
+        C._probePromise = null;
+        return available;
+      });
+    return C._probePromise;
+  };
+
+  /** 拉取服务端已审核的 active 校准包；file:// 或服务不可用时由调用方保留本地注册表。 */
+  C.pullCalibrations = function () {
+    C.calibrationSync = { status: "syncing", count: 0, error: "" };
+    return fetch(join("/api/calibrations"), { method: "GET" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("校准目录同步失败（HTTP " + r.status + "）");
+        return r.json();
+      })
+      .then(function (catalog) {
+        var items = catalog && Array.isArray(catalog.items) ? catalog.items : [];
+        C.calibrationSync = { status: "ready", count: items.length, error: "" };
+        return items.map(function (item) {
+          return item.bundle;
+        });
+      })
+      .catch(function (err) {
+        C.calibrationSync = {
+          status: "offline",
+          count: 0,
+          error: String((err && err.message) || err),
+        };
+        throw err;
+      });
   };
 
   /** 发起分析任务：POST /api/analyze → {taskId} */
