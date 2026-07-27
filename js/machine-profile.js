@@ -28,6 +28,19 @@
   };
   P.DEFAULT_TRAITS = { enclosed: false, buildMm: 256, label: "未知机型" };
 
+  /** 注册社区机型的结构性属性。只接受数据，不执行任何社区代码。 */
+  P.registerModelTrait = function (tag, traits) {
+    var key = String(tag || "").trim();
+    if (!key || !traits) return false;
+    P.MODEL_TRAITS[key] = {
+      enclosed: !!traits.enclosed,
+      buildMm: Math.max(50, Math.min(2000, Number(traits.buildMm) || 256)),
+      label: String(traits.label || key),
+    };
+    cache = {};
+    return true;
+  };
+
   /** 从机台编号里取出机型标签，如 "FX-256-03" → "FX-256" */
   P.modelTagOf = function (machineId) {
     var s = String(machineId || "");

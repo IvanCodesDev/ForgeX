@@ -46,6 +46,8 @@
       this._lockables = [];
       this._chart = { data: [], last: 0 };
       this._imgState = { img: null, name: "", mode: "relief", widthMm: 80, maxH: 8, invert: false, threshold: 0.5 };
+      this._gcodeState = null;
+      this._machineLogState = null;
 
       this._brand();
       this._buildNav();
@@ -190,7 +192,7 @@
         psRow.appendChild(c);
       }
       g.appendChild(psRow);
-      this._lockables.push({ elx: psRow, geom: true });
+      this._lockables.push({ elx: psRow, geom: true, imported: true });
 
       /* 材料 */
       g = this._pgroup(body, "material", "材料体系", "material");
@@ -200,6 +202,12 @@
         c.addEventListener("click", () => {
           if (this._printLocked()) return this.toast("打印中不可更换材料", "warn");
           sim.applyMaterial(k);
+          if (sim.importedToolpath && this._gcodeState) {
+            this._gcodeState.reconcile = FXGcodeParser.reconcile(sim.slice);
+            if (this._machineLogState)
+              this._machineLogState.comparison = FXMachineLog.compare(sim.slice, this._machineLogState.log);
+            if (this.currentNav === "import") this.renderCtx("import");
+          }
           FXU.$$(".chip", matRow).forEach((x) => x.classList.toggle("on", x.textContent === k));
         });
         matRow.appendChild(c);
@@ -214,7 +222,10 @@
           st.colorIdx = i;
           FXU.$$(".chip", colRow).forEach((x, xi) => x.classList.toggle("on", xi === i));
           sim.printer.setFilamentColor(c.hex);
-          if (sim.state === "idle" || sim.state === "done") sim.reslice();
+          if (sim.state === "idle" || sim.state === "done") {
+            if (sim.importedToolpath) sim.printer.attachToolpath(sim.slice, sim.partColor);
+            else sim.reslice();
+          }
         });
         colRow.appendChild(chip);
       });
@@ -244,19 +255,20 @@
       sel.addEventListener("change", () => sim.updateSettings({ infillPattern: sel.value }));
       patRow.appendChild(sel);
       g.appendChild(patRow);
+      this._lockables.push({ elx: patRow, geom: true, imported: true });
 
       /* 温度 */
       g = this._pgroup(body, "temp", "温度控制", "thermal");
-      this._slider(g, { label: "喷嘴温度", min: 170, max: 290, step: 5, unit: "°C", dec: 0,
+      this._slider(g, { label: "喷嘴温度", min: 120, max: 450, step: 5, unit: "°C", dec: 0,
         get: () => st.nozzleTemp, set: (v) => sim.updateSettings({ nozzleTemp: v }) });
-      this._slider(g, { label: "热床温度", min: 30, max: 115, step: 5, unit: "°C", dec: 0,
+      this._slider(g, { label: "热床温度", min: 0, max: 180, step: 5, unit: "°C", dec: 0,
         get: () => st.bedTemp, set: (v) => sim.updateSettings({ bedTemp: v }) });
 
       /* 动力学 */
       g = this._pgroup(body, "motion", "运动系统", "kinematics");
-      this._slider(g, { label: "打印速度", min: 20, max: 300, step: 10, unit: "mm/s", dec: 0,
+      this._slider(g, { label: "打印速度", min: 20, max: 1000, step: 10, unit: "mm/s", dec: 0,
         get: () => st.speed, set: (v) => sim.updateSettings({ speed: v }) });
-      this._slider(g, { label: "空驶速度", min: 100, max: 400, step: 20, unit: "mm/s", dec: 0,
+      this._slider(g, { label: "空驶速度", min: 100, max: 1000, step: 20, unit: "mm/s", dec: 0,
         get: () => st.travelSpeed, set: (v) => sim.updateSettings({ travelSpeed: v }) });
       this._slider(g, { label: "回抽距离", min: 0, max: 4, step: 0.1, unit: "mm", dec: 1,
         get: () => st.retraction, set: (v) => sim.updateSettings({ retraction: v }) });
@@ -276,7 +288,7 @@
       swRow.appendChild(sw);
       swRow.appendChild(el("span", "p-val", ""));
       g.appendChild(swRow);
-      this._lockables.push({ elx: swRow, geom: true });
+      this._lockables.push({ elx: swRow, geom: true, imported: true });
       this._slider(g, { label: "支撑间距", min: 2, max: 8, step: 0.5, unit: "mm", dec: 1, geom: true,
         get: () => st.supportSpacing, set: (v) => sim.updateSettings({ supportSpacing: v }) });
 
@@ -314,7 +326,7 @@
       fmt();
       fmt._el = row;
       this._ctrls.push(fmt);
-      if (opt.geom) this._lockables.push({ elx: row, geom: true });
+      if (opt.geom) this._lockables.push({ elx: row, geom: true, imported: true });
       return { row, input, sync: fmt };
     }
 
@@ -325,9 +337,13 @@
     _syncAllCtrls() { for (const f of this._ctrls) f(); }
 
     _applyLocks() {
-      const locked = this._printLocked();
-      $("#param-lock-tag").hidden = !locked;
-      for (const L of this._lockables) L.elx.classList.toggle("locked", locked && L.geom);
+      const busy = this._printLocked();
+      const imported = !!this.sim.importedToolpath;
+      const tag = $("#param-lock-tag");
+      tag.hidden = !busy && !imported;
+      tag.textContent = busy ? "打印中锁定" : "G-code 几何已固化";
+      for (const L of this._lockables)
+        L.elx.classList.toggle("locked", (busy && L.geom) || (imported && L.imported));
     }
 
     _onParamTouched() {
@@ -363,7 +379,7 @@
       const pgrid = el("div", "model-grid");
       for (const pd of FXPrinters.list) {
         const card = el("div", "model-card" + (this.sim.printer.ID === pd.id ? " on" : ""),
-          `<svg viewBox="0 0 60 46">${pd.icon}</svg><div class="mc-name">${pd.name}</div><div class="mc-dim">${pd.desc}</div>`);
+          `<svg viewBox="0 0 60 46">${pd.icon}</svg><div class="mc-name">${pd.name}</div><div class="mc-dim">${pd.desc}${pd.community ? " · 社区" : ""}</div>`);
         card.addEventListener("click", () => {
           if (this._printLocked()) return this.toast("打印中不可切换机型", "warn");
           if (this.sim.printer.ID === pd.id) return;
@@ -377,6 +393,22 @@
       body.appendChild(pgrid);
       this._lockables.push({ elx: pgrid, geom: true });
 
+      body.appendChild(el("div", "sec-label", "机器 / 材料 Profile"));
+      const profileCount = root.FXProfiles ? root.FXProfiles.listMachines().filter((p) => p.community).length +
+        root.FXProfiles.listMaterials().filter((p) => p.community).length : 0;
+      const profileRow = el("div", "chip-row");
+      const profileUpload = el("button", "btn btn-ghost", "导入 Profile JSON");
+      profileUpload.type = "button";
+      profileUpload.id = "profile-upload";
+      profileUpload.addEventListener("click", () => $("#profile-input").click());
+      const profileExample = el("a", "btn btn-ghost", "查看示例");
+      profileExample.href = "profiles/example-bundle.json";
+      profileExample.target = "_blank";
+      profileExample.rel = "noopener";
+      profileRow.append(profileUpload, profileExample);
+      body.appendChild(profileRow);
+      body.appendChild(el("div", "note", `仅接受声明式 JSON 与已实现运动学，不执行社区代码。当前已载入 ${profileCount} 个社区 Profile。`));
+
       body.appendChild(el("div", "sec-label", "内置工程模型"));
       const grid = el("div", "model-grid");
       const icons = {
@@ -389,6 +421,8 @@
           `<svg viewBox="0 0 60 46">${icons[m.id]}</svg><div class="mc-name">${m.name}</div><div class="mc-dim">${m.dims}</div>`);
         card.addEventListener("click", () => {
           if (this._printLocked()) return this.toast("打印中不可更换模型", "warn");
+          this._gcodeState = null;
+          this._machineLogState = null;
           this.sim.setModel(m, true);
           FXU.$$(".model-card", grid).forEach((x) => x.classList.remove("on"));
           card.classList.add("on");
@@ -398,6 +432,72 @@
         grid.appendChild(card);
       }
       body.appendChild(grid);
+
+      body.appendChild(el("div", "sec-label", "真实 G-code · 导入复盘"));
+      const gzone = el("div", "upload-zone");
+      gzone.id = "gcode-zone";
+      gzone.innerHTML = `<svg class="uz-ico" viewBox="0 0 24 24">${ICONS.layers}</svg>
+        <div class="uz-t1">拖拽 G-code 到此处，或点击选择</div>
+        <div class="uz-t2">解析真实挤出路径 · 3D 逐层回放 · 与切片器自报时间/耗材对账</div>`;
+      gzone.addEventListener("click", () => $("#gcode-input").click());
+      gzone.addEventListener("dragover", (e) => { e.preventDefault(); gzone.classList.add("drag"); });
+      gzone.addEventListener("dragleave", () => gzone.classList.remove("drag"));
+      gzone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        gzone.classList.remove("drag");
+        const f = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) this._handleGcodeFile(f);
+      });
+      body.appendChild(gzone);
+
+      if (this._gcodeState && this.sim.importedToolpath) {
+        const G = this._gcodeState;
+        const p = G.parsed;
+        const c = p.claims || {};
+        const summary = el("div", "gcode-summary");
+        summary.id = "gcode-summary";
+        const recRows = G.reconcile.map((r) => {
+          const value = (v) => r.unit === "秒" ? FXGcodeParser.fmtSec(v) : `${v.toFixed(r.unit === "g" ? 1 : 0)} ${r.unit}`;
+          return `<div class="kv"><span class="k">${FXU.esc(r.name)}</span><span class="v ${r.agrees ? "hl" : "warn"}">${value(r.claimed)} ↔ ${value(r.computed)} · ${Math.round(r.relDiff * 100)}%</span></div>`;
+        }).join("");
+        summary.innerHTML = `<div class="kv"><span class="k">文件</span><span class="v">${FXU.esc(G.name)}</span></div>
+          <div class="kv"><span class="k">切片器</span><span class="v">${FXU.esc(c.slicer || "未声明")}</span></div>
+          <div class="kv"><span class="k">解析结果</span><span class="v hl">${p.totalLayers} 层 · ${p.stats.filamentM.toFixed(2)} m · ${FXU.fmtHuman(p.stats.timeSec)}</span></div>
+          ${recRows || '<div class="kv"><span class="k">对账</span><span class="v">文件未提供时间/耗材声明</span></div>'}`;
+        body.appendChild(summary);
+        for (const warning of p.warnings) body.appendChild(el("div", "note", `⚠ ${warning}`));
+
+        const logZone = el("div", "upload-zone");
+        logZone.id = "machine-log-zone";
+        logZone.innerHTML = `<svg class="uz-ico" viewBox="0 0 24 24">${ICONS.motion}</svg>
+          <div class="uz-t1">追加真机任务日志</div>
+          <div class="uz-t2">JSON / CSV · 将实际时长、耗材和完成层数与当前 G-code 计划并列</div>`;
+        logZone.addEventListener("click", () => $("#machine-log-input").click());
+        logZone.addEventListener("dragover", (e) => { e.preventDefault(); logZone.classList.add("drag"); });
+        logZone.addEventListener("dragleave", () => logZone.classList.remove("drag"));
+        logZone.addEventListener("drop", (e) => {
+          e.preventDefault();
+          logZone.classList.remove("drag");
+          const f = e.dataTransfer.files && e.dataTransfer.files[0];
+          if (f) this._handleMachineLogFile(f);
+        });
+        body.appendChild(logZone);
+
+        if (this._machineLogState) {
+          const M = this._machineLogState;
+          const rows = M.comparison.map((r) => {
+            const value = (v) => r.unit === "秒" ? FXGcodeParser.fmtSec(v) :
+              `${v.toFixed(r.unit === "g" ? 1 : 0)} ${r.unit}`;
+            return `<div class="kv"><span class="k">${FXU.esc(r.name)}</span><span class="v ${r.agrees ? "hl" : "warn"}">${value(r.planned)} 计划 ↔ ${value(r.actual)} 实测 · ${Math.round(r.relDiff * 100)}%</span></div>`;
+          }).join("");
+          const actual = el("div", "machine-log-summary");
+          actual.id = "machine-log-summary";
+          actual.innerHTML = `<div class="kv"><span class="k">真机日志</span><span class="v">${FXU.esc(M.log.name)} · ${FXU.esc(M.log.status)}</span></div>
+            ${rows || '<div class="kv"><span class="k">对比</span><span class="v">日志缺少可比较的任务汇总字段</span></div>'}`;
+          body.appendChild(actual);
+          for (const warning of M.log.warnings) body.appendChild(el("div", "note", `⚠ ${warning}`));
+        }
+      }
 
       body.appendChild(el("div", "sec-label", "图片 · 生成3D模型"));
       const zone = el("div", "upload-zone");
@@ -471,6 +571,18 @@
         exRow.appendChild(c);
       });
       body.appendChild(exRow);
+      if (sim.importedToolpath) {
+        exRow.innerHTML = "";
+        [["source-gcode", "原始 G-code", "下载未经改写的导入源文件"],
+         ["gcode", "标准化副本", "按解析后的逐层路径重新生成 Marlin 风格 G-code"]].forEach(([fmt, lab, tip]) => {
+          const c = el("div", "chip", lab);
+          c.title = tip;
+          c.addEventListener("click", () => this._exportModel(fmt));
+          exRow.appendChild(c);
+        });
+        body.appendChild(el("div", "note", "导入任务可逐层预览和仿真回放；它不模拟固件宏、压力提前、输入整形或真实加速度，因此对账值是可解释估算，不冒充机台实测。"));
+        return;
+      }
       body.appendChild(el("div", "note", "STL / OBJ 为成品网格（应用当前缩放）；G-code 包含温度、调平、逐层路径与挤出量，参数改动后重新切片即生效。"));
 
       /* 摆放与变换（原独立页并入，减少跳转） */
@@ -484,10 +596,12 @@
       const updateWarn = () => {
         const r = sim.model.footprintR * tf.scale;
         const men = Math.max(Math.abs(tf.offX), Math.abs(tf.offY)) + r;
-        const over = men > 128;
+        const half = (sim.printer.BED_SIZE || 256) / 2;
+        const buildZ = sim.printer.BUILD_VOLUME ? sim.printer.BUILD_VOLUME.z : 256;
+        const over = men > half;
         const h = sim.model.height * tf.scale;
         warnBox.innerHTML = `
-          <div class="kv"><span class="k">成品尺寸</span><span class="v">Ø${(r * 2).toFixed(0)} × 高 ${h.toFixed(1)} mm ${h > 256 ? "⚠" : ""}</span></div>
+          <div class="kv"><span class="k">成品尺寸</span><span class="v">Ø${(r * 2).toFixed(0)} × 高 ${h.toFixed(1)} mm ${h > buildZ ? "⚠" : ""}</span></div>
           <div class="kv"><span class="k">平台边界</span><span class="v ${over ? "warn" : "hl"}">${over ? "超出打印区域" : "安全区内"}</span></div>`;
       };
       const mk = (label, min, max, step, unit, dec, get, set) =>
@@ -523,12 +637,20 @@
       if (!sim.model) return this.toast("请先载入模型", "warn");
       const base = sim.model.name.replace(/\s+/g, "_");
       try {
+        if (fmt === "source-gcode") {
+          if (!sim.importedToolpath || !sim.importedToolpath.sourceText)
+            return this.toast("原始 G-code 不在当前会话中", "warn");
+          FXExport.download(base, sim.importedToolpath.sourceText, "text/plain;charset=utf-8");
+          this.toast(`原始 G-code 已下载：${base}`, "ok");
+          return;
+        }
         if (fmt === "gcode") {
           if (!sim.slice) return this.toast("尚未切片，无法导出 G-code", "warn");
           const g = FXExport.gcode(sim.slice, sim.settings, {
             model: sim.model.name,
             printer: sim.printer.MODEL_NAME || "FORGE-X",
             densityG: sim.material.densityG,
+            bedSize: sim.printer.BED_SIZE || 256,
           });
           FXExport.download(`${base}_${sim.settings.layerHeight.toFixed(2)}mm_${sim.settings.material}.gcode`, g, "text/plain;charset=utf-8");
           this.toast(`G-code 已导出：${sim.slice.totalLayers} 层 · ${(g.length / 1024).toFixed(0)} KB`, "ok");
@@ -564,6 +686,8 @@
       });
       // 从其他模型切换到图片模型时重置摆放；仅调参数时保留
       const firstLoad = !this.sim.model || this.sim.model.id !== "image";
+      this._gcodeState = null;
+      this._machineLogState = null;
       this.sim.setModel(model, firstLoad);
       if (this.currentNav === "import") this.renderCtx("import");
     }
@@ -572,6 +696,21 @@
       $("#file-input").addEventListener("change", (e) => {
         const f = e.target.files && e.target.files[0];
         if (f) this._handleFile(f);
+        e.target.value = "";
+      });
+      $("#gcode-input").addEventListener("change", (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (f) this._handleGcodeFile(f);
+        e.target.value = "";
+      });
+      $("#machine-log-input").addEventListener("change", (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (f) this._handleMachineLogFile(f);
+        e.target.value = "";
+      });
+      $("#profile-input").addEventListener("change", (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (f) this._handleProfileFile(f);
         e.target.value = "";
       });
     }
@@ -595,6 +734,84 @@
         img.src = rd.result;
       };
       rd.readAsDataURL(f);
+    }
+
+    _handleGcodeFile(f) {
+      if (!/\.(gcode|gco|gc)$/i.test(f.name || ""))
+        return this.toast("请选择 .gcode / .gco / .gc 文件", "err");
+      if (f.size > FXGcodeParser.MAX_BYTES)
+        return this.toast(`G-code 超过 ${Math.round(FXGcodeParser.MAX_BYTES / 1024 / 1024)}MB`, "err");
+      if (this._printLocked()) return this.toast("打印中不可导入 G-code", "warn");
+      const rd = new FileReader();
+      rd.onerror = () => this.toast("G-code 文件读取失败", "err");
+      rd.onload = () => {
+        try {
+          const origin = this.sim.printer.KIN_TAG === "delta" ? "center" : "corner";
+          const parsed = FXGcodeParser.parse(rd.result, {
+            densityG: this.sim.material.densityG,
+            bedSize: this.sim.printer.BED_SIZE || 256,
+            origin,
+          });
+          const reconcile = FXGcodeParser.reconcile(parsed);
+          this.sim.loadImportedToolpath(parsed, { name: f.name, sourceText: rd.result });
+          this._gcodeState = { name: f.name, parsed, reconcile };
+          this._machineLogState = null;
+          this._applyLocks();
+          if (this.currentNav === "import") this.renderCtx("import");
+          this.toast(`已解析 ${parsed.totalLayers} 层真实 G-code，可开始逐层回放`, "ok");
+        } catch (e) {
+          console.error("[gcode-import]", e);
+          this.toast("G-code 导入失败：" + (e && e.message || e), "err");
+        }
+      };
+      rd.readAsText(f);
+    }
+
+    _handleMachineLogFile(f) {
+      if (!this.sim.importedToolpath || !this._gcodeState)
+        return this.toast("请先导入要复盘的 G-code", "warn");
+      if (!/\.(json|csv)$/i.test(f.name || ""))
+        return this.toast("真机日志仅支持 JSON / CSV", "err");
+      if (f.size > FXMachineLog.MAX_BYTES)
+        return this.toast(`真机日志超过 ${Math.round(FXMachineLog.MAX_BYTES / 1024 / 1024)}MB`, "err");
+      const rd = new FileReader();
+      rd.onerror = () => this.toast("真机日志读取失败", "err");
+      rd.onload = () => {
+        try {
+          const log = FXMachineLog.parse(rd.result, { name: f.name });
+          const comparison = FXMachineLog.compare(this._gcodeState.parsed, log);
+          this._machineLogState = { log, comparison };
+          if (this.currentNav === "import") this.renderCtx("import");
+          this.toast(`真机日志已接入：生成 ${comparison.length} 项计划/实测对比`, "ok");
+        } catch (e) {
+          console.error("[machine-log]", e);
+          this.toast("真机日志导入失败：" + (e && e.message || e), "err");
+        }
+      };
+      rd.readAsText(f);
+    }
+
+    _handleProfileFile(f) {
+      if (!/\.json$/i.test(f.name || "")) return this.toast("Profile 必须是 JSON 文件", "err");
+      if (f.size > 2 * 1024 * 1024) return this.toast("Profile JSON 超过 2MB", "err");
+      if (this._printLocked()) return this.toast("打印中不可导入 Profile", "warn");
+      const rd = new FileReader();
+      rd.onerror = () => this.toast("Profile 文件读取失败", "err");
+      rd.onload = () => {
+        try {
+          const added = FXProfiles.importBundle(JSON.parse(rd.result));
+          $("#param-body").innerHTML = "";
+          this._ctrls = [];
+          this._lockables = [];
+          this._buildParamPanel();
+          if (this.currentNav === "import") this.renderCtx("import");
+          this.toast(`Profile 已导入：${added.machines.length} 个机型 · ${added.materials.length} 种材料`, "ok");
+        } catch (e) {
+          console.error("[profile-import]", e);
+          this.toast("Profile 导入失败：" + (e && e.message || e), "err");
+        }
+      };
+      rd.readAsText(f);
     }
 
     /* — 02 切片分析 — */
@@ -646,7 +863,7 @@
         // 打印床边框
         c.strokeStyle = "rgba(238,241,246,0.22)"; c.lineWidth = 1.5;
         c.strokeRect(24, 24, 432, 432);
-        const sc = 432 / 256;
+        const sc = 432 / (sim.printer.BED_SIZE || 256);
         const X = (x) => 240 + x * sc, Y = (y) => 240 - y * sc;
         for (const p of layer.paths) {
           c.strokeStyle = PATH_COLORS[p.type] || "#888";
@@ -919,8 +1136,9 @@
         $("#hud-action").textContent = sim.currentAction;
         const z = sim.slice && sim.state !== "idle" && sim.layerIdx < sim.slice.totalLayers
           ? sim.slice.layers[Math.min(sim.layerIdx, sim.slice.totalLayers - 1)].z : 0;
+        const half = (sim.printer.BED_SIZE || 256) / 2;
         $("#hud-coords").textContent =
-          `X ${(sim.headPos.x + 128).toFixed(1)} · Y ${(sim.headPos.y + 128).toFixed(1)} · Z ${z.toFixed(2)}`;
+          `X ${(sim.headPos.x + half).toFixed(1)} · Y ${(sim.headPos.y + half).toFixed(1)} · Z ${z.toFixed(2)}`;
       }, 240);
 
       // 温度采样 + 绘图

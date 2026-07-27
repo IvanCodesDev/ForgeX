@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/IvanCodesDev/ForgeX/raw/main/datasets/dataset-manifest.schema.json",
+  "title": "FORGE·X dataset manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "version",
+    "id",
+    "title",
+    "description",
+    "provenance",
+    "license",
+    "source",
+    "privacy",
+    "files"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "format": { "const": "forgex-dataset-manifest" },
+    "version": { "const": 1 },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$"
+    },
+    "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "description": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "provenance": {
+      "enum": ["real-anonymized", "simulation", "synthetic"]
+    },
+    "license": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "path", "command"],
+      "properties": {
+        "type": { "enum": ["generator", "export", "manual"] },
+        "path": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "command": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "seed": { "type": ["integer", "string"] }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["containsPersonalData", "anonymized", "note"],
+      "properties": {
+        "containsPersonalData": { "type": "boolean" },
+        "anonymized": { "type": "boolean" },
+        "note": { "type": "string", "minLength": 1, "maxLength": 300 }
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "role", "mediaType", "sha256"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1, "maxLength": 240 },
+          "role": { "enum": ["table", "telemetry", "metadata"] },
+          "mediaType": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "rows": { "type": "integer", "minimum": 0 },
+          "columns": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    }
+  }
+}

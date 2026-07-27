@@ -61,8 +61,12 @@ three.min.js
        ├─ printer3d.js FXPrinterBase：程序化建模 + 打印动画
        │    └─ printers.js  三套额外运动学，继承 FXPrinterBase
        ├─ scene.js     渲染器 / 光照 / 地面
+       ├─ machine-profile.js  确定性机台物理特征
+       │    └─ profile-registry.js  机器 / 材料 Profile 白名单注册表
        ├─ sim.js       仿真状态机
        ├─ exporter.js  STL / OBJ / G-code（纯逻辑，node 可测）
+       ├─ gcode-parser.js  真实 G-code → 切片同构路径（纯逻辑）
+       ├─ machine-log.js   真机 JSON/CSV 日志归一与计划/实测对比（纯逻辑）
        ├─ insight-data.js    数据层（纯逻辑，node 可测）
        │    └─ insight-engine.js  规则分析引擎（纯逻辑，node 可测）
        ├─ api-client.js      后端客户端
@@ -242,6 +246,47 @@ node tools/farm-sim.js --machines 8 --jobs 400 --seed 20260726   --out datasets/
 
 数据集说明见 [`datasets/README.md`](../datasets/README.md)。
 
+### 3.6 P5 扩展契约
+
+#### 真实 G-code 复盘
+
+`gcode-parser.js` 把真实切片器输出归一成与 `FXSlicer.slice()` 相同的
+`layers → paths → pts` 结构。每条路径额外保留 `filamentMm`，因此回放时耗材记账使用
+文件里的真实 E 增量，而不是再次按路径宽高估算。
+
+```text
+G-code commands
+  ├─ motion / E / comments → normalized layers and paths
+  ├─ slicer claims         → claimed vs computed reconciliation
+  └─ machine log JSON/CSV  → planned vs actual comparison
+                               ↓
+                     2D preview / 3D replay / simulation
+```
+
+坐标原点由 machine profile 决定：常规笛卡尔机型默认床角原点，Delta 使用中心原点。
+圆弧当前只按端点直线近似；固件宏、压力提前、输入整形与真实加速度不在模拟范围内。
+
+#### Profile bundle
+
+`profile-registry.js` 只消费声明式数据。machine profile 必须选择 `corexy`、`i3`、
+`delta` 或 `gantry` 基座；material profile 声明温度、密度、速度、体积流量、风扇、
+收缩和参考价格；价格会带来源进入成本分析口径。schema 与运行时共同执行：
+
+- 字段白名单与数值范围；
+- 内置 ID 防覆盖；
+- 参数来源必填；
+- 未知运动学拒绝；
+- 不执行字符串代码，不加载远程脚本。
+
+社区机型使用对应基座 3D 外观，构建空间与物理参数进入仿真；这不是目标设备的精确 CAD。
+完整契约见 [`profiles/README.md`](../profiles/README.md)。
+
+#### 数据集 manifest
+
+每个可分发数据集使用 `*.manifest.json` 声明 provenance、license、privacy、生成命令、
+文件 SHA-256、表头与行数。`tools/validate-ecosystem.js` 在 `npm test` 中核验仓库状态。
+manifest 证明文件和声明一致，但不能单独证明内容的现实来源。
+
 ---
 
 ## 5. 后端
@@ -352,25 +397,29 @@ OpenAI-compatible provider 使用 `/chat/completions` 风格端点，复用同�
 
 ## 7. 测试
 
-| 套件                      | 覆盖                                                                  | 断言数  |
-| ------------------------- | --------------------------------------------------------------------- | ------- |
-| `tests/smoke.js`          | 切片引擎：几何工具 / 填充 / 等值线 / 三模型切片 / 变换                | 32      |
-| `tests/sim-calib.test.js` | 仿真核心：床面误差场 / 调平数据链自洽 / 全流程状态机 / 遥测与实测质量 | 44      |
-| `tests/exporter.test.js`  | 导出：三角提取 / 二进制 STL 结构 / OBJ / G-code 语义与挤出量守恒      | 24      |
-| `tests/stats.test.js`     | Wilson / Fisher / 偏相关 / Mann–Kendall / 证据表述                    | 75      |
-| `tests/insight.test.js`   | 洞察：数据 / 解析 / 统计守卫 / 来源标记 / 统计严谨性                  | 88      |
-| `tests/farm.test.js`      | 虚拟机群：确定性 / 故障机理 / 效应调转 / 遥测贯通                     | 48      |
-| `tests/server.test.js`    | 后端契约：provider / SSE / 持久化 / 检索 / 分享 / 鉴权 / 配额 / 指标  | 157     |
-| `tests/check-refs.js`     | HTML ↔ JS 的 DOM id 引用交叉校验                                      | —       |
-| `tests/deploy-check.js`   | 部署后线上冒烟（需公网 URL）                                          | 10      |
-| `tests/e2e/*.spec.js`     | 浏览器启动 / file:// / 流程页 / 统计披露 / 机群视图 / 服务端进度      | 16 场景 |
+| 套件                          | 覆盖                                                                  | 断言数  |
+| ----------------------------- | --------------------------------------------------------------------- | ------- |
+| `tests/smoke.js`              | 切片引擎：几何工具 / 填充 / 等值线 / 三模型切片 / 变换                | 32      |
+| `tests/sim-calib.test.js`     | 仿真核心：床面误差场 / 调平数据链自洽 / 全流程状态机 / 遥测与实测质量 | 44      |
+| `tests/exporter.test.js`      | 导出：三角提取 / 二进制 STL 结构 / OBJ / G-code 语义与挤出量守恒      | 24      |
+| `tests/gcode.test.js`         | G-code：往返守恒 / 方言 / E 模式 / 原点 / 错误与对账                  | 50      |
+| `tests/machine-log.test.js`   | 真机日志：JSON/CSV 归一 / 计划实测比较 / 边界                         | 13      |
+| `tests/profiles.test.js`      | Profile：schema 对齐 / 白名单 / 防覆盖 / 价格与物理特征接线           | 20      |
+| `tests/stats.test.js`         | Wilson / Fisher / 偏相关 / Mann–Kendall / 证据表述                    | 75      |
+| `tests/insight.test.js`       | 洞察：数据 / 解析 / 统计守卫 / 来源标记 / 统计严谨性                  | 88      |
+| `tests/farm.test.js`          | 虚拟机群：确定性 / 故障机理 / 效应调转 / 遥测贯通                     | 48      |
+| `tests/server.test.js`        | 后端契约：provider / SSE / 持久化 / 检索 / 分享 / 鉴权 / 配额 / 指标  | 158     |
+| `tests/check-refs.js`         | HTML ↔ JS 的 DOM id 引用交叉校验                                      | —       |
+| `tools/validate-ecosystem.js` | Profile、日志、数据集 schema / 哈希 / 表头 / 行数                     | 17 检查 |
+| `tests/deploy-check.js`       | 部署后线上冒烟（需公网 URL）                                          | 10      |
+| `tests/e2e/*.spec.js`         | 浏览器启动 / file:// / G-code / 真机日志 / Profile / 洞察链路         | 18 场景 |
 
 `sim-calib` 用 **stub 打印机**在 Node.js 中驱动完整状态机；`farm.test.js` 在此基础上验证虚拟机群与故障机理。
 
 **测试原则**：断言引擎的**性质**，不断言「生成器埋了什么就挖出什么」。
 详见 `tests/insight.test.js` 头注与 `CONTRIBUTING.md`。
 
-核心逻辑与服务契约共 468 项断言；DOM 层另有 16 个 Playwright 场景。
+核心逻辑与服务契约共 552 项断言，另有 17 项生态文件检查；DOM 层有 18 个 Playwright 场景。
 
 ---
 

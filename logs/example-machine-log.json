@@ -1,0 +1,19 @@
+{
+  "$schema": "./machine-log.schema.json",
+  "format": "forgex-machine-log",
+  "version": 1,
+  "job": {
+    "jobId": "DEMO-001",
+    "durationSec": 4380,
+    "filamentMm": 8240,
+    "filamentG": 24.7,
+    "completedLayers": 120,
+    "status": "success"
+  },
+  "telemetry": [
+    { "timeSec": 0, "nozzleC": 24.8, "bedC": 24.5 },
+    { "timeSec": 420, "nozzleC": 209.6, "bedC": 59.4 },
+    { "timeSec": 2400, "nozzleC": 210.8, "bedC": 60.1 },
+    { "timeSec": 4380, "nozzleC": 207.2, "bedC": 58.7 }
+  ]
+}

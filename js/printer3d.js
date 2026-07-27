@@ -45,6 +45,7 @@
       this._layerGroup = null;
       this._layerEntries = [];
       this._slicePreview = null;
+      this._toolpathLayerRanges = null;
 
       this.setBedTopY(this.NOZZLE_Y);
       this.setHeadXY(0, 0);
@@ -292,6 +293,57 @@
       this.setGrownHeight(0);
     }
 
+    /** 真实 G-code 没有成品三角网格：用分层线框作为幽灵与已完成层累计显示。 */
+    attachToolpath(slice, colorHex) {
+      this.clearPart();
+      this.hideSlicePreview();
+      const maxSegments = 400000;
+      let totalSegments = 0;
+      for (const layer of slice.layers)
+        for (const path of layer.paths) totalSegments += Math.max(0, path.pts.length - 1);
+      const stride = Math.max(1, Math.ceil(totalSegments / maxSegments));
+      const positions = [];
+      const ranges = [];
+      let seen = 0;
+      for (const layer of slice.layers) {
+        for (const path of layer.paths) {
+          for (let i = 1; i < path.pts.length; i++) {
+            if (seen % stride === 0) {
+              const a = path.pts[i - 1], b = path.pts[i];
+              positions.push(a.x, layer.z, -a.y, b.x, layer.z, -b.y);
+            }
+            seen++;
+          }
+        }
+        ranges.push({ z: layer.z, count: positions.length / 3 });
+      }
+      if (!positions.length) return;
+      const makeGeometry = () => {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+        return geo;
+      };
+      const partMat = new THREE.LineBasicMaterial({
+        color: colorHex, transparent: true, opacity: stride > 1 ? 0.7 : 0.9,
+      });
+      const part = new THREE.LineSegments(makeGeometry(), partMat);
+      part.geometry.setDrawRange(0, 0);
+      part.visible = false;
+      this.partParent.add(part);
+      this._part = part;
+
+      const ghost = new THREE.LineSegments(
+        makeGeometry(),
+        new THREE.LineBasicMaterial({ color: 0xff6a2b, transparent: true, opacity: 0.13, depthWrite: false })
+      );
+      ghost.renderOrder = 3;
+      this.partParent.add(ghost);
+      this._ghost = ghost;
+      this._toolpathLayerRanges = ranges;
+      this._toolpathStride = stride;
+      this.setGrownHeight(0);
+    }
+
     _applyTf(mesh, tf) {
       mesh.scale.setScalar(tf.scale || 1);
       mesh.rotation.y = FXU.deg2rad(tf.rotZ || 0);
@@ -309,7 +361,16 @@
     /** 已固化高度（世界 mm，相对打印面） */
     setGrownHeight(h) {
       this._grown = h;
-      if (this._part) this._part.visible = h > 0.001;
+      if (!this._part) return;
+      this._part.visible = h > 0.001;
+      if (this._toolpathLayerRanges && this._part.geometry) {
+        let count = 0;
+        for (const r of this._toolpathLayerRanges) {
+          if (r.z <= h + 1e-6) count = r.count;
+          else break;
+        }
+        this._part.geometry.setDrawRange(0, count);
+      }
     }
 
     clearPart() {
@@ -320,6 +381,8 @@
         m.material.dispose();
       }
       this._part = this._ghost = null;
+      this._toolpathLayerRanges = null;
+      this._toolpathStride = 1;
       this.endLayer();
     }
 
@@ -838,11 +901,57 @@
   /* ══ 机型注册表（printers.js 追加其余机型） ══ */
   const FXPrinters = {
     list: [],
-    register(def) { this.list.push(def); },
+    register(def) {
+      const old = this.list.find((x) => x.id === def.id);
+      if (old) Object.assign(old, def);
+      else this.list.push(def);
+      return old || def;
+    },
+    registerProfile(profile) {
+      if (!profile) return null;
+      const baseId = { corexy: "corexy", i3: "i3", delta: "delta", gantry: "gantry" }[profile.kinematics];
+      const base = this.list.find((x) => x.id === baseId);
+      if (!base) return null;
+      const old = this.list.find((x) => x.id === profile.id);
+      const def = old || {
+        id: profile.id,
+        cls: base.cls,
+        icon: base.icon,
+      };
+      def.name = profile.name;
+      def.desc = profile.description;
+      def.profile = profile;
+      def.community = !!profile.community;
+      if (!old) this.list.push(def);
+      return def;
+    },
     create(id) {
       const d = this.list.find((x) => x.id === id) || this.list[0];
       const p = new d.cls();
       p.ID = d.id;
+      if (d.profile) {
+        p.MODEL_NAME = d.profile.name;
+        p.MODEL_TAG = d.profile.tag;
+        p.KIN_TAG = d.profile.kinematics;
+        p.BUILD_VOLUME = Object.assign({}, d.profile.buildVolume);
+        p.BED_SIZE = Math.max(d.profile.buildVolume.x, d.profile.buildVolume.y);
+        p.PROFILE = d.profile;
+        if (p.screenTex && p.screenTex.image && p.screenTex.image.getContext) {
+          const cv = p.screenTex.image;
+          const c = cv.getContext("2d");
+          c.fillStyle = "#10131a";
+          c.fillRect(0, 0, cv.width, cv.height);
+          c.fillStyle = "#ff6a2b";
+          c.font = "bold 18px monospace";
+          c.fillText(p.MODEL_TAG, 14, 28);
+          c.fillStyle = "#c9d0db";
+          c.font = "13px monospace";
+          c.fillText(p.KIN_TAG.toUpperCase() + " · READY", 14, 55);
+          c.fillStyle = "#697387";
+          c.fillText(`${p.BUILD_VOLUME.x}×${p.BUILD_VOLUME.y}×${p.BUILD_VOLUME.z} mm`, 14, 82);
+          p.screenTex.needsUpdate = true;
+        }
+      }
       return p;
     },
   };

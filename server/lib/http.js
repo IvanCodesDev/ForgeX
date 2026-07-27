@@ -80,7 +80,14 @@ const MIME = {
 };
 
 /** 静态托管默认拒绝（deny-by-default）：只放行前端资产，server/ 与 .env 永远不可达 */
-const STATIC_ALLOW = [/^\/index\.html$/, /^\/README\.md$/, /^\/css\//, /^\/js\//, /^\/doc\/samples\//];
+const STATIC_ALLOW = [
+  /^\/index\.html$/,
+  /^\/README\.md$/,
+  /^\/css\//,
+  /^\/js\//,
+  /^\/doc\/samples\//,
+  /^\/profiles\/(?:example-bundle|profile-bundle\.schema)\.json$/,
+];
 
 function serveStatic(req, res, root) {
   let p;

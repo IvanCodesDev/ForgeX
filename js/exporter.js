@@ -84,12 +84,14 @@
 
   /* ── G-code（Marlin 风格，相对挤出 M83）─────────
      直接消费 FXSlicer.slice 的真实路径与速度：与视口中打印动画走的是同一份数据。
-     床心原点 → 床角原点（+128,+128），落在 0..256mm。 */
+     床心原点会按当前 machine profile 的平台尺寸转换为床角原点。 */
 
   E.gcode = function (slice, st, meta) {
     meta = meta || {};
     const lines = [];
     const P = (v, d) => v.toFixed(d == null ? 3 : d);
+    const bedSize = Number(meta.bedSize) || 256;
+    const bedHalf = bedSize / 2;
     const extArea = st.extrusionWidth * st.layerHeight;
     const eScale = extArea / FILAMENT_AREA;             // 路径 mm → 耗材 mm（相对挤出）
     const fanPWM = Math.round(FXU.clamp(st.fanSpeed, 0, 100) * 2.55);
@@ -118,7 +120,7 @@
       "M107 ; fan off for first layer"
     );
 
-    const X = (x) => P(x + 128), Y = (y) => P(y + 128);
+    const X = (x) => P(x + bedHalf), Y = (y) => P(y + bedHalf);
     const ret = st.retraction || 0;
     let cur = null;                                     // 当前喷头位置（床心系）
     for (let li = 0; li < slice.totalLayers; li++) {

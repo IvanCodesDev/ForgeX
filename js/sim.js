@@ -2,12 +2,13 @@
 (function (root) {
   "use strict";
 
-  const MATERIALS = {
-    PLA:  { name: "PLA",  nozzle: 210, bed: 60,  fan: 100, densityG: 1.24, nozzleRange: [195, 225], bedMin: 55,  maxSpeed: 300 },
-    PETG: { name: "PETG", nozzle: 240, bed: 80,  fan: 40,  densityG: 1.27, nozzleRange: [230, 255], bedMin: 70,  maxSpeed: 200 },
-    ABS:  { name: "ABS",  nozzle: 255, bed: 100, fan: 15,  densityG: 1.05, nozzleRange: [245, 268], bedMin: 95,  maxSpeed: 220 },
-    TPU:  { name: "TPU",  nozzle: 225, bed: 50,  fan: 50,  densityG: 1.21, nozzleRange: [215, 240], bedMin: 40,  maxSpeed: 60 },
+  const FALLBACK_MATERIALS = {
+    PLA:  { id: "PLA", name: "PLA",  nozzleTemp: 210, bedTemp: 60,  fan: 100, densityG: 1.24, nozzleRange: [195, 225], bedMin: 55,  maxSpeed: 300, flowMm3s: 11, shrinkage: 0.25 },
+    PETG: { id: "PETG", name: "PETG", nozzleTemp: 240, bedTemp: 80,  fan: 40,  densityG: 1.27, nozzleRange: [230, 255], bedMin: 70,  maxSpeed: 200, flowMm3s: 9, shrinkage: 0.45 },
+    ABS:  { id: "ABS", name: "ABS",  nozzleTemp: 255, bedTemp: 100, fan: 15,  densityG: 1.05, nozzleRange: [245, 268], bedMin: 95,  maxSpeed: 220, flowMm3s: 10, shrinkage: 1 },
+    TPU:  { id: "TPU", name: "TPU",  nozzleTemp: 225, bedTemp: 50,  fan: 50,  densityG: 1.21, nozzleRange: [215, 240], bedMin: 40,  maxSpeed: 60, flowMm3s: 3.5, shrinkage: 0.35 },
   };
+  const MATERIALS = root.FXProfiles ? root.FXProfiles.materials : FALLBACK_MATERIALS;
 
   const COLORS = [
     { name: "石墨黑", hex: 0x2c313a },
@@ -58,6 +59,7 @@
       this.simMult = 4;
       this.model = null;
       this.slice = null;
+      this.importedToolpath = null;
       this._slicedSpeed = this.settings.speed;
 
       // 机台身份：机型标签 + 实例号 → 决定这台机器的固有物理特征
@@ -104,7 +106,7 @@
       if (led) this.printer.setStateLED(led);
     }
 
-    get material() { return MATERIALS[this.settings.material]; }
+    get material() { return MATERIALS[this.settings.material] || MATERIALS.PLA || FALLBACK_MATERIALS.PLA; }
     get partColor() { return COLORS[this.settings.colorIdx].hex; }
 
     /* ── 机台身份与固有物理特征 ──────────────
@@ -121,7 +123,9 @@
     get machineProfile() {
       const id = this.machineId;
       if (!this._profCache || this._profCache.id !== id) {
-        this._profCache = FXMachineProfile.of(id, this._profOverride || null);
+        const profilePhysics = this.printer && this.printer.PROFILE && this.printer.PROFILE.physics;
+        const overrides = Object.assign({}, profilePhysics || {}, this._profOverride || {});
+        this._profCache = FXMachineProfile.of(id, Object.keys(overrides).length ? overrides : null);
         // 加热器健康度直接落到热模型：功率不足 → 够不到高温目标 → 热失控监测器发现
         this.nozzleT.ceilingC = FXMachineProfile.heaterCeilingC(this._profCache, this._profCache.ambientC);
         this.nozzleT.ambient = this._profCache.ambientC;
@@ -145,6 +149,7 @@
     /* ── 模型与切片 ─────────────────────── */
 
     setModel(model, resetTf) {
+      this.importedToolpath = null;
       this.model = model;
       if (resetTf) this.tf = { scale: 1, rotZ: 0, offX: 0, offY: 0 };
       this.reslice();
@@ -152,7 +157,7 @@
     }
 
     reslice() {
-      if (!this.model) return;
+      if (!this.model || this.importedToolpath) return;
       const t0 = performance.now();
       this.slice = FXSlicer.slice(this.model, this.tf, this.settings);
       this._slicedSpeed = this.settings.speed;
@@ -165,16 +170,17 @@
       Object.assign(this.tf, patch);
       // 限制在打印平台内
       const r = (this.model ? this.model.footprintR : 30) * this.tf.scale;
-      const lim = 128 - Math.min(120, r);
+      const half = Math.max(25, (this.printer.BED_SIZE || 256) / 2);
+      const lim = half - Math.min(half - 8, r);
       this.tf.offX = FXU.clamp(this.tf.offX, -lim, lim);
       this.tf.offY = FXU.clamp(this.tf.offY, -lim, lim);
       this.printer.updatePartTf(this.tf);
     }
 
     updateSettings(patch) {
-      const geomKeys = ["layerHeight", "perimeters", "solidLayers", "infillDensity", "supportEnabled", "supportSpacing", "skirtLoops"];
+      const geomKeys = ["layerHeight", "perimeters", "solidLayers", "infillDensity", "infillPattern", "supportEnabled", "supportSpacing", "skirtLoops"];
       const busy = ["print", "pause", "heat", "level", "fault"].includes(this.state);
-      if (busy) {
+      if (busy || this.importedToolpath) {
         // 打印链路中几何参数与切片数据必须保持一致：拒绝几何类改动
         for (const k of geomKeys) if (k in patch) delete patch[k];
       }
@@ -217,7 +223,12 @@
       this.progress = 0;
       this.currentAction = "待机";
       this.setState("idle");               // 重驱 LED 与 UI 状态（含新机 stateLED）
-      if (this.model) this.reslice();
+      if (this.importedToolpath && this.slice) {
+        p.attachToolpath(this.slice, this.partColor);
+        p.showGhost(true);
+      } else if (this.model) {
+        this.reslice();
+      }
       this.log("ok", `机型切换 → ${p.MODEL_NAME}（${p.KIN_TAG} 运动学）· 请重新调平`);
       return true;
     }
@@ -226,12 +237,54 @@
       const m = MATERIALS[key];
       if (!m) return;
       this.settings.material = key;
-      this.settings.nozzleTemp = m.nozzle;
-      this.settings.bedTemp = m.bed;
+      this.settings.nozzleTemp = m.nozzleTemp;
+      this.settings.bedTemp = m.bedTemp;
       this.settings.fanSpeed = m.fan;
       if (this.settings.speed > m.maxSpeed) this.settings.speed = m.maxSpeed;
-      this.log("info", `材料切换 → ${key}（喷嘴 ${m.nozzle}°C / 热床 ${m.bed}°C / 风扇 ${m.fan}%）`);
+      if (this.importedToolpath && this.slice && this.slice.stats)
+        this.slice.stats.filamentG = this.slice.stats.volumeCm3 * m.densityG;
+      this.log("info", `材料切换 → ${m.name || key}（喷嘴 ${m.nozzleTemp}°C / 热床 ${m.bedTemp}°C / 风扇 ${m.fan}%）`);
       this.bus.emit("settings");
+    }
+
+    /** 载入真实 G-code 解析结果。路径结构与切片器同构，直接复用预览和状态机。 */
+    loadImportedToolpath(parsed, meta) {
+      if (!parsed || !parsed.layers || !parsed.layers.length) throw new Error("G-code 路径为空");
+      if (!["idle", "done"].includes(this.state)) throw new Error("打印进行中，无法导入 G-code");
+      meta = meta || {};
+      const b = parsed.bounds || { minX: -20, maxX: 20, minY: -20, maxY: 20 };
+      const w = Math.max(0, b.maxX - b.minX), d = Math.max(0, b.maxY - b.minY);
+      const diffs = [];
+      for (let i = 1; i < parsed.layers.length; i++) {
+        const dz = parsed.layers[i].z - parsed.layers[i - 1].z;
+        if (dz > 0.01 && dz < 2) diffs.push(dz);
+      }
+      diffs.sort((a, b2) => a - b2);
+      const layerH = diffs.length ? diffs[Math.floor(diffs.length / 2)] : Math.max(0.05, parsed.height || 0.2);
+      this.importedToolpath = { name: meta.name || "Imported G-code", sourceText: meta.sourceText || "", parsed };
+      this.model = {
+        id: "gcode-import",
+        name: meta.name || "Imported G-code",
+        dims: `${w.toFixed(1)} × ${d.toFixed(1)} × ${parsed.height.toFixed(1)} mm`,
+        height: parsed.height,
+        footprintR: Math.max(Math.abs(b.minX), Math.abs(b.maxX), Math.abs(b.minY), Math.abs(b.maxY)),
+        needSupport: false,
+        source: "gcode-import",
+      };
+      this.tf = { scale: 1, rotZ: 0, offX: 0, offY: 0 };
+      this.slice = parsed;
+      this.settings.layerHeight = Math.max(0.05, Math.min(1, layerH));
+      if (parsed.claims && parsed.claims.nozzleTemp != null) this.settings.nozzleTemp = parsed.claims.nozzleTemp;
+      if (parsed.claims && parsed.claims.bedTemp != null) this.settings.bedTemp = parsed.claims.bedTemp;
+      this._slicedSpeed = this.settings.speed;
+      this.printer.attachToolpath(parsed, this.partColor);
+      this.printer.showGhost(true);
+      this.progress = 0;
+      this.layerIdx = 0;
+      this.bus.emit("sliced", { ms: 0, source: "gcode-import" });
+      this.bus.emit("settings");
+      this.log("ok", `真实 G-code 已载入：${this.model.name} · ${parsed.totalLayers} 层 · ${parsed.stats.filamentM.toFixed(2)} m 耗材`);
+      return this.model;
     }
 
     /* ── 控制 ───────────────────────────── */
@@ -392,8 +445,8 @@
       return {
         nozzleNow: this.nozzleNow || 0,
         nozzleTarget: this.nozzleT.target,
-        materialNominalC: mat.nozzle,
-        materialFlowMm3s: FXMachineProfile.FLOW_MM3S[st.material] || 9,
+        materialNominalC: mat.nozzleTemp,
+        materialFlowMm3s: this.material.flowMm3s || FXMachineProfile.FLOW_MM3S[st.material] || 9,
         flowMm3s: v * st.extrusionWidth * st.layerHeight,
         extrudedMm3: (this.usedG - (T ? T.usedG0 : 0)) * 1000 / mat.densityG,
         spoolRemainFrac: FXU.clamp((this.spoolTotalG - this.usedG) / this.spoolTotalG, 0, 1),
@@ -493,9 +546,10 @@
       // 整体倾斜（真实热床最常见的误差成分）+ 平滑起伏（局部凹凸）
       const tiltX = (rnd() - 0.5) * 0.0009;   // mm / mm，边缘最大约 ±0.06
       const tiltY = (rnd() - 0.5) * 0.0009;
+      const half = Math.max(25, (this.printer.BED_SIZE || 256) / 2);
       this._bedErr = (x, y) =>
         tiltX * x + tiltY * y +
-        (noise(x / 128 * 1.5 + 3.7, y / 128 * 1.5 + 8.2) - 0.5) * 0.18;
+        (noise(x / half * 1.5 + 3.7, y / half * 1.5 + 8.2) - 0.5) * 0.18;
       this._bedErrId = id;
       this._bedErrSeed = seed;      // 供探针噪声派生，保证同机台探测可复现
       this._probeRnd = null;
@@ -520,9 +574,11 @@
     /** 调平补偿：按喷头位置在 5×5 网格上双线性插值（未调平返回 0） */
     meshCompAt(x, y) {
       if (!this.levelMesh) return 0;
-      const g = this.levelMesh.grid;                 // grid[j][i] ↔ 物理 (x=-128+i*64, y=128-j*64)
-      const u = FXU.clamp((x + 128) / 64, 0, 4);
-      const v = FXU.clamp((128 - y) / 64, 0, 4);
+      const g = this.levelMesh.grid;
+      const half = this.levelMesh.half || Math.max(25, (this.printer.BED_SIZE || 256) / 2);
+      const step = half / 2;
+      const u = FXU.clamp((x + half) / step, 0, 4);
+      const v = FXU.clamp((half - y) / step, 0, 4);
       const i0 = Math.min(3, Math.floor(u)), j0 = Math.min(3, Math.floor(v));
       const fx = u - i0, fy = v - j0;
       return FXU.lerp(
@@ -544,17 +600,21 @@
 
     _setupLeveling() {
       const pts = [];
-      for (const y of [100, 0, -100]) for (const x of [-100, 0, 100]) pts.push({ x, y });
-      this._level = { pts, idx: -1, phase: "move", t: 0, samples: [] };
+      const half = Math.max(25, (this.printer.BED_SIZE || 256) / 2);
+      const probeR = Math.max(20, half * 0.78);
+      for (const y of [probeR, 0, -probeR]) for (const x of [-probeR, 0, probeR]) pts.push({ x, y });
+      this._level = { pts, idx: -1, phase: "move", t: 0, samples: [], half, probeR };
       this.currentAction = "自动调平";
     }
 
     _finishLeveling() {
-      // 9 个实测探测值（3×3，行序 y=+100→-100，列序 x=-100→+100）拟合 5×5 补偿网格
+      // 9 个实测探测值（3×3）拟合当前机器构建平台的 5×5 补偿网格
       const S = this._level.samples;
+      const half = this._level.half;
+      const probeR = this._level.probeR;
       const probeAt = (x, y) => {
-        const u = FXU.clamp((x + 100) / 100, 0, 2);   // 0..2 列
-        const v = FXU.clamp((100 - y) / 100, 0, 2);   // 0..2 行
+        const u = FXU.clamp((x + probeR) / probeR, 0, 2);   // 0..2 列
+        const v = FXU.clamp((probeR - y) / probeR, 0, 2);   // 0..2 行
         const i0 = Math.min(1, Math.floor(u)), j0 = Math.min(1, Math.floor(v));
         const fx = u - i0, fy = v - j0;
         return FXU.lerp(
@@ -566,13 +626,13 @@
       for (let j = 0; j < 5; j++) {
         const row = [];
         for (let i = 0; i < 5; i++) {
-          const v = probeAt(-128 + i * 64, 128 - j * 64);   // 边缘为探测范围外的钳制外插
+          const v = probeAt(-half + i * half / 2, half - j * half / 2);
           row.push(v);
           if (Math.abs(v) > Math.abs(mx)) mx = v;
         }
         mesh.push(row);
       }
-      this.levelMesh = { grid: mesh, max: mx, samples: S.slice(), at: new Date() };
+      this.levelMesh = { grid: mesh, max: mx, samples: S.slice(), half, at: new Date() };
       this.leveledOnce = true;
       this.bus.emit("levelmesh");
       this.log("ok", `调平完成：最大偏差 ${mx >= 0 ? "+" : ""}${mx.toFixed(3)} mm，9 点实测已拟合为 5×5 补偿网格`);
@@ -822,7 +882,7 @@
           L.extAccum += adv;
           budget -= adv / v;
           L.timeInLayer += adv / p.speed;   // 以切片基准速度计时，保证进度与总估时一致
-          this._consumeFilament(adv);
+          this._consumeFilament(adv, p);
           const pos = this._pointAt(p, L.distInPath);
           this.headPos.x = pos.x; this.headPos.y = pos.y;
           if (L.distInPath >= p.len - 1e-6) this._setupTravelTo(L.pathIdx + 1);
@@ -877,11 +937,18 @@
       return { x: FXU.lerp(a.x, b.x, t), y: FXU.lerp(a.y, b.y, t) };
     }
 
-    _consumeFilament(extMm) {
-      const area = this.settings.extrusionWidth * this.settings.layerHeight;
-      const mm3 = extMm * area;
+    _consumeFilament(extMm, path) {
+      let filamentMm, mm3;
+      if (this.importedToolpath && path && path.filamentMm > 0 && path.len > 0) {
+        filamentMm = (extMm / path.len) * path.filamentMm;
+        mm3 = filamentMm * (Math.PI * 0.875 * 0.875);
+      } else {
+        const area = this.settings.extrusionWidth * this.settings.layerHeight;
+        mm3 = extMm * area;
+        filamentMm = mm3 / (Math.PI * 0.875 * 0.875);
+      }
       this.usedG += (mm3 / 1000) * this.material.densityG;
-      this.usedLenMm += mm3 / (Math.PI * 0.875 * 0.875);
+      this.usedLenMm += filamentMm;
     }
 
     _completeLayer() {
@@ -944,7 +1011,7 @@
       const warp = FXMachineProfile.warpRisk(prof, {
         bedMinC: mat.bedMin,
         bedNow: T.settings0.bedTemp,          // 设定床温（打印全程维持）
-        shrinkage: FXMachineProfile.SHRINKAGE[st.material] || 0.4,
+        shrinkage: mat.shrinkage != null ? mat.shrinkage : (FXMachineProfile.SHRINKAGE[st.material] || 0.4),
         firstLayerAreaMm2: T.firstLayerAreaMm2,
         firstLayerUnevenMm: T.leveled ? Math.min(T.firstLayerUneven, 0.04) : T.firstLayerUneven,
         fanFrac: (T.settings0.fanSpeed || 0) / 100,

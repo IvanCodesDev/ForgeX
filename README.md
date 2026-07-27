@@ -3,29 +3,30 @@
 ### 让每一次打印，都成为可观察、可复现、可分析的数字实验
 
 [![CI](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml/badge.svg)](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.14.0-2563eb)
+![Version](https://img.shields.io/badge/version-0.15.0-2563eb)
 ![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-16a34a)
 ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-0f172a)
 [![License](https://img.shields.io/badge/license-Apache--2.0-f97316)](./LICENSE)
 
 **简体中文** · [English](./README.en.md)
 
-FORGE·X Insight 是一个面向增材制造的浏览器端数字实验平台。它把模型处理、切片、设备运动、热过程、自动调平、打印遥测与生产数据分析放进同一套工作流，让工艺验证不止停留在动画演示，而是能够沉淀为可追溯的数据和报告。
+FORGE·X Insight 是一个面向 FDM 增材制造的浏览器端数字实验平台。它把模型处理、切片、真实 G-code 回放、设备运动、热过程、自动调平、真机日志对比与生产数据分析放进同一套工作流，让工艺验证不止停留在动画演示，而是能够沉淀为可追溯的数据和报告。
 
 平台可离线运行，也可通过轻量 Node 服务启用持久化、分享、知识检索与可选 AI 叙述。核心仿真和统计分析不依赖云服务。
 
 ## 核心体验
 
-| 数字实验                                         | 生产洞察                                    | 工程交付                                         |
-| ------------------------------------------------ | ------------------------------------------- | ------------------------------------------------ |
-| 四类打印机运动学、逐层切片、温控、调平与故障演练 | 仿真采集、CSV 接入、KPI、统计检验与机群定位 | STL / OBJ / Marlin 风格 G-code、分析报告与分享页 |
+| 数字实验                                   | 真实任务复盘                                       | 生产洞察                                |
+| ------------------------------------------ | -------------------------------------------------- | --------------------------------------- |
+| 四类运动学、逐层切片、温控、调平与故障演练 | G-code 3D 回放、切片器对账、真机 JSON/CSV 日志对比 | 仿真采集、KPI、统计检验、机群定位与分享 |
 
 ### 从模型到洞察的一体化流程
 
-`模型准备 → 路径切片 → 设备校准 → 过程监控 → 质量评估 → 生产洞察`
+`模型/真实 G-code → 路径预览 → 设备校准 → 过程回放 → 质量评估 → 生产洞察`
 
 - **模型准备**：内置参数化模型、摆放与缩放、图片浮雕和剪影建模。
 - **路径切片**：周界、顶底实心层、扫描线填充、支撑与裙边；任意层路径可在 2D/3D 中同步预览。
+- **真实任务复盘**：导入 Cura / PrusaSlicer 常见 G-code，保留真实 E 增量逐层回放，并与切片器声明和真机任务日志并列对比。
 - **设备仿真**：CoreXY、i3、Delta 与大幅面龙门四套运动学，覆盖预热、调平、打印、暂停、恢复和完成状态。
 - **过程监控**：喷嘴/热床温度、耗材、负载、进度和事件时间线实时更新。
 - **质量评估**：基于本次任务的温度偏差、调平残差、速度变化与故障记录生成质量报告。
@@ -40,6 +41,10 @@ FORGE·X Insight 是一个面向增材制造的浏览器端数字实验平台。
 ### 仿真与数据同源
 
 单机任务可以直接沉淀为生产记录；虚拟机群工具能够以固定 seed 批量生成可复现的数据集。分析层读取的是同一条数据链，而不是另一套孤立的展示数据。
+
+### 开放配置，有边界
+
+机器与材料 Profile 使用声明式 JSON：社区可以扩展构建空间、温度、密度、流量、收缩、参考价格与物理特征，但不能注入代码、覆盖内置 ID 或声明尚未实现的运动学。数据集 manifest 同步记录来源、许可证、隐私状态、复现命令与文件哈希。
 
 ### 统计结果可解释
 
@@ -98,14 +103,14 @@ npm start
 
 ## 仿真与导出
 
-| 能力     | 实现                                                 |
-| -------- | ---------------------------------------------------- |
-| 切片     | 周界偏置、奇偶规则扫描线填充、实心层、支撑、裙边     |
-| 温控     | 带热惯性、过冲和扰动的一阶模型                       |
-| 调平     | 3×3 探测、误差面拟合、5×5 补偿网格、打印时双线性插值 |
-| 质量     | 温度、首层、速度一致性与故障影响的任务级评估         |
-| 网格导出 | 二进制 STL、ASCII OBJ                                |
-| 路径导出 | Marlin 风格 G-code，挤出量按 1.75 mm 耗材截面积换算  |
+| 能力          | 实现                                                                  |
+| ------------- | --------------------------------------------------------------------- |
+| 切片          | 周界偏置、奇偶规则扫描线填充、实心层、支撑、裙边                      |
+| G-code 复盘   | 常见 Cura/Prusa 注释、绝对/相对 E、床角/中心原点、2D/3D 逐层回放      |
+| 真机日志对比  | 标准 JSON 或常见 CSV；计划与实际时长、耗材、完成层数并列              |
+| 温控与调平    | 热惯性模型；3×3 探测、5×5 补偿网格、打印时双线性插值                  |
+| Profile 扩展  | 机器/材料 JSON bundle、schema、白名单、范围校验、参考价格与本地持久化 |
+| 网格/路径导出 | 二进制 STL、ASCII OBJ、Marlin 风格 G-code                             |
 
 导出的制造文件应在进入实体设备工作流前，使用目标切片器、固件配置和设备安全流程再次校验。
 
@@ -114,7 +119,8 @@ npm start
 ```text
 Browser
 ├─ 3D scene / printer kinematics / print animation
-├─ slicer / simulator / telemetry / exporters
+├─ slicer / G-code replay / machine-log comparison
+├─ profile registry / simulator / telemetry / exporters
 ├─ statistics kernel / insight engine / fleet view
 └─ API client
         │
@@ -138,13 +144,17 @@ Node.js service
 ## 验证
 
 ```bash
-npm test             # 468 项核心逻辑与服务契约断言
-npm run test:e2e     # 16 个 Playwright 界面场景
+npm test             # 552 项核心逻辑与服务契约断言 + 生态文件校验
+npm run test:e2e     # 18 个 Playwright 界面场景
 npm run lint
 npm run format:check
 ```
 
-测试覆盖切片、调平、仿真状态机、导出、统计核、洞察引擎、虚拟机群、后端契约、持久化、鉴权、配额、指标以及关键界面流程。
+测试覆盖切片、G-code、真机日志、Profile、调平、仿真状态机、导出、统计核、洞察引擎、虚拟机群、数据集完整性、后端契约以及关键界面流程。
+
+[观看约 90 秒无声演示](./doc/assets/forgex-p5-demo.webm)，配套讲解词见
+[`doc/demo-script.md`](./doc/demo-script.md)；P5 工程复盘见
+[`doc/仿真器如何生产可审计数据.md`](./doc/仿真器如何生产可审计数据.md)。
 
 部署后可执行：
 
@@ -189,6 +199,8 @@ css/                  interface design system
 js/                   simulation, slicing, analytics and UI
 server/               HTTP service, providers and platform controls
 datasets/             reproducible virtual-farm datasets
+profiles/             machine/material profile schema and examples
+logs/                 machine-log schema and examples
 tools/                headless simulation and dataset generation
 tests/                unit, contract and end-to-end tests
 doc/                   architecture and engineering notes

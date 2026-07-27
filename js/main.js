@@ -11,6 +11,8 @@
 
   function boot() {
     if (window.FX_COMPAT && !window.FX_COMPAT.ok) return;  // 守卫已提示，避免覆盖文案
+    if (typeof FXProfiles !== "undefined" && FXProfiles.syncCostProfile)
+      FXProfiles.syncCostProfile();
     const canvas = document.getElementById("gl");
     let fx;
     try {

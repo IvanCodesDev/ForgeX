@@ -25,6 +25,9 @@ const FRONTEND_GLOBALS = {
   FXScene: "readonly", // js/scene.js
   FXSim: "readonly", // js/sim.js
   FXExport: "readonly", // js/exporter.js（注意不是 FXExporter）
+  FXGcodeParser: "readonly", // js/gcode-parser.js
+  FXMachineLog: "readonly", // js/machine-log.js
+  FXProfiles: "readonly", // js/profile-registry.js
   FXStats: "readonly", // js/stats-kernel.js
   FXMachineProfile: "readonly", // js/machine-profile.js
   FXFarmDataset: "readonly", // js/farm-dataset.js（自动生成）

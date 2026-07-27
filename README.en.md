@@ -3,29 +3,30 @@
 ### Turn every print into an observable, reproducible, and analyzable digital experiment
 
 [![CI](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml/badge.svg)](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.14.0-2563eb)
+![Version](https://img.shields.io/badge/version-0.15.0-2563eb)
 ![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-16a34a)
 ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-0f172a)
 [![License](https://img.shields.io/badge/license-Apache--2.0-f97316)](./LICENSE)
 
 [简体中文](./README.md) · **English**
 
-FORGE·X Insight is a browser-based digital experimentation platform for additive manufacturing. It brings model preparation, slicing, machine motion, thermal behavior, bed leveling, print telemetry, and production analytics into one workflow, turning process validation into traceable data and reports.
+FORGE·X Insight is a browser-based digital experimentation platform for FDM additive manufacturing. It brings model preparation, slicing, real G-code replay, machine motion, thermal behavior, bed leveling, machine-log comparison, and production analytics into one traceable workflow.
 
 The platform runs offline and can optionally use a lightweight Node.js service for persistence, sharing, knowledge retrieval, and AI-assisted narratives. Core simulation and statistical analysis do not depend on cloud services.
 
 ## Core experience
 
-| Digital experiments                                                                  | Production insight                                                                 | Engineering output                                        |
-| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| Four printer kinematics, layer slicing, thermal behavior, leveling, and fault drills | Simulation capture, CSV ingestion, KPIs, statistical tests, and fleet localization | STL / OBJ / Marlin-style G-code, reports, and share pages |
+| Digital experiments                                                      | Real-job review                                                          | Production insight                                             |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| Four kinematics, layer slicing, thermal behavior, leveling, fault drills | 3D G-code replay, slicer reconciliation, JSON/CSV machine-log comparison | Simulation capture, statistical tests, fleet analysis, sharing |
 
 ### One workflow from model to insight
 
-`Model preparation → Slicing → Calibration → Monitoring → Quality → Insight`
+`Model or real G-code → Toolpath preview → Calibration → Replay → Quality → Insight`
 
 - **Model preparation**: built-in parametric models, placement and scaling, image reliefs, and silhouette extrusion.
 - **Slicing**: perimeters, solid skin, scanline infill, support, and skirt, with synchronized 2D/3D layer previews.
+- **Real-job review**: import common Cura/PrusaSlicer G-code, preserve real E increments for replay, and compare slicer claims with machine logs.
 - **Machine simulation**: separate CoreXY, i3, Delta, and large-format gantry kinematics across preheat, leveling, printing, pause, recovery, and completion.
 - **Process monitoring**: live nozzle and bed temperatures, filament, load, progress, and event timeline.
 - **Quality assessment**: task-level reports based on thermal deviation, leveling residuals, speed changes, and recorded faults.
@@ -40,6 +41,10 @@ Toolpaths, thermal inertia, bed error, leveling compensation, and extrusion are 
 ### One source for simulation and data
 
 A single-machine run can become a production record, while the virtual-farm tool generates reproducible datasets from a fixed seed. Analytics consume the same data chain instead of a separate presentation-only dataset.
+
+### Extensible, with explicit boundaries
+
+Machine and material profiles are declarative JSON. Community bundles can extend build volumes, temperatures, density, flow, shrinkage, reference pricing, and physical traits, but cannot execute code, replace built-in IDs, or claim an unsupported kinematic model. Dataset manifests record provenance, licensing, privacy, reproduction commands, and file hashes.
 
 ### Explainable statistics
 
@@ -98,14 +103,14 @@ Each report combines a verdict, evidence, charts, confidence, and actionable rec
 
 ## Simulation and export
 
-| Capability       | Implementation                                                                     |
-| ---------------- | ---------------------------------------------------------------------------------- |
-| Slicing          | Perimeter offset, even-odd scanline infill, solid skin, support, and skirt         |
-| Thermal behavior | First-order model with inertia, overshoot, and disturbance                         |
-| Bed leveling     | 3×3 probing, surface fitting, 5×5 compensation mesh, and bilinear interpolation    |
-| Quality          | Task-level assessment of thermal, first-layer, speed-consistency, and fault impact |
-| Mesh export      | Binary STL and ASCII OBJ                                                           |
-| Toolpath export  | Marlin-style G-code with extrusion derived from 1.75 mm filament area              |
+| Capability             | Implementation                                                                                       |
+| ---------------------- | ---------------------------------------------------------------------------------------------------- |
+| Slicing                | Perimeter offset, even-odd scanline infill, solid skin, support, and skirt                           |
+| G-code review          | Common Cura/Prusa comments, absolute/relative E, corner/center origin, 2D/3D replay                  |
+| Machine-log comparison | Standard JSON or common CSV; planned vs actual time, material, and completed layers                  |
+| Thermal and leveling   | Inertial thermal model; 3×3 probing, 5×5 mesh, bilinear compensation                                 |
+| Profile extensions     | Machine/material JSON bundles, schema, allowlist, range checks, reference pricing, local persistence |
+| Export                 | Binary STL, ASCII OBJ, and Marlin-style G-code                                                       |
 
 Manufacturing files should be revalidated against the target slicer, firmware configuration, and machine-safety process before use on physical equipment.
 
@@ -114,7 +119,8 @@ Manufacturing files should be revalidated against the target slicer, firmware co
 ```text
 Browser
 ├─ 3D scene / printer kinematics / print animation
-├─ slicer / simulator / telemetry / exporters
+├─ slicer / G-code replay / machine-log comparison
+├─ profile registry / simulator / telemetry / exporters
 ├─ statistics kernel / insight engine / fleet view
 └─ API client
         │
@@ -138,13 +144,17 @@ See [`doc/architecture.md`](./doc/architecture.md) for design details.
 ## Verification
 
 ```bash
-npm test             # 468 core-logic and service-contract assertions
-npm run test:e2e     # 16 Playwright UI scenarios
+npm test             # 552 core-logic and service-contract assertions + ecosystem validation
+npm run test:e2e     # 18 Playwright UI scenarios
 npm run lint
 npm run format:check
 ```
 
-Coverage includes slicing, leveling, the simulation state machine, exports, statistics, insights, the virtual farm, backend contracts, persistence, authentication, quotas, metrics, and critical UI flows.
+Coverage includes slicing, G-code, machine logs, profiles, leveling, simulation, exports, statistics, insights, virtual-farm datasets, backend contracts, and critical UI flows.
+
+[Watch the ~90-second silent demo](./doc/assets/forgex-p5-demo.webm), then use the
+[bilingual voice-over script](./doc/demo-script.md) or read the
+[P5 engineering story](./doc/仿真器如何生产可审计数据.md).
 
 After deployment:
 
@@ -189,6 +199,8 @@ css/                  interface design system
 js/                   simulation, slicing, analytics and UI
 server/               HTTP service, providers and platform controls
 datasets/             reproducible virtual-farm datasets
+profiles/             machine/material profile schema and examples
+logs/                 machine-log schema and examples
 tools/                headless simulation and dataset generation
 tests/                unit, contract and end-to-end tests
 doc/                   architecture and engineering notes

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/IvanCodesDev/ForgeX/raw/main/logs/machine-log.schema.json",
+  "title": "FORGE·X machine log",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "version", "job", "telemetry"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "format": { "const": "forgex-machine-log" },
+    "version": { "const": 1 },
+    "job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["durationSec", "status"],
+      "properties": {
+        "jobId": { "type": "string" },
+        "durationSec": { "type": "number", "minimum": 0 },
+        "filamentMm": { "type": "number", "minimum": 0 },
+        "filamentG": { "type": "number", "minimum": 0 },
+        "completedLayers": { "type": "integer", "minimum": 0 },
+        "status": { "type": "string", "minLength": 1 }
+      }
+    },
+    "telemetry": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["timeSec"],
+        "properties": {
+          "timeSec": { "type": "number", "minimum": 0 },
+          "nozzleC": { "type": "number" },
+          "bedC": { "type": "number" }
+        }
+      }
+    }
+  }
+}

@@ -23,7 +23,7 @@
 
   /** 防御性上限：真实 G-code 可以有几百万行，浏览器里得有个头 */
   P.MAX_BYTES = 64 * 1024 * 1024;
-  P.MAX_LINES = 4_000_000;
+  P.MAX_LINES = 4000000;
 
   /** ⌀1.75 耗材横截面积（mm²），E 值换算体积用 */
   P.FILAMENT_AREA_175 = Math.PI * 0.875 * 0.875;
@@ -100,6 +100,7 @@
    * @param text G-code 全文
    * @param opt.densityG   材料密度（g/cm³），用于换算克重；默认 PLA 1.24
    * @param opt.bedSize    打印床尺寸（mm），用于居中坐标；默认 256
+   * @param opt.origin     "corner"（默认）或 "center"（Delta 等中心原点机型）
    * @returns {{layers, totalLayers, height, stats, claims, warnings, source}}
    *          解析不出任何挤出路径时抛错——空结果比报错更难排查
    */
@@ -112,6 +113,7 @@
 
     var bed = opt.bedSize || 256;
     var half = bed / 2;
+    var offset = opt.origin === "center" ? 0 : half;
     var densityG = opt.densityG || 1.24;
 
     var lines = src.split(/\r\n|\n|\r/);
@@ -241,10 +243,11 @@
           if (!curPath || curPath.type !== (pendingType || curType)) {
             closePath();
             curType = pendingType || curType;
-            curPath = { pts: [{ x: px - half, y: py - half }], type: curType, speed: speed };
+            curPath = { pts: [{ x: px - offset, y: py - offset }], type: curType, speed: speed, filamentMm: 0 };
           }
-          curPath.pts.push({ x: x - half, y: y - half });
+          curPath.pts.push({ x: x - offset, y: y - offset });
           curPath.speed = speed;
+          curPath.filamentMm += de;
 
           totalExtMm += dist;
           totalTimeSec += dist / speed;
@@ -299,7 +302,9 @@
 
     if (!homed) warnings.push("文件中没有 G28 归位指令，坐标可能不是绝对机床坐标");
     if (arcCount) warnings.push("含 " + arcCount + " 条圆弧指令（G2/G3），已按直线段近似，弧长略偏小");
-    if (maxX - minX > bed || maxY - minY > bed) {
+    var cMinX = minX - offset, cMaxX = maxX - offset;
+    var cMinY = minY - offset, cMaxY = maxY - offset;
+    if (cMinX < -half || cMaxX > half || cMinY < -half || cMaxY > half) {
       warnings.push("模型尺寸超出 " + bed + "mm 打印床，路径预览可能溢出");
     }
     if (layers.length < 2) warnings.push("只解析到 1 层，请确认文件完整");
@@ -319,7 +324,8 @@
       // 切片器自报的数字，供对账；解析不到就是 undefined，不编造
       claims: claims,
       warnings: warnings,
-      bounds: { minX: minX - half, maxX: maxX - half, minY: minY - half, maxY: maxY - half },
+      bounds: { minX: cMinX, maxX: cMaxX, minY: cMinY, maxY: cMaxY },
+      coordinateOrigin: opt.origin === "center" ? "center" : "corner",
       source: "gcode-import",
     };
   };

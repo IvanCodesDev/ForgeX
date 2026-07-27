@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/IvanCodesDev/ForgeX/raw/main/profiles/profile-bundle.schema.json",
+  "title": "FORGE·X machine and material profile bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "version", "machines", "materials"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "format": { "const": "forgex-profile-bundle" },
+    "version": { "const": 1 },
+    "machines": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/machine" }
+    },
+    "materials": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/material" }
+    }
+  },
+  "anyOf": [{ "properties": { "machines": { "minItems": 1 } } }, { "properties": { "materials": { "minItems": 1 } } }],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{1,47}$"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "physics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hotendFouling": { "type": "number", "minimum": 0, "maximum": 1 },
+        "feederGrip": { "type": "number", "minimum": 0.4, "maximum": 1 },
+        "spoolDrag": { "type": "number", "minimum": 0, "maximum": 1 },
+        "heaterHealth": { "type": "number", "minimum": 0.5, "maximum": 1 },
+        "beltWear": { "type": "number", "minimum": 0, "maximum": 1 },
+        "ambientC": { "type": "number", "minimum": 0, "maximum": 60 },
+        "draft": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "machine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "tag", "kinematics", "description", "buildVolume", "enclosed", "source"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "tag": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "kinematics": {
+          "enum": ["corexy", "i3", "delta", "gantry"]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "buildVolume": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y", "z"],
+          "properties": {
+            "x": { "type": "number", "minimum": 50, "maximum": 2000 },
+            "y": { "type": "number", "minimum": 50, "maximum": 2000 },
+            "z": { "type": "number", "minimum": 50, "maximum": 2000 }
+          }
+        },
+        "enclosed": { "type": "boolean" },
+        "physics": { "$ref": "#/$defs/physics" },
+        "source": { "$ref": "#/$defs/source" }
+      }
+    },
+    "temperature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default", "min", "max"],
+      "properties": {
+        "default": { "type": "number", "minimum": 120, "maximum": 450 },
+        "min": { "type": "number", "minimum": 120, "maximum": 450 },
+        "max": { "type": "number", "minimum": 120, "maximum": 450 }
+      }
+    },
+    "bedTemperature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default", "min"],
+      "properties": {
+        "default": { "type": "number", "minimum": 0, "maximum": 180 },
+        "min": { "type": "number", "minimum": 0, "maximum": 180 }
+      }
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "nozzle",
+        "bed",
+        "fan",
+        "densityG",
+        "maxSpeed",
+        "flowMm3s",
+        "shrinkage",
+        "priceCnyKg",
+        "source"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "nozzle": { "$ref": "#/$defs/temperature" },
+        "bed": { "$ref": "#/$defs/bedTemperature" },
+        "fan": { "type": "number", "minimum": 0, "maximum": 100 },
+        "densityG": { "type": "number", "minimum": 0.2, "maximum": 5 },
+        "maxSpeed": { "type": "number", "minimum": 5, "maximum": 1000 },
+        "flowMm3s": { "type": "number", "minimum": 0.2, "maximum": 100 },
+        "shrinkage": { "type": "number", "minimum": 0, "maximum": 3 },
+        "priceCnyKg": { "type": "number", "minimum": 0, "maximum": 5000 },
+        "source": { "$ref": "#/$defs/source" }
+      }
+    }
+  }
+}

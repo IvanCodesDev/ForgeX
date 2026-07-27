@@ -1,0 +1,49 @@
+{
+  "$schema": "./profile-bundle.schema.json",
+  "format": "forgex-profile-bundle",
+  "version": 1,
+  "machines": [
+    {
+      "id": "community-corexy-300",
+      "name": "Community CoreXY 300",
+      "tag": "CCX-300",
+      "kinematics": "corexy",
+      "description": "CoreXY · 300mm enclosed reference profile",
+      "buildVolume": {
+        "x": 300,
+        "y": 300,
+        "z": 300
+      },
+      "enclosed": true,
+      "physics": {
+        "heaterHealth": 0.96,
+        "beltWear": 0.08,
+        "ambientC": 30,
+        "draft": 0.08
+      },
+      "source": "Example only — verify every value against the target machine before use"
+    }
+  ],
+  "materials": [
+    {
+      "id": "PA-CF-example",
+      "name": "PA-CF（示例）",
+      "nozzle": {
+        "default": 285,
+        "min": 270,
+        "max": 300
+      },
+      "bed": {
+        "default": 90,
+        "min": 80
+      },
+      "fan": 20,
+      "densityG": 1.18,
+      "maxSpeed": 90,
+      "flowMm3s": 7,
+      "shrinkage": 0.8,
+      "priceCnyKg": 239,
+      "source": "Example only — replace with the filament manufacturer's verified datasheet"
+    }
+  ]
+}

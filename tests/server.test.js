@@ -112,6 +112,8 @@ async function main() {
     check("GET / 返回前端页面", home.status === 200 && home.text.includes("FORGE·X"), String(home.status));
     const js = await jfetch(base, "/js/util.js");
     check("GET /js/util.js 可达", js.status === 200 && js.text.includes("FXU"));
+    const profile = await jfetch(base, "/profiles/example-bundle.json");
+    check("公开 Profile 示例可达", profile.status === 200 && profile.text.includes("forgex-profile-bundle"));
     const cfgFile = await jfetch(base, "/server/config.js");
     check("server/ 目录不可达", cfgFile.status === 404, String(cfgFile.status));
     const env = await jfetch(base, "/server/.env");

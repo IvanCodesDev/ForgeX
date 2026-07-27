@@ -1,5 +1,11 @@
 # 数据集
 
+每个可分发数据集都必须带 `*.manifest.json`，声明来源类型、许可证、隐私状态、
+复现命令、文件 SHA-256、表头和行数。当前契约见
+[`dataset-manifest.schema.json`](./dataset-manifest.schema.json)，仓库门禁
+`node tools/validate-ecosystem.js` 会检查文件完整性，避免把来源不明或被意外改写的数据
+包装成“真实产线数据”。
+
 ## `print_farm_400.csv` — 虚拟机群物理仿真数据（400 单 / 8 台机）
 
 **这不是真实产线数据**，但它与「合成数据」有本质区别，值得说清楚。
@@ -107,3 +113,15 @@ node tools/farm-sim.js --machines 8 --jobs 400 --seed 20260726
 2. 或用本机仿真器跑几单，「本机采集」数据集会记录真实的物理仿真结果。
 
 字段口径见 [`doc/architecture.md`](../doc/architecture.md) §4.4。
+
+## 贡献社区数据集
+
+1. 选择准确的 `provenance`：`real-anonymized`、`simulation` 或 `synthetic`；
+2. 真实数据必须先移除人员、客户、订单、网络地址和设备密钥等可识别信息，并在
+   `privacy` 中说明匿名化边界；
+3. 提供明确许可证、采集/生成方法、适用设备与字段口径；
+4. 生成 SHA-256 与准确行数，运行 `node tools/validate-ecosystem.js`；
+5. 不把仿真、合成或经过人工改写的数据描述成现场实测。
+
+manifest 能证明仓库里的文件与声明一致，但不能自动证明数据内容真实；真实性仍需由
+可审计的来源、采集流程和贡献者责任链支撑。

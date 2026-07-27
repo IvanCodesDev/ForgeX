@@ -1,7 +1,7 @@
 {
   "name": "forgex-insight",
-  "version": "0.14.0",
-  "description": "Physics-driven 3D printing simulator with production data analysis — zero runtime dependencies, `node server/index.js` and it runs",
+  "version": "0.15.0",
+  "description": "Physics-driven FDM simulator with G-code replay, machine-log comparison, extensible profiles, and production analytics",
   "keywords": [
     "3d-printing",
     "additive-manufacturing",
@@ -26,13 +26,14 @@
   },
   "scripts": {
     "start": "node server/index.js",
-    "test": "node tests/smoke.js && node tests/sim-calib.test.js && node tests/exporter.test.js && node tests/stats.test.js && node tests/insight.test.js && node tests/farm.test.js && node tests/server.test.js && node tests/check-refs.js",
+    "test": "node tests/smoke.js && node tests/sim-calib.test.js && node tests/exporter.test.js && node tests/gcode.test.js && node tests/machine-log.test.js && node tests/profiles.test.js && node tests/stats.test.js && node tests/insight.test.js && node tests/farm.test.js && node tests/server.test.js && node tests/check-refs.js && node tools/validate-ecosystem.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run lint && npm run format:check && npm test",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "demo:record": "node tools/record-demo.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",

@@ -95,6 +95,8 @@ console.log("\n[2] 产出结构与 FXSlicer.slice() 同构（渲染层不必改�
       for (let i = 1; i < p.pts.length; i++) s += Math.hypot(p.pts[i].x - p.pts[i - 1].x, p.pts[i].y - p.pts[i - 1].y);
       return Math.abs(s - p.len) < 1e-6;
     })));
+  check("每条路径保留真实 E 增量供回放记账",
+    back.layers.every((L) => L.paths.every((p) => typeof p.filamentMm === "number" && p.filamentMm >= 0)));
 }
 
 console.log("\n[3] 切片器方言：绝对/相对 E、各家类型注释");
@@ -237,6 +239,14 @@ console.log("\n[7] 警告：如实说明近似与异常，不静默");
   check("超出打印床时警告", oversize.warnings.some((w) => /打印床/.test(w)), oversize.warnings.join("|"));
 
   check("正常文件不产生无谓警告", back.warnings.length === 0, back.warnings.join("|"));
+
+  const centered = G.parse(
+    ["M83", "G28", "G1 Z0.2", "G1 X-10 Y0 E0", "G1 X10 Y0 E1"].join("\n"),
+    { bedSize: 260, origin: "center" });
+  check("中心原点机型不重复平移坐标",
+    centered.bounds.minX === -10 && centered.bounds.maxX === 10 &&
+      centered.coordinateOrigin === "center",
+    JSON.stringify(centered.bounds));
 }
 
 console.log("\n[8] 挤出量来自 E 的真实增量，而非路径长估算");
