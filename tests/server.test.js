@@ -130,8 +130,8 @@ async function main() {
     check(".env 不可达", env.status === 404, String(env.status));
     const trav = await jfetch(base, "/js/..%2Fserver%2Fconfig.js");
     check("编码路径穿越被拒", trav.status === 404, String(trav.status));
-    const doc = await jfetch(base, "/doc/" + encodeURIComponent("开发文档.md"));
-    check("doc 内部文档不外露", doc.status === 404, String(doc.status));
+    const docs = await jfetch(base, "/doc/architecture.md");
+    check("已移除的 doc 目录不可达", docs.status === 404, String(docs.status));
   }
 
   console.log("\n[3] 数据源上传与校验");

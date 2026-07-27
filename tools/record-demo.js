@@ -1,5 +1,4 @@
-/* 录制 P5 的约 90 秒无声产品演示。
- * 需要开发依赖中的 Playwright；输出 WebM，讲解词见 doc/demo-script.md。 */
+/* 录制约 90 秒无声产品演示。需要开发依赖中的 Playwright。 */
 /* global window, document */
 "use strict";
 
@@ -8,7 +7,7 @@ const path = require("path");
 const { chromium } = require("@playwright/test");
 
 const ROOT = path.resolve(__dirname, "..");
-const OUTPUT = path.resolve(process.argv[2] || path.join(ROOT, "doc", "assets", "forgex-p5-demo.webm"));
+const OUTPUT = path.resolve(process.argv[2] || path.join(ROOT, "artifacts", "forgex-demo.webm"));
 const TEMP = path.join(ROOT, "test-results", "demo-video");
 
 function demoGcode() {
@@ -80,6 +79,7 @@ function demoProfile() {
 }
 
 async function main() {
+  fs.mkdirSync(path.dirname(OUTPUT), { recursive: true });
   fs.mkdirSync(path.dirname(OUTPUT), { recursive: true });
   fs.mkdirSync(TEMP, { recursive: true });
   const browser = await chromium.launch({

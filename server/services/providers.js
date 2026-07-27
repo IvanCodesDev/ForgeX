@@ -3,7 +3,7 @@
    重构前的问题：分析能力硬绑 InfiniSynapse 一家，而且是靠手工 INFINI_VERIFIED=1
    开关。对一个开源项目来说这是硬伤——别人拿去用，多半用的不是这家。
 
-   现在的契约（doc/优化文档.md §4.3 ③）：
+   当前契约：
 
      provider = {
        id, label,

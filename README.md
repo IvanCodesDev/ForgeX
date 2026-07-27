@@ -10,15 +10,23 @@
 
 **简体中文** · [English](./README.en.md)
 
-FORGE·X Insight 是一个面向 FDM 增材制造的浏览器端数字实验平台。它把模型处理、切片、真实 G-code 回放、设备运动、热过程、自动调平、真机日志对比与生产数据分析放进同一套工作流，让工艺验证不止停留在动画演示，而是能够沉淀为可追溯的数据和报告。
+**FORGE·X Insight** 是一个开源、本地优先的 FDM 3D 打印数字实验与生产分析平台。它把模型处理、切片、G-code 可视化、设备仿真、真机日志、时间校准和统计分析连接成一条可追溯工作流。
 
-平台可离线运行，也可通过轻量 Node 服务启用持久化、分享、知识检索与可选 AI 叙述。核心仿真和统计分析不依赖云服务。
+直接打开网页即可离线运行；启动零运行时依赖的 Node.js 服务后，还可获得持久化、分享、知识检索、API Key 鉴权、校准审核发布和可选 AI 叙述。核心仿真、统计计算与证据生成不依赖云服务。
 
-## 核心体验
+> **当前版本：v0.18.0。** P0–P8 优化路线已经闭环，包含 3D 打印仿真、真实任务复盘、可审计分析和双人复核校准发布。仓库内置数据用于合规性验证，不冒充真实工厂精度。
 
-| 数字实验                                   | 真实任务复盘                                             | 生产洞察                                |
-| ------------------------------------------ | -------------------------------------------------------- | --------------------------------------- |
-| 四类运动学、逐层切片、温控、调平与故障演练 | G-code 3D 回放、真机日志对比、审核校准发布与后续漂移监测 | 仿真采集、KPI、统计检验、机群定位与分享 |
+## 它解决什么问题
+
+| 常见痛点                         | FORGE·X 的处理方式                                                |
+| -------------------------------- | ----------------------------------------------------------------- |
+| 仿真只是动画，结果无法复盘       | 路径、遥测、事件、质量报告和生产记录来自同一条运行时数据链        |
+| G-code、切片器估时与真机日志割裂 | 逐层 2D/3D 回放，配对日志对比，并用 holdout 验证时间校准模型      |
+| 分析只给结论，无法判断是否可信   | 保留来源、样本量、置信区间、显著性、图表和可执行建议              |
+| 校准模型发布后缺少治理           | API Key 双人复核、禁止自批、原子发布、版本审计和后续漂移停用      |
+| 云端 AI 成为运行前提             | 本地规则与统计核默认可用，AI 仅负责可选叙述，不改写计算得到的证据 |
+
+## 核心能力
 
 ### 从模型到洞察的一体化流程
 
@@ -145,8 +153,6 @@ Node.js service
 - **存储**：默认写入 `data/`；容器部署通过卷保留数据。
 - **安全**：静态资源 allowlist、路径穿越防护、可选 API Key、AI 成本闸门。
 
-设计细节见 [`doc/architecture.md`](./doc/architecture.md)。
-
 ## 验证
 
 ```bash
@@ -164,10 +170,6 @@ npm run format:check
 P6 方言夹具与真实数据贡献流程见 [`validation/README.md`](./validation/README.md)；
 P7/P8 校准包格式、准入、审核发布和漂移生命周期见 [`calibration/README.md`](./calibration/README.md)。
 内置报告和 bundle 都是 `synthetic-conformance`，不会自动用于用户任务。
-
-[观看约 90 秒无声演示](./doc/assets/forgex-p5-demo.webm)，配套讲解词见
-[`doc/demo-script.md`](./doc/demo-script.md)；P5 工程复盘见
-[`doc/仿真器如何生产可审计数据.md`](./doc/仿真器如何生产可审计数据.md)。
 
 部署后可执行：
 
@@ -218,14 +220,13 @@ validation/           paired G-code/log fixtures and calibration reports
 calibration/          versioned calibration bundle schema and demonstration
 tools/                headless simulation and dataset generation
 tests/                unit, contract and end-to-end tests
-doc/                   architecture and engineering notes
 ```
 
 ## 项目定位
 
 FORGE·X Insight 面向数字仿真、工艺探索、教学演示和生产数据分析。它可以输出制造文件，但不直接连接或控制实体打印机。
 
-工程现状与后续优化统一记录在 [`doc/优化文档.md`](./doc/优化文档.md)，版本变化见 [`CHANGELOG.md`](./CHANGELOG.md)。
+版本变化见 [`CHANGELOG.md`](./CHANGELOG.md)。
 
 ## 参与贡献
 

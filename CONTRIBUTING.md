@@ -2,8 +2,7 @@
 
 （[English below](#english)）
 
-感谢你考虑为 FORGE·X Insight 做贡献。本项目正处于 **0.x 重构期**，
-路线图见 [`doc/优化文档.md`](./doc/优化文档.md)。
+感谢你考虑为 FORGE·X Insight 做贡献。本项目当前处于 **0.x 演进期**。
 
 ---
 
@@ -26,13 +25,13 @@
 - 新增的 README/文档条目，对应的代码在哪一行？
 - 「AI」这个词，是不是只用在真的调用了模型的路径上？
   （规则引擎必须自称规则引擎）
-- 未实现的能力，是不是明确标注了 `[计划]` 并指向路线图？
+- 未实现的能力，是否明确标注为计划项，而不是写成既有能力？
 
 ---
 
 ## 开发环境
 
-**运行本项目不需要 `npm install`**——这是刻意的设计（见 `doc/architecture.md` §2）。
+**运行本项目不需要 `npm install`**——这是刻意的零运行时依赖设计。
 
 ```bash
 git clone <repo> && cd forgex-insight
@@ -144,8 +143,7 @@ test(insight): 补最小样本量守卫的性质断言
 
 # Contributing (English)
 
-Thanks for considering a contribution. The project is in a **0.x refactor**;
-the roadmap lives in `doc/优化文档.md` (Chinese).
+Thanks for considering a contribution. The project is in an **evolving 0.x release cycle**.
 
 ## One hard rule
 

@@ -5,8 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        提之前请先看一眼 [`doc/优化文档.md`](../blob/main/doc/优化文档.md) 的路线图（P1–P5），
-        很多能力已经在计划里了——如果是，欢迎在对应条目下补充你的场景，这比新开 issue 更有用。
+        提交前请先搜索现有 issue 和讨论，确认没有相同建议；如有，欢迎补充你的使用场景与证据。
 
   - type: textarea
     id: problem
@@ -45,5 +44,5 @@ body:
     attributes:
       label: 自检 / Checklist
       options:
-        - label: 我看过路线图，这不是已经计划中的条目（或我在补充计划条目的场景）
+        - label: 我已搜索现有 issue 和讨论，这不是重复建议（或我在补充已有建议的场景）
         - label: 如果涉及机型/材料参数，我能提供参数出处

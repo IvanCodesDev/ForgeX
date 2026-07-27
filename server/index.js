@@ -1,5 +1,4 @@
-/* FORGE·X 智造洞察 — 自有薄后端（Node ≥18 原生 http，零 npm 依赖）
-   设计见 doc/开发文档.md §8。职责：
+/* FORGE·X 智造洞察 — 自有薄后端（Node ≥18 原生 http，零 npm 依赖）。职责：
    1. /api/* 业务接口（分析任务 / SSE 进度 / 数据源 / 知识库 / 分享）
    2. /share/:token 公开分享页（服务端渲染）
    3. 静态托管前端（allowlist，server/ 与 .env 永不可达）→ 同源部署零 CORS

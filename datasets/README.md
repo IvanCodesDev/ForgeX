@@ -100,11 +100,6 @@ node tools/farm-sim.js --machines 8 --jobs 400 --seed 20260726
 **故障类型与越线的机制必须对得上**，这一点有测试断言
 （`tests/farm.test.js` §7）。
 
-## `doc/samples/print_jobs_synthetic.csv` — 旧的概率合成数据
-
-保留，但**已不再是默认数据集**。它含预先写死的故事线，现在只用于回归测试的
-确定性输入。说明见 [`doc/samples/README.md`](../doc/samples/README.md)。
-
 ## 用你自己的数据
 
 上面这些都是仿真数据。要分析真实生产：
@@ -112,7 +107,7 @@ node tools/farm-sim.js --machines 8 --jobs 400 --seed 20260726
 1. 「洞察」面板 →「上传 CSV」，中英文表头宽松匹配（见 `HEADER_ALIAS`）；
 2. 或用本机仿真器跑几单，「本机采集」数据集会记录真实的物理仿真结果。
 
-字段口径见 [`doc/architecture.md`](../doc/architecture.md) §4.4。
+字段名称、类型和允许值以项目内的 CSV 上传校验为准。
 
 ## 贡献社区数据集
 

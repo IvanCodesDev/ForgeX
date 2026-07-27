@@ -3,7 +3,7 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与
 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-`0.x` 为重构期，次版本号可能包含破坏性变更。路线图见 [`doc/优化文档.md`](./doc/优化文档.md)。
+`0.x` 为演进期，次版本号可能包含破坏性变更。
 
 ---
 
@@ -218,7 +218,7 @@
 
 ### 备注：为什么不是 SQLite
 
-优化文档原本写的是 SQLite（Node 22+ 内置 `node:sqlite`）。实际动手时否掉了：
+早期方案曾考虑 SQLite（Node 22+ 内置 `node:sqlite`），实际落地时否掉了：
 ① 会把兼容下限从 Node 18 抬到 22，而 CI 正在三档上跑；
 ② 单进程、无并发写、无复杂查询、数据量几百条，用不上 SQLite 的长处；
 ③ 出问题时 `cat data/tasks/xxx.json` 就能看，不需要 sqlite3 客户端。
@@ -332,7 +332,7 @@ failed = rnd() < pFail;
 
 - **默认数据集换成物理仿真产出**。前端数据集槽位 `sample` → `farm`，
   后端内置数据源改用机群数据。旧的概率合成数据（含预埋故事线）保留在
-  `doc/samples/print_jobs_synthetic.csv`，仅作回归测试的确定性输入。
+  合成样例 CSV，仅作回归测试的确定性输入。
 - 前端数据集槽位 `sim` 标签「仿真采集」→「本机采集」（与「机群仿真」区分）。
 - `FXU.ThermalSim` 构造函数新增第四个参数 `phase`（默认 0）。
 
@@ -369,7 +369,7 @@ failed = rnd() < pFail;
   - `/healthz` 与 `POST /api/analyze` 的 `engine` 字段：`"mock"` → `"rules"`；
   - 报告的 `engine` 字段：`"local"` → `"local-rules"`，`"mock"` → `"server-rules"`；
   - 理由：「mock」暗示结果是编造的，实际是真实的确定性计算，只是没有 AI 参与。
-- **示例数据文件更名**：`doc/samples/print_jobs_sample.csv` → `print_jobs_synthetic.csv`，
+- **示例数据文件更名**：`print_jobs_sample.csv` → `print_jobs_synthetic.csv`，
   文件名直接体现它是合成数据。
 - `MOCK_DELAY_MS` **默认值 350 → 0**：规则引擎本就是毫秒级完成，
   拖慢进度条让它「看起来在思考」属于欺骗性 UI。
@@ -391,8 +391,8 @@ failed = rnd() < pFail;
 - **故障词表单一真源**：`FAULT_TAXONOMY` 标注每类故障仿真器能否真实产生；
   新增 `FAULT_UNKNOWN`。
 - `E.dateRange()`：按数据实际计算时间跨度。
-- `doc/samples/README.md`：说明合成数据里究竟埋了什么，以及不能用它做什么。
-- `doc/优化文档.md`：现状体检报告与 P0–P5 重构路线图。
+- 合成数据说明：明确样例中包含什么，以及不能用它做什么。
+- 工程复核：记录 P0–P5 的演进路线。
 
 ### 修复
 
@@ -416,10 +416,10 @@ failed = rnd() < pFail;
 - **知识库接口不再返回不实提示**。`/api/knowledge` 此前在云端模式下回复
   「已登记，将在分析任务中注入」——**没有任何注入逻辑**，`KnowledgeStore.all()`
   全仓库无调用方。现在如实返回 `retrievalEnabled: false` 并说明该文档不会影响分析结果。
-  接口保留是为了 RAG 真正落地时复用存储管线（路线图 P3.10）。
+  接口保留是为了 RAG 真正落地时复用存储管线。
 - **云端模式如实披露能力缺口**。接上 InfiniSynapse 后只有文字结论、
   没有图表与视口联动（规则引擎反而两者都有）。报告中现在明写这一点，
-  而不是让用户以为是数据没算出来。修复方案见路线图 P3.6。
+  而不是让用户以为是数据没算出来。
 - **视口联动不再暗示机群**。3D 场景只装载一台打印机；此前的「在 3D 视口中定位 X」
   按钮忽略参数、闪的是唯一那台机器。现在只在结论指向当前机型时提供高亮，
   否则明确告知机群视图尚未实现。
@@ -435,7 +435,7 @@ failed = rnd() < pFail;
 ### 文档
 
 - README / README.en 全面重写，对齐实际能力。
-- 新增 `doc/architecture.md`（由内部设计文档脱敏拆分而来）。
+- 新增公开架构说明（由内部设计资料脱敏拆分而来）。
 - 修正文档漂移：three.js 版本（README r152 vs 内部文档 r159）、
   测试断言数（README 称 33 项，实际 44 项）。
 

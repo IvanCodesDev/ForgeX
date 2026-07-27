@@ -85,7 +85,6 @@ const STATIC_ALLOW = [
   /^\/README\.md$/,
   /^\/css\//,
   /^\/js\//,
-  /^\/doc\/samples\//,
   /^\/profiles\/(?:example-bundle|profile-bundle\.schema)\.json$/,
   /^\/calibration\/(?:example-bundle|calibration-bundle\.schema)\.json$/,
   /^\/validation\/(?:fixture-manifest|time-calibration-report)\.json$/,

@@ -1,5 +1,5 @@
 # FORGE·X 智造洞察 — 零 npm 依赖：无 install、无 build，拷入即运行。
-# 适用 Fly.io / Railway / Zeabur / 自建 Docker 主机；Render 用原生 Node 环境更简单（见 doc/开发文档.md §9）。
+# 适用 Fly.io / Railway / Zeabur / 自建 Docker 主机；Render 用原生 Node 环境更简单。
 FROM node:20-alpine
 
 WORKDIR /app

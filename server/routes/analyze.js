@@ -1,4 +1,4 @@
-/* 分析任务路由：建任务（限流）/ SSE 进度流 / 结果获取。契约见 doc/开发文档.md §8.3。 */
+/* 分析任务路由：建任务（限流）/ SSE 进度流 / 结果获取。 */
 "use strict";
 const { HttpError, readJson, sendJson, sseStart } = require("../lib/http");
 

@@ -1,4 +1,4 @@
-/* InfiniSynapse 集成冒烟（doc/开发文档.md §11 / 附录 B 核准执行件）
+/* InfiniSynapse 集成冒烟。
    用法：node tests/infini-smoke.js [--task]
      默认只做只读连通性冒烟（profile）；带 --task 走官方完整异步链路发一次 hello-world
      任务（会产生平台调用日志，taskId 可在 app.infinisynapse.cn/tasks 核对）。

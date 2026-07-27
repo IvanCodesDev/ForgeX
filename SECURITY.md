@@ -80,7 +80,7 @@ P8 增加 `calibrations.json`，其中包含候选 bundle、审核事件和当�
 | 防护                     | 实现                                                                                                        |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------- |
 | 密钥隔离                 | `sk-` key 只从 `server/.env` 读入进程环境，不回写文件、不进日志、不进任何响应体                             |
-| 静态托管 deny-by-default | allowlist 只放行 `index.html` / `README.md` / `css/` / `js/` / `doc/samples/`；`server/` 与 `.env` 永不可达 |
+| 静态托管 deny-by-default | allowlist 只放行 `index.html` / `README.md` / `css/` / `js/` 及有限的公开示例；`server/` 与 `.env` 永不可达 |
 | 路径穿越                 | 归一化后仍含 `..`、反斜杠或控制符的路径一律拒绝；解析出的绝对路径必须在根目录内                             |
 | 请求体限长               | 超限后排空剩余数据再回 413，不 destroy 连接                                                                 |
 | CORS                     | 默认不放行任何跨域；需显式配置 `ALLOW_ORIGINS`                                                              |

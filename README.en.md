@@ -10,15 +10,23 @@
 
 [简体中文](./README.md) · **English**
 
-FORGE·X Insight is a browser-based digital experimentation platform for FDM additive manufacturing. It brings model preparation, slicing, real G-code replay, machine motion, thermal behavior, bed leveling, machine-log comparison, and production analytics into one traceable workflow.
+**FORGE·X Insight** is an open-source, local-first FDM 3D-printing digital experimentation and production analytics platform. It connects model preparation, slicing, G-code visualization, machine simulation, real machine logs, time calibration, and statistical analysis in one traceable workflow.
 
-The platform runs offline and can optionally use a lightweight Node.js service for persistence, sharing, knowledge retrieval, and AI-assisted narratives. Core simulation and statistical analysis do not depend on cloud services.
+Open the web app for a fully offline experience. Start the zero-runtime-dependency Node.js service to add persistence, sharing, knowledge retrieval, API-key authentication, reviewed calibration releases, and optional AI-assisted narratives. Core simulation, statistical computation, and evidence generation do not depend on cloud services.
 
-## Core experience
+> **Current release: v0.18.0.** The P0–P8 engineering roadmap is complete, covering 3D-printing simulation, real-job review, auditable analytics, and two-person calibration approval. Bundled data are conformance fixtures, not claims of factory accuracy.
 
-| Digital experiments                                                      | Real-job review                                                                     | Production insight                                             |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Four kinematics, layer slicing, thermal behavior, leveling, fault drills | 3D G-code replay, machine logs, reviewed calibration releases, and drift monitoring | Simulation capture, statistical tests, fleet analysis, sharing |
+## Problems it solves
+
+| Common problem                                              | FORGE·X approach                                                                                   |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Simulation is only an animation and cannot be audited       | Toolpaths, telemetry, events, quality reports, and production records share one runtime data chain |
+| G-code, slicer estimates, and machine logs are disconnected | Layer-by-layer 2D/3D replay, paired-log comparison, and holdout-validated time calibration         |
+| Analytics provide conclusions without confidence            | Provenance, sample size, confidence intervals, significance, charts, and actions remain visible    |
+| Calibration models lack release governance                  | Two-key review, no self-approval, atomic release, version audit, and drift-based deactivation      |
+| Cloud AI becomes a runtime requirement                      | Local rules and statistics work by default; AI only narrates computed evidence                     |
+
+## Core capabilities
 
 ### One workflow from model to insight
 
@@ -145,8 +153,6 @@ Node.js service
 - **Storage**: writes to `data/` by default; container deployments retain it through a volume.
 - **Security**: static-resource allowlist, traversal protection, optional API keys, and AI budget gates.
 
-See [`doc/architecture.md`](./doc/architecture.md) for design details.
-
 ## Verification
 
 ```bash
@@ -165,10 +171,6 @@ See [`validation/README.md`](./validation/README.md) for dialect fixtures and
 the real-data contribution workflow, and [`calibration/README.md`](./calibration/README.md)
 for the P7/P8 bundle, admission, reviewed-release, and drift lifecycle. Bundled reports and models
 are `synthetic-conformance` and never match user jobs automatically.
-
-[Watch the ~90-second silent demo](./doc/assets/forgex-p5-demo.webm), then use the
-[bilingual voice-over script](./doc/demo-script.md) or read the
-[P5 engineering story](./doc/仿真器如何生产可审计数据.md).
 
 After deployment:
 
@@ -219,14 +221,13 @@ validation/           paired G-code/log fixtures and calibration reports
 calibration/          versioned calibration bundle schema and demonstration
 tools/                headless simulation and dataset generation
 tests/                unit, contract and end-to-end tests
-doc/                   architecture and engineering notes
 ```
 
 ## Project scope
 
 FORGE·X Insight is designed for digital simulation, process exploration, education, and production-data analysis. It exports manufacturing files but does not directly connect to or control physical printers.
 
-Engineering status and planned improvements are tracked in [`doc/优化文档.md`](./doc/优化文档.md); release history is available in [`CHANGELOG.md`](./CHANGELOG.md).
+Release history is available in [`CHANGELOG.md`](./CHANGELOG.md).
 
 ## Contributing
 

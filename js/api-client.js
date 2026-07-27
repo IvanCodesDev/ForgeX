@@ -1,5 +1,5 @@
 /* FORGE·X 智造洞察 — 后端 API 客户端（对接自有薄后端 → InfiniSynapse Server API）
-   设计见 doc/开发文档.md §8.3。当前后端未部署时 available=false，
+   当前后端未部署时 available=false，
    insight 面板自动落到浏览器内的本地规则引擎（FXInsightEngine），后端上线后零改动切换。 */
 (function (root) {
   "use strict";

@@ -1,4 +1,4 @@
-/* FORGE·X 部署后线上冒烟（doc/开发文档.md §11「待补」项）
+/* FORGE·X 部署后线上冒烟。
    用法：node tests/deploy-check.js https://your-app.example.com
    覆盖评委视角验收清单：打开即用 → 提问出报告 → 产物可分享。
    零依赖（Node ≥18 全局 fetch）；对已部署环境只做只读+一次分析的最小写入。 */
@@ -90,8 +90,8 @@ async function collectSse(path, timeoutMs) {
   check("GET / → 200 且含品牌", home.status === 200 && home.text.includes("FORGE·X"), "HTTP " + home.status);
   const jsOk = await jfetch("/js/util.js");
   check("GET /js/util.js → 200", jsOk.status === 200, "HTTP " + jsOk.status);
-  const csvOk = await jfetch("/doc/samples/print_jobs_synthetic.csv");
-  check("示例 CSV 可下载", csvOk.status === 200 && csvOk.text.includes("job_id"), "HTTP " + csvOk.status);
+  const profileOk = await jfetch("/profiles/example-bundle.json");
+  check("公开 Profile 示例可下载", profileOk.status === 200 && profileOk.text.includes("forgex-profile-bundle"), "HTTP " + profileOk.status);
   const envHidden = await jfetch("/server/.env");
   check("server/.env 不可达", envHidden.status === 404, "HTTP " + envHidden.status);
 

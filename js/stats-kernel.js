@@ -387,7 +387,6 @@
 
   /**
    * 证据条目：报告里每条结论都应当能附上一条，说明「这个数是怎么来的」。
-   * 契约见 doc/优化文档.md §4.3 ②。
    */
   S.evidence = function (claim, method, stat) {
     return {

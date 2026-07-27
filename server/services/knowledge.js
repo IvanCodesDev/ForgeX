@@ -2,7 +2,7 @@
 
    ⚠ 现状：**存储管线可用，但没有任何消费方**——all() 目前无人调用，
    文档不会进入分析提示词。请勿在任何用户可见文案中把它描述成已生效的 RAG。
-   检索接入计划见 doc/优化文档.md §5 P3.10。 */
+   */
 "use strict";
 const crypto = require("crypto");
 const { HttpError } = require("../lib/http");
