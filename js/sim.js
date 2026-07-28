@@ -178,7 +178,9 @@
     }
 
     updateSettings(patch) {
+      patch = Object.assign({}, patch);
       const geomKeys = ["layerHeight", "perimeters", "solidLayers", "infillDensity", "infillPattern", "supportEnabled", "supportSpacing", "skirtLoops"];
+      const sliceKeys = geomKeys.concat(["speed", "travelSpeed", "retraction"]);
       const busy = ["print", "pause", "heat", "level", "fault"].includes(this.state);
       if (busy || this.importedToolpath) {
         // 打印链路中几何参数与切片数据必须保持一致：拒绝几何类改动
@@ -186,7 +188,7 @@
       }
       Object.assign(this.settings, patch);
       let needSlice = false;
-      for (const k of Object.keys(patch)) if (geomKeys.includes(k)) needSlice = true;
+      for (const k of Object.keys(patch)) if (sliceKeys.includes(k)) needSlice = true;
 
       if (busy) {
         // 温度/风扇/速度实时生效
@@ -236,11 +238,13 @@
     applyMaterial(key) {
       const m = MATERIALS[key];
       if (!m) return;
+      const oldSpeed = this.settings.speed;
       this.settings.material = key;
       this.settings.nozzleTemp = m.nozzleTemp;
       this.settings.bedTemp = m.bedTemp;
       this.settings.fanSpeed = m.fan;
       if (this.settings.speed > m.maxSpeed) this.settings.speed = m.maxSpeed;
+      if (!this.importedToolpath && this.settings.speed !== oldSpeed) this.reslice();
       if (this.importedToolpath && this.slice && this.slice.stats)
         this.slice.stats.filamentG = this.slice.stats.volumeCm3 * m.densityG;
       this.log("info", `材料切换 → ${m.name || key}（喷嘴 ${m.nozzleTemp}°C / 热床 ${m.bedTemp}°C / 风扇 ${m.fan}%）`);
@@ -344,6 +348,9 @@
         settings0: Object.assign({}, this.settings),
         // 机构负载峰值（堵料/断料的涌现证据，随打印过程真实采集）
         clogLoadMax: 0, slipRiskMax: 0,
+        // 回抽不是标签：记录每次跨路径移动的回抽量、残余渗料风险与过度回抽应力。
+        travelMoves: 0, travelMm: 0, retractions: 0, retractedMm: 0,
+        stringingRiskWeighted: 0, stringingTravelMm: 0, retractionStress: 0,
         machineId: this.machineId,
         machineProfile: this.machineProfile,
       };
@@ -841,10 +848,34 @@
       const dest = L.paths[pathIdx].pts[0];
       const from = { x: this.headPos.x, y: this.headPos.y };
       const len = Math.hypot(dest.x - from.x, dest.y - from.y);
-      L.phase = "travel";
-      L.travel = { from, to: dest, len, done: 0, nextPath: pathIdx };
+      const retract = this.settings.retraction > 0.05 && len > 2 ? this.settings.retraction : 0;
+      L.phase = retract ? "retract" : "travel";
+      L.travel = {
+        from, to: dest, len, done: 0, nextPath: pathIdx,
+        retract, retracted: 0, unretracted: 0,
+      };
       L.curSpeed = 0;
-      this.currentAction = this.settings.retraction > 0.05 && len > 2 ? "空驶（回抽）" : "空驶";
+      this.currentAction = retract ? `回抽 ${retract.toFixed(1)} mm` : "空驶（未回抽）";
+
+      const T = this._telemetry;
+      if (T && len > 0.05) {
+        T.travelMoves++;
+        T.travelMm += len;
+        if (len > 2) {
+          const mat = this.material;
+          const scale = this.settings.material === "TPU" ? 0.38 : 0.5;
+          const tempExcess = Math.max(0, (this.nozzleNow || this.settings.nozzleTemp) - mat.nozzleTemp);
+          const residual = Math.exp(-retract / scale) * (1 + tempExcess * 0.025);
+          T.stringingRiskWeighted += residual * len;
+          T.stringingTravelMm += len;
+          if (retract) {
+            T.retractions++;
+            T.retractedMm += retract;
+            const safeMax = this.settings.material === "TPU" ? 1.8 : 2.6;
+            T.retractionStress += Math.max(0, retract - safeMax);
+          }
+        }
+      }
     }
 
     _tickPrint(dt) {
@@ -855,7 +886,18 @@
       let guard = 400;
 
       while (budget > 1e-6 && guard-- > 0) {
-        if (L.phase === "travel") {
+        if (L.phase === "retract") {
+          const v = 40; // 与导出 G-code 的 F2400 回抽速度一致
+          const remain = L.travel.retract - L.travel.retracted;
+          const adv = Math.min(remain, v * budget);
+          L.travel.retracted += adv;
+          budget -= adv / v;
+          L.timeInLayer += adv / v;
+          if (L.travel.retracted >= L.travel.retract - 1e-6) {
+            L.phase = "travel";
+            this.currentAction = "空驶（已回抽）";
+          }
+        } else if (L.phase === "travel") {
           const v = this.settings.travelSpeed;
           const remain = L.travel.len - L.travel.done;
           const adv = Math.min(remain, v * budget);
@@ -867,6 +909,24 @@
           this.headPos.y = FXU.lerp(L.travel.from.y, L.travel.to.y, t);
           if (L.travel.done >= L.travel.len - 1e-6) {
             L.pathIdx = L.travel.nextPath;
+            if (L.travel.retract > 0) {
+              L.phase = "unretract";
+              this.currentAction = `回填 ${L.travel.retract.toFixed(1)} mm`;
+            } else {
+              L.phase = "extrude";
+              L.distInPath = 0;
+              const p = L.paths[L.pathIdx];
+              this.currentAction = TYPE_LABEL[p.type] || "挤出";
+            }
+          }
+        } else if (L.phase === "unretract") {
+          const v = 40;
+          const remain = L.travel.retract - L.travel.unretracted;
+          const adv = Math.min(remain, v * budget);
+          L.travel.unretracted += adv;
+          budget -= adv / v;
+          L.timeInLayer += adv / v;
+          if (L.travel.unretracted >= L.travel.retract - 1e-6) {
             L.phase = "extrude";
             L.distInPath = 0;
             const p = L.paths[L.pathIdx];
@@ -1153,7 +1213,21 @@
       ? `本次实录：${evts.join("；")}——每次中断都会在表面留下接缝痕`
       : "全程无故障、无暂停、无中途调参，成形连续性最佳");
 
-    // 4. 速度一致性（变速时间占比实测）
+    // 4. 回抽与跨路径渗料（每次空驶按长度、温度与实际回抽量累计）
+    const stringingRisk = tel.stringingTravelMm > 0
+      ? tel.stringingRiskWeighted / tel.stringingTravelMm : 0;
+    const retractStress = tel.retractions > 0 ? tel.retractionStress / tel.retractions : 0;
+    s = 98 - stringingRisk * 55 - retractStress * 20;
+    push("回抽与跨路径拉丝", s,
+      `实测 ${tel.travelMoves || 0} 次空驶 / ${(tel.travelMm || 0).toFixed(0)} mm，` +
+      `${tel.retractions || 0} 次回抽 / ${(tel.retractedMm || 0).toFixed(1)} mm；` +
+      (stringingRisk > 0.35
+        ? "回抽保护不足，跨路径残余渗料风险较高"
+        : retractStress > 0.15
+          ? "回抽量偏大，热端反复拉扯与堵料风险上升"
+          : "回抽量与跨路径距离匹配，拉丝风险受控"));
+
+    // 5. 速度一致性（变速时间占比实测）
     const offFrac = tel.printTime > 0 ? tel.offSpeedTime / tel.printTime : 0;
     s = 98 - offFrac * 45;
     push("速度一致性", s, offFrac > 0.02

@@ -114,6 +114,127 @@
     return polylines;
   };
 
+  /** 点是否位于多轮廓材料区：使用奇偶规则，因此天然支持孔洞与多岛。 */
+  S.pointInLoops = function (p, loops) {
+    let inside = false;
+    for (const lp of loops) {
+      const pts = lp.pts;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const a = pts[i], b = pts[j];
+        if ((a.y > p.y) !== (b.y > p.y) &&
+            p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+      }
+    }
+    return inside;
+  };
+
+  /** 把有限线段裁剪到多轮廓材料区，返回位于材料内部的若干线段。 */
+  S.clipSegmentLoops = function (a, b, loops) {
+    const vx = b.x - a.x, vy = b.y - a.y;
+    const ts = [0, 1];
+    for (const lp of loops) {
+      const pts = lp.pts;
+      for (let i = 0; i < pts.length; i++) {
+        const c = pts[i], d = pts[(i + 1) % pts.length];
+        const wx = d.x - c.x, wy = d.y - c.y;
+        const den = vx * wy - vy * wx;
+        if (Math.abs(den) < EPS) continue;
+        const qx = c.x - a.x, qy = c.y - a.y;
+        const t = (qx * wy - qy * wx) / den;
+        const u = (qx * vy - qy * vx) / den;
+        if (t > EPS && t < 1 - EPS && u >= -EPS && u <= 1 + EPS) ts.push(t);
+      }
+    }
+    ts.sort((x, y) => x - y);
+    const uniq = ts.filter((t, i) => i === 0 || Math.abs(t - ts[i - 1]) > 1e-6);
+    const out = [];
+    for (let i = 0; i + 1 < uniq.length; i++) {
+      const t0 = uniq[i], t1 = uniq[i + 1];
+      if (t1 - t0 < 1e-5) continue;
+      const tm = (t0 + t1) * 0.5;
+      const mid = { x: a.x + vx * tm, y: a.y + vy * tm };
+      if (!S.pointInLoops(mid, loops)) continue;
+      const p0 = { x: a.x + vx * t0, y: a.y + vy * t0 };
+      const p1 = { x: a.x + vx * t1, y: a.y + vy * t1 };
+      if (Math.hypot(p1.x - p0.x, p1.y - p0.y) >= 0.6) out.push([p0, p1]);
+    }
+    return out;
+  };
+
+  /**
+   * 真六边形蜂窝：先生成共享边去重的六边形格，再按零件轮廓裁剪。
+   * side 按目标线密度换算，使相同 density 下三种图案的材料量处于同一量级。
+   */
+  S.honeycombLoops = function (loops, spacing, phase) {
+    if (!loops.length || spacing <= 0) return [];
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const lp of loops) for (const p of lp.pts) {
+      if (p.x < x0) x0 = p.x;
+      if (p.x > x1) x1 = p.x;
+      if (p.y < y0) y0 = p.y;
+      if (p.y > y1) y1 = p.y;
+    }
+    const side = Math.max(0.9, spacing * 1.15);
+    const hexH = Math.sqrt(3) * side;
+    const xStep = side * 1.5;
+    const pad = side * 2;
+    const edges = new Map();
+    const keyPoint = (p) => `${Math.round(p.x * 1000)},${Math.round(p.y * 1000)}`;
+    const addEdge = (a, b) => {
+      const ka = keyPoint(a), kb = keyPoint(b);
+      const key = ka < kb ? ka + "|" + kb : kb + "|" + ka;
+      if (!edges.has(key)) edges.set(key, [a, b]);
+    };
+    let col = 0;
+    const shiftX = phase ? xStep * 0.5 : 0;
+    for (let cx = x0 - pad + shiftX; cx <= x1 + pad; cx += xStep, col++) {
+      const yShift = (col % 2) * hexH * 0.5;
+      for (let cy = y0 - pad + yShift; cy <= y1 + pad; cy += hexH) {
+        const v = [];
+        for (let k = 0; k < 6; k++) {
+          const a = (Math.PI / 3) * k;
+          v.push({ x: cx + Math.cos(a) * side, y: cy + Math.sin(a) * side });
+        }
+        for (let k = 0; k < 6; k++) addEdge(v[k], v[(k + 1) % 6]);
+      }
+    }
+    const clipped = [];
+    for (const edge of edges.values()) {
+      for (const seg of S.clipSegmentLoops(edge[0], edge[1], loops)) clipped.push(seg);
+    }
+    return S.chainSegments(clipped);
+  };
+
+  /** 根据 UI 选择生成真正不同的稀疏填充路径。 */
+  S.patternFill = function (loops, pattern, spacing, layerIndex, angleOffset) {
+    const name = String(pattern || "斜线网格");
+    if (name.includes("蜂窝")) return S.honeycombLoops(loops, spacing, layerIndex % 2);
+    const base = name === "直线" ? 0 : 45;
+    const angle = base + (layerIndex % 2) * 90 + (angleOffset || 0);
+    return S.hatchLoops(loops, angle, spacing);
+  };
+
+  /** 清理闭合轮廓，并依据嵌套深度标记外轮廓/孔洞。 */
+  S.contourLoops = function (contours) {
+    const clean = [];
+    for (const source of contours) {
+      let pts = source.slice();
+      if (pts.length > 3 && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 0.05)
+        pts = pts.slice(0, -1);
+      if (pts.length >= 3 && Math.abs(FXU.polyArea(pts)) > 0.05) clean.push({ pts });
+    }
+    for (let i = 0; i < clean.length; i++) {
+      let depth = 0;
+      const probe = clean[i].pts[0];
+      for (let j = 0; j < clean.length; j++) {
+        if (i !== j && S.pointInLoops(probe, [clean[j]])) depth++;
+      }
+      clean[i].hole = depth % 2 === 1;
+      S.normalizeLoop(clean[i]);
+    }
+    return clean;
+  };
+
   /* ── 高度场 Marching Squares ──────────────── */
 
   /**
@@ -292,19 +413,32 @@
       const zLocal = Math.min(z - lh * 0.5, H - EPS) / scale; // 层中心采样
       const isSolid = li < st.solidLayers || li >= total - st.solidLayers;
       const density = isSolid ? 1 : st.infillDensity;
-      const angle = (li % 2 === 0 ? 45 : 135) + (st.infillAngle || 0);
+      const solidAngle = (li % 2 === 0 ? 45 : 135) + (st.infillAngle || 0);
       const paths = [];
 
       /* 周界 + 填充 */
       if (model.kind === "grid") {
         const g = model.grid;
         const iso = zLocal; // H 为模型局部高度，在模型局部坐标切片后统一施加变换
-        const contours = S.gridContours(g, iso).map((pts) => S.transformPts(pts, tf));
-        for (const c of contours) if (c.length >= 3) paths.push({ pts: c, type: "perimeter", closed: true });
-        if (density > 0.02) {
+        const contours = S.contourLoops(S.gridContours(g, iso).map((pts) => S.transformPts(pts, tf)));
+        const innerMost = [];
+        for (const lp of contours) {
+          let prev = lp.pts;
+          for (let k = 0; k < st.perimeters; k++) {
+            const off = S.offsetLoop(prev, k === 0 ? ew * 0.5 : ew);
+            if (!off) break;
+            paths.push({ pts: off.concat([off[0]]), type: "perimeter", closed: true });
+            prev = off;
+          }
+          innerMost.push({ pts: S.offsetLoop(prev, ew * 0.6) || prev, hole: lp.hole });
+        }
+        if (density > 0.02 && innerMost.length) {
           const spacing = Math.max(ew, ew / Math.max(0.04, density));
-          const fills = S.gridHatch(g, iso, spacing / scale).map((pts) => S.transformPts(pts, tf));
-          for (const f of fills) if (f.length >= 2) paths.push({ pts: f, type: isSolid ? "solid" : "infill" });
+          const fills = isSolid || density >= 0.95
+            ? S.hatchLoops(innerMost, solidAngle, spacing)
+            : S.patternFill(innerMost, st.infillPattern, spacing, li, st.infillAngle);
+          for (const f of fills) if (f.length >= 2)
+            paths.push({ pts: f, type: isSolid ? "solid" : "infill", pattern: isSolid ? "solid" : st.infillPattern });
         }
       } else {
         const sec = model.outlinesAt(zLocal) || { loops: [] };
@@ -326,8 +460,11 @@
         // 填充
         if (density > 0.02 && innerMost.length) {
           const spacing = Math.max(ew, ew / Math.max(0.04, density));
-          const fills = S.hatchLoops(innerMost, angle, spacing);
-          for (const f of fills) paths.push({ pts: f, type: isSolid ? "solid" : "infill" });
+          const fills = isSolid || density >= 0.95
+            ? S.hatchLoops(innerMost, solidAngle, spacing)
+            : S.patternFill(innerMost, st.infillPattern, spacing, li, st.infillAngle);
+          for (const f of fills)
+            paths.push({ pts: f, type: isSolid ? "solid" : "infill", pattern: isSolid ? "solid" : st.infillPattern });
         }
         // 支撑（模型给出支撑区域）
         if (st.supportEnabled && model.supportRegionAt) {
@@ -384,6 +521,7 @@
         if (prevEnd) {
           const d = Math.hypot(p.pts[0].x - prevEnd.x, p.pts[0].y - prevEnd.y);
           travelLen += d; tSec += d / vTrav;
+          if (d > 2 && st.retraction > 0.05) tSec += (st.retraction * 2) / 40;
         }
         prevEnd = p.pts[p.pts.length - 1];
       }

@@ -121,7 +121,7 @@ console.log("\n[3] 全流程：预热 → 调平 → 打印 → 完成（遥测�
   check("job-record 上报 success", jobRecord && jobRecord.status === "success");
   const q = sim.lastQuality;
   check("实测质量报告已生成", !!q && q.kind === "actual");
-  check("报告四个维度齐全", q && q.checks.length === 4,
+  check("报告五个实测维度齐全", q && q.checks.length === 5,
     q ? q.checks.map((c) => c.name).join("/") : "null");
   check("quality-actual 事件已广播", actualEvt === q);
   check("综合分与评级合法", q && q.score >= 4 && q.score <= 99 && ["A", "B", "C", "D"].includes(q.grade),
@@ -129,6 +129,9 @@ console.log("\n[3] 全流程：预热 → 调平 → 打印 → 完成（遥测�
   check("干净打印 → 过程扰动高分", q.checks[2].score >= 90, String(q.checks[2].score));
   check("已调平 → 首层维度引用网格实测", q.checks[1].tip.includes("9 点实测网格"), q.checks[1].tip);
   check("实测耗材量 > 0", q.usedG > 0, String(q.usedG));
+  check("回抽执行被运行遥测记录", sim._telemetry.retractions > 0 && sim._telemetry.retractedMm > 0,
+    `${sim._telemetry.retractions}/${sim._telemetry.retractedMm}`);
+  check("实测报告包含回抽与拉丝", q.checks[3].name.includes("回抽"), q.checks[3].name);
 }
 
 console.log("\n[4] 热失控监测链：物理注入 → 温度真实下跌 → 监测器凭偏差发现");
@@ -192,7 +195,35 @@ console.log("\n[5] 实测质量纯函数（遥测 → 报告边界行为）");
   const offSpeed = FXSim.computeActualQuality(
     Object.assign({}, base, { offSpeedTime: 300 }),
     st, null, { elapsed: 600, usedG: 12 });
-  check("变速 50% 时间 → 速度一致性降分", offSpeed.checks[3].score < clean.checks[3].score);
+  check("变速 50% 时间 → 速度一致性降分", offSpeed.checks[4].score < clean.checks[4].score);
+
+  const noRetract = FXSim.computeActualQuality(
+    Object.assign({}, base, {
+      travelMoves: 20, travelMm: 1000, retractions: 0, retractedMm: 0,
+      stringingRiskWeighted: 1000, stringingTravelMm: 1000, retractionStress: 0,
+    }),
+    st, null, { elapsed: 600, usedG: 12 });
+  const tunedRetract = FXSim.computeActualQuality(
+    Object.assign({}, base, {
+      travelMoves: 20, travelMm: 1000, retractions: 20, retractedMm: 24,
+      stringingRiskWeighted: 90, stringingTravelMm: 1000, retractionStress: 0,
+    }),
+    st, null, { elapsed: 600, usedG: 12 });
+  check("回抽不足 → 拉丝实测维度明显降分",
+    noRetract.checks[3].score < tunedRetract.checks[3].score - 30,
+    `${noRetract.checks[3].score} vs ${tunedRetract.checks[3].score}`);
+}
+
+console.log("\n[6] 回抽参数进入切片估时");
+{
+  const { sim } = makeSim();
+  sim.setModel(tinyModel(), true);
+  sim.updateSettings({ retraction: 0 });
+  const without = sim.slice.stats.timeSec;
+  sim.updateSettings({ retraction: 2 });
+  const withRetraction = sim.slice.stats.timeSec;
+  check("增加回抽会增加真实运动阶段与估时", withRetraction > without,
+    `${without.toFixed(3)} → ${withRetraction.toFixed(3)}`);
 }
 
 console.log(`\n═══ 结果：${passed} 通过 / ${failed} 失败 ═══`);

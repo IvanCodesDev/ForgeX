@@ -138,6 +138,34 @@ test.describe("参数面板", () => {
     expect(after.fanSpeed).toBeLessThan(before.fanSpeed); // ABS 要减风
   });
 
+  test("填充图案选择会生成不同的真实路径", async ({ page }) => {
+    await page.goto("/");
+    await waitBooted(page);
+    await page.locator("#btn-params").click();
+    const select = page.locator("#param-body select.sel").first();
+
+    const signature = () => page.evaluate(() => {
+      const layers = window.FX.sim.slice.layers;
+      const layer = layers[Math.floor(layers.length / 2)];
+      return layer.paths
+        .filter((p) => p.type === "infill")
+        .slice(0, 12)
+        .map((p) => p.pts.slice(0, 5).map((q) => `${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(";"))
+        .join("|");
+    });
+
+    await select.selectOption("直线");
+    const straight = await signature();
+    await select.selectOption("斜线网格");
+    const diagonal = await signature();
+    await select.selectOption("蜂窝");
+    const honeycomb = await signature();
+
+    expect(straight.length).toBeGreaterThan(0);
+    expect(new Set([straight, diagonal, honeycomb]).size).toBe(3);
+    expect(await page.evaluate(() => window.FX.sim.settings.infillPattern)).toBe("蜂窝");
+  });
+
   test("打印中锁定几何参数（与真实切片器行为一致）", async ({ page }) => {
     await page.goto("/");
     await waitBooted(page);

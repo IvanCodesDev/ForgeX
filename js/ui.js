@@ -224,6 +224,7 @@
       });
       g.appendChild(matRow);
       this._lockables.push({ elx: matRow, geom: true });
+      g.appendChild(el("div", "p-sub-label", "外观颜色 · 仅改变成品显示"));
       const colRow = el("div", "chip-row");
       FXSim.COLORS.forEach((c, i) => {
         const chip = el("div", "chip sm" + (st.colorIdx === i ? " on" : ""), c.name);
@@ -258,7 +259,7 @@
       const patRow = el("div", "prow");
       patRow.innerHTML = `<span class="p-lab">填充图案</span>`;
       const sel = el("select", "sel");
-      ["斜线网格", "直线", "蜂窝(视觉同斜线)"].forEach((p) => {
+      ["斜线网格", "直线", "蜂窝"].forEach((p) => {
         const o = el("option", "", p); o.value = p; sel.appendChild(o);
       });
       sel.value = st.infillPattern;
@@ -302,7 +303,7 @@
       this._slider(g, { label: "支撑间距", min: 2, max: 8, step: 0.5, unit: "mm", dec: 1, geom: true,
         get: () => st.supportSpacing, set: (v) => sim.updateSettings({ supportSpacing: v }) });
 
-      body.appendChild(el("div", "note", "温度 / 速度 / 风扇支持打印中实时调整；几何类参数（层高、填充、支撑）需在待机状态修改并自动重新切片。"));
+      body.appendChild(el("div", "note", "温度 / 速度 / 空驶 / 回抽 / 风扇支持打印中实时调整；层高、周界、实心层、填充图案与支撑会生成不同路径，需在待机状态修改并自动重新切片。"));
     }
 
     _pgroup(parent, icon, title, hint) {

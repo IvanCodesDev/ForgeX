@@ -18,7 +18,8 @@ function check(name, cond, detail) {
 
 const ST = {
   layerHeight: 0.2, extrusionWidth: 0.45, perimeters: 2, solidLayers: 3,
-  infillDensity: 0.18, nozzleTemp: 210, bedTemp: 60, speed: 120, travelSpeed: 260,
+  infillDensity: 0.18, infillPattern: "斜线网格",
+  nozzleTemp: 210, bedTemp: 60, speed: 120, travelSpeed: 260,
   retraction: 1.2, fanSpeed: 100, supportEnabled: true, supportSpacing: 4.5,
   skirtLoops: 2, skirtGap: 5, zOffset: 0,
 };
@@ -49,6 +50,29 @@ console.log("\n[2] 扫描线填充（奇偶规则）");
   check("填充点不落入孔洞", !inHole);
   check("45° 斜向填充可用", FXSlicer.hatchLoops([{ pts: sq }], 45, 2).length > 0);
   check("蛇形串联（折线数 < 线段数）", lines.length < 12, String(lines.length));
+  const loops = [{ pts: sq }];
+  const straight = FXSlicer.patternFill(loops, "直线", 2, 0);
+  const diagonal = FXSlicer.patternFill(loops, "斜线网格", 2, 0);
+  const honeycomb = FXSlicer.patternFill(loops, "蜂窝", 2, 0);
+  const angles = (paths) => {
+    const found = new Set();
+    for (const path of paths) for (let i = 1; i < path.length; i++) {
+      const dx = path[i].x - path[i - 1].x, dy = path[i].y - path[i - 1].y;
+      if (Math.hypot(dx, dy) < 0.5) continue;
+      let a = Math.round((Math.atan2(dy, dx) * 180) / Math.PI);
+      a = ((a % 180) + 180) % 180;
+      found.add(Math.round(a / 5) * 5);
+    }
+    return found;
+  };
+  const aStraight = angles(straight), aDiagonal = angles(diagonal), aHoney = angles(honeycomb);
+  check("直线填充生成 0° 主路径", aStraight.has(0), [...aStraight].join(","));
+  check("斜线网格生成 45° 主路径", aDiagonal.has(45), [...aDiagonal].join(","));
+  check("蜂窝生成 60°/120° 六边形边", aHoney.has(60) || aHoney.has(120), [...aHoney].join(","));
+  const signature = (paths) => paths.slice(0, 8).map((p) =>
+    p.slice(0, 4).map((q) => `${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(";")).join("|");
+  check("三种填充的实际路径互不相同",
+    new Set([signature(straight), signature(diagonal), signature(honeycomb)]).size === 3);
   void totalPts;
 }
 
@@ -131,6 +155,11 @@ console.log("\n[7] 图片高度场模型（模拟渐变图）");
   const midL = r1.layers[Math.floor(r1.totalLayers / 2)];
   check("浮雕中层含周界+填充", midL.paths.some((p) => p.type === "perimeter") && midL.paths.some((p) => p.type === "infill" || p.type === "solid"),
     midL.paths.map((p) => p.type).join(","));
+  const r4 = FXSlicer.slice(relief, TF, Object.assign({}, ST, { perimeters: 4 }));
+  const perimeterCount = (slice) =>
+    slice.layers[Math.floor(slice.totalLayers / 2)].paths.filter((p) => p.type === "perimeter").length;
+  check("图片高度场响应周界圈数", perimeterCount(r4) > perimeterCount(r1),
+    `${perimeterCount(r1)} → ${perimeterCount(r4)}`);
 
   const sil = FXModels.buildImageModel(lum, nx, ny, { mode: "silhouette", widthMm: 80, maxH: 6, invert: false, threshold: 0.5 });
   const r2 = FXSlicer.slice(sil, TF, ST);
@@ -150,6 +179,50 @@ console.log("\n[8] 变换与缩放");
   for (const p of r.layers[10].paths) if (p.type === "perimeter") for (const q of p.pts) { cx += q.x; cy += q.y; n++; }
   cx /= n; cy /= n;
   check("平移后质心偏移 ≈ (20,-10)", Math.abs(cx - 20) < 3 && Math.abs(cy + 10) < 3, `(${cx.toFixed(1)}, ${cy.toFixed(1)})`);
+}
+
+console.log("\n[9] 工艺参数因果差异");
+{
+  const gear = FXModels.createBuiltins()[0];
+  const base = FXSlicer.slice(gear, TF, ST);
+  const coarse = FXSlicer.slice(gear, TF, Object.assign({}, ST, { layerHeight: 0.28 }));
+  check("层高改变实际层数", coarse.totalLayers !== base.totalLayers,
+    `${base.totalLayers} → ${coarse.totalLayers}`);
+
+  const thickWalls = FXSlicer.slice(gear, TF, Object.assign({}, ST, { perimeters: 4 }));
+  const mid = Math.floor(base.totalLayers / 2);
+  const perimeterPaths = (slice) => slice.layers[mid].paths.filter((p) => p.type === "perimeter").length;
+  check("周界圈数改变实际轮廓路径", perimeterPaths(thickWalls) > perimeterPaths(base),
+    `${perimeterPaths(base)} → ${perimeterPaths(thickWalls)}`);
+
+  const moreSkin = FXSlicer.slice(gear, TF, Object.assign({}, ST, { solidLayers: 6 }));
+  const solidLayerCount = (slice) => slice.layers.filter((L) => L.paths.some((p) => p.type === "solid")).length;
+  check("实心层数改变顶底实体层", solidLayerCount(moreSkin) > solidLayerCount(base),
+    `${solidLayerCount(base)} → ${solidLayerCount(moreSkin)}`);
+
+  const dense = FXSlicer.slice(gear, TF, Object.assign({}, ST, { infillDensity: 0.45 }));
+  check("填充密度增加真实挤出路径", dense.stats.extLenMm > base.stats.extLenMm,
+    `${base.stats.extLenMm.toFixed(0)} → ${dense.stats.extLenMm.toFixed(0)} mm`);
+
+  const fastPrint = FXSlicer.slice(gear, TF, Object.assign({}, ST, { speed: 240 }));
+  check("打印速度改变路径估时", fastPrint.stats.timeSec < base.stats.timeSec,
+    `${base.stats.timeSec.toFixed(0)} → ${fastPrint.stats.timeSec.toFixed(0)} s`);
+
+  const fastTravel = FXSlicer.slice(gear, TF, Object.assign({}, ST, { travelSpeed: 520 }));
+  check("空驶速度改变路径估时", fastTravel.stats.timeSec < base.stats.timeSec,
+    `${base.stats.timeSec.toFixed(0)} → ${fastTravel.stats.timeSec.toFixed(0)} s`);
+
+  const longRetract = FXSlicer.slice(gear, TF, Object.assign({}, ST, { retraction: 3 }));
+  check("回抽距离增加运动耗时", longRetract.stats.timeSec > base.stats.timeSec,
+    `${base.stats.timeSec.toFixed(0)} → ${longRetract.stats.timeSec.toFixed(0)} s`);
+
+  const bracket = FXModels.createBuiltins()[2];
+  const tightSupport = FXSlicer.slice(bracket, TF, Object.assign({}, ST, { supportSpacing: 2 }));
+  const sparseSupport = FXSlicer.slice(bracket, TF, Object.assign({}, ST, { supportSpacing: 8 }));
+  const supportLength = (slice) => slice.layers.reduce((sum, L) =>
+    sum + L.paths.filter((p) => p.type === "support").reduce((a, p) => a + p.len, 0), 0);
+  check("支撑间距改变支撑材料量", supportLength(tightSupport) > supportLength(sparseSupport),
+    `${supportLength(tightSupport).toFixed(0)} vs ${supportLength(sparseSupport).toFixed(0)} mm`);
 }
 
 console.log(`\n═══ 结果：${passed} 通过 / ${failed} 失败 ═══`);

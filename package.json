@@ -1,6 +1,6 @@
 {
   "name": "forgex-insight",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "description": "Auditable FDM digital experimentation with reviewed calibration releases, G-code replay, machine logs, and production analytics",
   "keywords": [
     "3d-printing",

@@ -3,7 +3,7 @@
 ### Turn every print into an observable, reproducible, and analyzable digital experiment
 
 [![CI](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml/badge.svg)](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.18.0-2563eb)
+![Version](https://img.shields.io/badge/version-0.19.0-2563eb)
 ![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-16a34a)
 ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-0f172a)
 [![License](https://img.shields.io/badge/license-Apache--2.0-f97316)](./LICENSE)
@@ -14,7 +14,7 @@
 
 Open the web app for a fully offline experience. Start the zero-runtime-dependency Node.js service to add persistence, sharing, knowledge retrieval, API-key authentication, reviewed calibration releases, and optional AI-assisted narratives. Core simulation, statistical computation, and evidence generation do not depend on cloud services.
 
-> **Current release: v0.18.0.** The P0–P8 engineering roadmap is complete, covering 3D-printing simulation, real-job review, auditable analytics, and two-person calibration approval. Bundled data are conformance fixtures, not claims of factory accuracy.
+> **Current release: v0.19.0.** The P0–P8 engineering roadmap is complete, with additional verifiable process-parameter effects: lines, diagonal grids, and honeycomb now generate different toolpaths, while retraction participates in motion timing and quality telemetry. Bundled data are conformance fixtures, not claims of factory accuracy.
 
 ## Problems it solves
 
@@ -156,8 +156,8 @@ Node.js service
 ## Verification
 
 ```bash
-npm test             # 622 core/service assertions + 17 ecosystem, 61 fixture, 22 calibration, 25 release checks
-npm run test:e2e     # 26 browser scenarios: full Chromium + critical Firefox/WebKit paths
+npm test             # 639 core/service assertions + 17 ecosystem, 61 fixture, 22 calibration, 25 release checks
+npm run test:e2e     # 27 browser scenarios: full Chromium + critical Firefox/WebKit paths
 npm run validate:fixtures
 npm run validate:calibrations
 npm run release:check

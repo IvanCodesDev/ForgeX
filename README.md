@@ -3,7 +3,7 @@
 ### 让每一次打印，都成为可观察、可复现、可分析的数字实验
 
 [![CI](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml/badge.svg)](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.18.0-2563eb)
+![Version](https://img.shields.io/badge/version-0.19.0-2563eb)
 ![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-16a34a)
 ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-0f172a)
 [![License](https://img.shields.io/badge/license-Apache--2.0-f97316)](./LICENSE)
@@ -154,8 +154,8 @@ Node.js service
 ## 验证
 
 ```bash
-npm test             # 622 项核心/服务断言 + 17 项生态、61 项夹具、22 项校准、25 项发布检查
-npm run test:e2e     # 26 个浏览器场景：Chromium 全量 + Firefox/WebKit 关键链路
+npm test             # 639 项核心/服务断言 + 17 项生态、61 项夹具、22 项校准、25 项发布检查
+npm run test:e2e     # 27 个浏览器场景：Chromium 全量 + Firefox/WebKit 关键链路
 npm run validate:fixtures
 npm run validate:calibrations
 npm run release:check
