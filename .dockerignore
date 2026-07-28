@@ -15,7 +15,7 @@ doc/*
 *.bak
 Thumbs.db
 .DS_Store
-Dockerfile
+deploy/Dockerfile
 .dockerignore
 
 # 本地运行时数据不进镜像（容器里靠挂卷）

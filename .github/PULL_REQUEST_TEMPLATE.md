@@ -34,7 +34,7 @@
 ### 文档
 
 - [ ] 用户可见的行为变更已同步到 README（中英双份）
-- [ ] 已在 `CHANGELOG.md` 的 `[Unreleased]` 下记录
+- [ ] 已在 `.github/CHANGELOG.md` 的 `[Unreleased]` 下记录
 - [ ] 破坏性变更已在 CHANGELOG 中单列并说明迁移方式
 
 ---

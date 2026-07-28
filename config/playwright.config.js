@@ -13,9 +13,11 @@
 "use strict";
 
 const { defineConfig, devices } = require("@playwright/test");
+const path = require("path");
 
 module.exports = defineConfig({
-  testDir: "./tests/e2e",
+  testDir: path.resolve(__dirname, "../tests/e2e"),
+  outputDir: path.resolve(__dirname, "../test-results"),
   // 3D 场景初始化比纯 DOM 慢，给足超时；但也别太长，否则挂起的用例会拖垮 CI
   timeout: 60_000,
   expect: { timeout: 10_000 },
@@ -56,6 +58,7 @@ module.exports = defineConfig({
   webServer: {
     // 用规则引擎 + 临时数据目录：E2E 不该依赖任何外部密钥，也不该污染仓库
     command: "node tests/e2e/serve.js",
+    cwd: path.resolve(__dirname, ".."),
     url: "http://127.0.0.1:8899/healthz",
     reuseExistingServer: false,
     timeout: 30_000,

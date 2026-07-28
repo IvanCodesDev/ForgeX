@@ -8,7 +8,7 @@
 ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-0f172a)
 [![License](https://img.shields.io/badge/license-Apache--2.0-f97316)](./LICENSE)
 
-**简体中文** · [English](./README.en.md)
+**简体中文** · [English](./.github/README.en.md)
 
 **FORGE·X Insight** 是一个开源、本地优先的 FDM 3D 打印数字实验与生产分析平台。它把模型处理、切片、G-code 可视化、设备仿真、真机日志、时间校准和统计分析连接成一条可追溯工作流。
 
@@ -180,10 +180,10 @@ node tests/deploy-check.js https://your-domain.example
 ### Docker Compose
 
 ```bash
-docker compose up -d
+docker compose -f deploy/docker-compose.yml up -d
 ```
 
-默认不配置外部 AI 服务，直接使用本地分析引擎。`docker-compose.yml` 已配置持久化卷。
+默认不配置外部 AI 服务，直接使用本地分析引擎。[`deploy/docker-compose.yml`](./deploy/docker-compose.yml) 已配置持久化卷。
 
 ### Node
 
@@ -203,7 +203,7 @@ node server/index.js
 | `AI_DAILY_PER_CALLER` / `AI_DAILY_GLOBAL` | 调用方与实例级每日额度                       |
 | `PUBLIC_BASE`                             | 分享链接的公网地址前缀                       |
 
-完整配置见 [`server/.env.example`](./server/.env.example)，安全建议见 [`SECURITY.md`](./SECURITY.md)。
+完整配置见 [`server/.env.example`](./server/.env.example)，安全建议见 [`.github/SECURITY.md`](./.github/SECURITY.md)。
 
 ## 项目结构
 
@@ -216,6 +216,8 @@ profiles/             machine/material profile schema and examples
 logs/                 machine-log schema and examples
 validation/           paired G-code/log fixtures and calibration reports
 calibration/          versioned calibration bundle schema and demonstration
+deploy/               Docker image and Compose deployment definitions
+.github/               community policies, release history and English overview
 tools/                headless simulation and dataset generation
 tests/                unit, contract and end-to-end tests
 ```
@@ -224,11 +226,11 @@ tests/                unit, contract and end-to-end tests
 
 FORGE·X Insight 面向数字仿真、工艺探索、教学演示和生产数据分析。它可以输出制造文件，但不直接连接或控制实体打印机。
 
-版本变化见 [`CHANGELOG.md`](./CHANGELOG.md)。
+版本变化见 [`.github/CHANGELOG.md`](./.github/CHANGELOG.md)。
 
 ## 参与贡献
 
-请先阅读 [`CONTRIBUTING.md`](./CONTRIBUTING.md)。提交功能时需同步测试与用户文档，并确保界面描述可以由当前实现直接验证。
+请先阅读 [`.github/CONTRIBUTING.md`](./.github/CONTRIBUTING.md)。提交功能时需同步测试与用户文档，并确保界面描述可以由当前实现直接验证。
 
 ## License
 

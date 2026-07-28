@@ -1,14 +1,16 @@
 # FORGE·X Insight — 容器部署
 #
-#   docker compose up -d
-#   docker compose logs -f
+#   docker compose -f deploy/docker-compose.yml up -d
+#   docker compose -f deploy/docker-compose.yml logs -f
 #
-# ⚠️ 公网部署前请读 SECURITY.md。默认配置是**安全的**：不带 AI 密钥，
+# ⚠️ 公网部署前请读 .github/SECURITY.md。默认配置是**安全的**：不带 AI 密钥，
 # 只跑规则引擎（确定性统计 + 假设检验，无外部计费）。要接 AI 请看下面的注释。
 
 services:
   forgex:
-    build: .
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
     image: forgex-insight:local
     container_name: forgex-insight
     restart: unless-stopped

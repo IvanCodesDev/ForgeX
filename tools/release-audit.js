@@ -30,10 +30,10 @@ const version = pkg.version;
 const cacheVersion = String(Number(version.split(".")[1]));
 check("package 与 lock 根版本一致", lock.version === version && lock.packages[""].version === version);
 check("版本采用稳定 semver", /^0\.\d+\.\d+$/.test(version), version);
-for (const rel of ["README.md", "README.en.md"]) {
+for (const rel of ["README.md", ".github/README.en.md"]) {
   check(`${rel} 徽章版本一致`, text(rel).includes(`version-${version}-`));
 }
-check("CHANGELOG 含当前版本", text("CHANGELOG.md").includes(`## [${version}]`));
+check("CHANGELOG 含当前版本", text(".github/CHANGELOG.md").includes(`## [${version}]`));
 
 console.log("\n[release] Browser cache contract");
 const html = text("index.html");
@@ -96,7 +96,7 @@ check("CI 安装 Chromium、Firefox 与 WebKit", /playwright install --with-deps
 check(
   "Playwright 配置声明三浏览器",
   ["chromium", "firefox", "webkit"].every((name) =>
-    new RegExp(`name:\\s*["']${name}["']`).test(text("playwright.config.js"))
+    new RegExp(`name:\\s*["']${name}["']`).test(text("config/playwright.config.js"))
   )
 );
 

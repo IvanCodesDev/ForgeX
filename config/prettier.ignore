@@ -1,19 +1,19 @@
-js/vendor/
-node_modules/
-coverage/
-LICENSE
-NOTICE
-*.csv
+../js/vendor/
+../node_modules/
+../coverage/
+../LICENSE
+../NOTICE
+../*.csv
 
 # 现有源码的排版是手工对齐的（参数表、矩阵、ASCII 图），
 # Prettier 会把它们打散、让 diff 噪音淹没真实变更。
 # 迁移计划：随 P1 的 ESM 化按模块逐个纳入格式化，而不是一次性重排全仓库。
-js/
-server/
-tests/
-index.html
-css/
+../js/
+../server/
+../tests/
+../index.html
+../css/
 
 # Playwright 产物
-test-results/
-playwright-report/
+../test-results/
+../playwright-report/

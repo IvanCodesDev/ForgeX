@@ -6,9 +6,9 @@
 ![Version](https://img.shields.io/badge/version-0.19.0-2563eb)
 ![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-16a34a)
 ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-0f172a)
-[![License](https://img.shields.io/badge/license-Apache--2.0-f97316)](./LICENSE)
+[![License](https://img.shields.io/badge/license-Apache--2.0-f97316)](../LICENSE)
 
-[简体中文](./README.md) · **English**
+[简体中文](../README.md) · **English**
 
 **FORGE·X Insight** is an open-source, local-first FDM 3D-printing digital experimentation and production analytics platform. It connects model preparation, slicing, G-code visualization, machine simulation, real machine logs, time calibration, and statistical analysis in one traceable workflow.
 
@@ -167,8 +167,8 @@ npm run format:check
 
 Coverage includes slicing, G-code, machine logs, time calibration, profiles, leveling, simulation, exports, statistics, insights, virtual-farm datasets, backend contracts, and critical UI flows across three browser engines.
 
-See [`validation/README.md`](./validation/README.md) for dialect fixtures and
-the real-data contribution workflow, and [`calibration/README.md`](./calibration/README.md)
+See [`validation/README.md`](../validation/README.md) for dialect fixtures and
+the real-data contribution workflow, and [`calibration/README.md`](../calibration/README.md)
 for the P7/P8 bundle, admission, reviewed-release, and drift lifecycle. Bundled reports and models
 are `synthetic-conformance` and never match user jobs automatically.
 
@@ -183,10 +183,10 @@ node tests/deploy-check.js https://your-domain.example
 ### Docker Compose
 
 ```bash
-docker compose up -d
+docker compose -f deploy/docker-compose.yml up -d
 ```
 
-The default configuration uses local analysis and requires no external AI service. `docker-compose.yml` includes a persistent volume.
+The default configuration uses local analysis and requires no external AI service. [`deploy/docker-compose.yml`](../deploy/docker-compose.yml) includes a persistent volume.
 
 ### Node.js
 
@@ -206,7 +206,7 @@ Common environment variables:
 | `AI_DAILY_PER_CALLER` / `AI_DAILY_GLOBAL` | Per-caller and instance-wide daily budgets                                  |
 | `PUBLIC_BASE`                             | Public base URL used for share links                                        |
 
-See [`server/.env.example`](./server/.env.example) for the complete configuration and [`SECURITY.md`](./SECURITY.md) for deployment guidance.
+See [`server/.env.example`](../server/.env.example) for the complete configuration and [`SECURITY.md`](./SECURITY.md) for deployment guidance.
 
 ## Repository layout
 
@@ -219,6 +219,8 @@ profiles/             machine/material profile schema and examples
 logs/                 machine-log schema and examples
 validation/           paired G-code/log fixtures and calibration reports
 calibration/          versioned calibration bundle schema and demonstration
+deploy/               Docker image and Compose deployment definitions
+.github/               community policies, release history and English overview
 tools/                headless simulation and dataset generation
 tests/                unit, contract and end-to-end tests
 ```
@@ -235,4 +237,4 @@ Read [`CONTRIBUTING.md`](./CONTRIBUTING.md) before contributing. New user-facing
 
 ## License
 
-Apache License 2.0. See [`LICENSE`](./LICENSE) and [`NOTICE`](./NOTICE).
+Apache License 2.0. See [`LICENSE`](../LICENSE) and [`NOTICE`](../NOTICE).
