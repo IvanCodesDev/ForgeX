@@ -12,6 +12,9 @@
 
 **FORGE·X Insight** 是一个开源、本地优先的 FDM 3D 打印数字实验与生产分析平台。它把模型处理、切片、G-code 可视化、设备仿真、真机日志、时间校准和统计分析连接成一条可追溯工作流。
 
+<img width="2560" height="1343" alt="image" src="https://github.com/user-attachments/assets/d4f1eab7-3bec-4d84-8e6c-ce32008688ec" />
+
+
 直接打开网页即可离线运行；启动零运行时依赖的 Node.js 服务后，还可获得持久化、分享、知识检索、API Key 鉴权、校准审核发布和可选 AI 叙述。核心仿真、统计计算与证据生成不依赖云服务。
 
 ## 它解决什么问题
