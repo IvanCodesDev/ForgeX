@@ -219,6 +219,7 @@ profiles/             machine/material profile schema and examples
 logs/                 machine-log schema and examples
 validation/           paired G-code/log fixtures and calibration reports
 calibration/          versioned calibration bundle schema and demonstration
+demo/                 video-ready sample files and Chinese narration script
 deploy/               Docker image and Compose deployment definitions
 .github/               community policies, release history and English overview
 tools/                headless simulation and dataset generation

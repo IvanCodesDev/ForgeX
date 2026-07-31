@@ -1,0 +1,52 @@
+{
+  "$schema": "../../profiles/profile-bundle.schema.json",
+  "format": "forgex-profile-bundle",
+  "version": 1,
+  "machines": [
+    {
+      "id": "demo-corexy-320",
+      "name": "演示 CoreXY 320",
+      "tag": "DEMO-CX320",
+      "kinematics": "corexy",
+      "description": "封闭式 CoreXY · 320 × 320 × 350 mm · 录屏示例",
+      "buildVolume": {
+        "x": 320,
+        "y": 320,
+        "z": 350
+      },
+      "enclosed": true,
+      "physics": {
+        "hotendFouling": 0.08,
+        "feederGrip": 0.94,
+        "spoolDrag": 0.1,
+        "heaterHealth": 0.97,
+        "beltWear": 0.06,
+        "ambientC": 29,
+        "draft": 0.05
+      },
+      "source": "Video demonstration profile generated for ForgeX; verify all values before real use"
+    }
+  ],
+  "materials": [
+    {
+      "id": "PLA-HS-demo",
+      "name": "高速 PLA（演示）",
+      "nozzle": {
+        "default": 220,
+        "min": 205,
+        "max": 235
+      },
+      "bed": {
+        "default": 60,
+        "min": 50
+      },
+      "fan": 90,
+      "densityG": 1.24,
+      "maxSpeed": 260,
+      "flowMm3s": 18,
+      "shrinkage": 0.25,
+      "priceCnyKg": 89,
+      "source": "Video demonstration material profile; replace with the verified filament datasheet"
+    }
+  ]
+}

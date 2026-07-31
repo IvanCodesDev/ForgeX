@@ -1,0 +1,54 @@
+{
+  "$schema": "../../logs/machine-log.schema.json",
+  "format": "forgex-machine-log",
+  "version": 1,
+  "job": {
+    "jobId": "VIDEO-TURBINE-001",
+    "machineId": "DEMO-CX320-01",
+    "firmware": "Marlin 2.1.2-demo",
+    "slicer": "OrcaSlicer 2.3.0",
+    "gcodeSha256": "717072003b68eb18cfec097e82fdc4df21afd65c7c4cee330846d998492bb800",
+    "durationSec": 786,
+    "filamentMm": 691,
+    "filamentG": 2.07,
+    "completedLayers": 18,
+    "status": "success"
+  },
+  "telemetry": [
+    {
+      "timeSec": 0,
+      "nozzleC": 27.1,
+      "bedC": 27.4
+    },
+    {
+      "timeSec": 63,
+      "nozzleC": 207.8,
+      "bedC": 58.9
+    },
+    {
+      "timeSec": 173,
+      "nozzleC": 219.7,
+      "bedC": 60.2
+    },
+    {
+      "timeSec": 377,
+      "nozzleC": 220.4,
+      "bedC": 60
+    },
+    {
+      "timeSec": 582,
+      "nozzleC": 219.8,
+      "bedC": 60.3
+    },
+    {
+      "timeSec": 755,
+      "nozzleC": 220.2,
+      "bedC": 59.9
+    },
+    {
+      "timeSec": 786,
+      "nozzleC": 207.3,
+      "bedC": 58.6
+    }
+  ]
+}

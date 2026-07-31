@@ -31,3 +31,9 @@ playwright-report/
 # 这是用户数据，不该进仓库；容器部署时挂卷到这里。
 data/
 .tmp-data-*/
+
+# KC-Chat 运行时产物（插件自动生成，请勿入库）
+.cursor/mcp.json
+.cursor/kc-mcp/
+.cursor/kc-mcp-messages/
+.cursor/kc-chat-exports/

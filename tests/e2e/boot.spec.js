@@ -31,6 +31,8 @@ test.describe("启动", () => {
     // WebGL 兜底页必须没出现——它出现就意味着 3D 没起来
     await expect(page.locator("#webgl-fallback")).toBeHidden();
     await expect(page.locator("#gl")).toBeVisible();
+    await expect(page.locator("#ctx-panel")).toBeHidden();
+    await expect(page.locator("#flow-pills .flow-pill.on")).toHaveCount(0);
 
     const state = await page.evaluate(() => ({
       model: window.FX.sim.model && window.FX.sim.model.name,

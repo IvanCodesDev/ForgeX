@@ -76,7 +76,7 @@
     _buildNav() {
       const railEl = $("#flow-pills");
       NAVS.forEach((n, i) => {
-        const item = el("button", "flow-pill" + (i === 0 ? " on" : "") + (n.accent ? " fp-accent" : ""),
+        const item = el("button", "flow-pill" + (n.accent ? " fp-accent" : ""),
           `<span class="fp-idx">0${i + 1}</span><span>${n.label}</span>`);
         item.type = "button";
         if (n.id === "insight") {

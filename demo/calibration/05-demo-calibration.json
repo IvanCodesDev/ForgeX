@@ -1,0 +1,44 @@
+{
+  "$schema": "../../calibration/calibration-bundle.schema.json",
+  "format": "forgex-calibration-bundle",
+  "version": 1,
+  "id": "forgex-video-demonstration",
+  "revision": 1,
+  "createdAt": "2026-07-28T00:00:00Z",
+  "provenance": "synthetic-conformance",
+  "source": {
+    "license": "CC0-1.0",
+    "note": "Generated exclusively for the ForgeX video workflow; not a production timing model."
+  },
+  "models": [
+    {
+      "id": "demo-cx320-marlin-pla",
+      "status": "demonstration-only",
+      "scope": {
+        "machineId": "DEMO-CX320-01",
+        "firmware": "Marlin 2.1.2-demo",
+        "material": "PLA-HS-demo"
+      },
+      "algorithm": "theil-sen",
+      "trainedAt": "2026-07-28T00:00:00Z",
+      "coefficients": {
+        "motionScale": 1.12,
+        "fixedOverheadSec": 38,
+        "sampleCount": 8
+      },
+      "validation": {
+        "holdoutSamples": 3,
+        "mape": 0.06,
+        "maxApe": 0.11,
+        "medianBias": 0.02,
+        "evaluatedAt": "2026-07-28T00:00:00Z"
+      },
+      "thresholds": {
+        "maxMape": 0.15,
+        "maxBias": 0.1,
+        "minDriftSamples": 5
+      },
+      "trainingSetSha256": "9fecbfc2f300c87a4b20f2f4c3ad35d5b10bebb1f4c3928b491890b77f79d7dc"
+    }
+  ]
+}
