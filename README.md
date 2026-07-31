@@ -1,6 +1,6 @@
 # FORGE·X Insight
 
-### 让每一次打印，都成为可观察、可复现、可分析的数字实验
+### 打印前验证参数与路径，打印后用真机数据校准和复盘
 
 [![CI](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml/badge.svg)](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml)
 ![Version](https://img.shields.io/badge/version-0.19.0-2563eb)
@@ -10,69 +10,111 @@
 
 **简体中文** · [English](./.github/README.en.md)
 
-**FORGE·X Insight** 是一个开源、本地优先的 FDM 3D 打印数字实验与生产分析平台。它把模型处理、切片、G-code 可视化、设备仿真、真机日志、时间校准和统计分析连接成一条可追溯工作流。
+真实 3D 打印最费时间的部分，往往不是点击开始，而是反复试错：参数是否合适、支撑是否足够、预计要打印多久、为什么同一个文件换一台机器就失败，以及失败后该改哪一项。
 
-<img width="2560" height="1343" alt="image" src="https://github.com/user-attachments/assets/d4f1eab7-3bec-4d84-8e6c-ce32008688ec" />
+**FORGE·X Insight** 用于 FDM 3D 打印的打印前预演和打印后分析。它可以在不消耗材料、不占用设备的情况下比较工艺方案、查看实际切片路径、估算时间与耗材；打印完成后，还能导入真实 G-code 和设备日志，把预测与真机结果放在一起复盘。
 
+它不直接控制打印机，也不能代替首件试打。它的作用是先排除明显不合理的方案，减少盲目调参，再让每一次真机打印都能反过来改进下一次预测。
 
-直接打开网页即可离线运行；启动零运行时依赖的 Node.js 服务后，还可获得持久化、分享、知识检索、API Key 鉴权、校准审核发布和可选 AI 叙述。核心仿真、统计计算与证据生成不依赖云服务。
+<img width="2560" height="1343" alt="FORGE·X Insight 主界面" src="https://github.com/user-attachments/assets/d4f1eab7-3bec-4d84-8e6c-ce32008688ec" />
 
-## 它解决什么问题
+## 解决的具体问题
 
-| 常见痛点                         | FORGE·X 的处理方式                                                |
-| -------------------------------- | ----------------------------------------------------------------- |
-| 仿真只是动画，结果无法复盘       | 路径、遥测、事件、质量报告和生产记录来自同一条运行时数据链        |
-| G-code、切片器估时与真机日志割裂 | 逐层 2D/3D 回放，配对日志对比，并用 holdout 验证时间校准模型      |
-| 分析只给结论，无法判断是否可信   | 保留来源、样本量、置信区间、显著性、图表和可执行建议              |
-| 校准模型发布后缺少治理           | API Key 双人复核、禁止自批、原子发布、版本审计和后续漂移停用      |
-| 云端 AI 成为运行前提             | 本地规则与统计核默认可用，AI 仅负责可选叙述，不改写计算得到的证据 |
+| 真实打印中的问题                                         | 直接后果                                     | FORGE·X 能做什么                                               |
+| -------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------- |
+| 参数主要靠经验试，改了层高、填充或速度却不知道会影响什么 | 反复试打，浪费耗材和机时                     | 重新计算层数、路径、挤出量、耗材和时间，用同一模型直接比较方案 |
+| 打印前只能看到切片器给出的汇总数字                       | 难以发现局部路径、支撑和运动过程中的问题     | 逐层查看周界、填充、支撑、空驶和挤出路径，并在 2D/3D 中回放    |
+| 切片器估时与真机完成时间经常不一致                       | 排产、交付时间和成本估算不稳定               | 将 G-code 与对应真机日志配对，按机型、固件和材料校准时间模型   |
+| 打印失败后只知道“这次失败了”                             | 同类故障重复出现，经验无法复用               | 保留温度、调平、速度、故障和任务记录，对比计划值与实测值       |
+| 多台设备积累了 CSV 和日志，但很难回答具体问题            | 不知道哪台机器、哪种材料或哪类批次更值得排查 | 分析机台故障率、材料失败率、成本趋势、层高关系和失败批次共性   |
+| 分析报告只给一个结论                                     | 容易把小样本、偶然波动当成规律               | 同时展示样本量、数据来源、置信区间、显著性、图表和证据         |
+
+## 在真实打印流程中怎么使用
+
+### 1. 打印前：低成本预演
+
+导入模型、图片或已有 G-code，设置机器、材料和工艺参数，然后检查：
+
+- 实际会生成多少层、多少周界、多少填充和支撑；
+- 喷头在哪些区域挤出、空驶或回抽；
+- 调整层高、填充率、打印速度、回抽和支撑后，路径是否真的发生变化；
+- 预计打印时间、耗材长度、耗材重量和基础成本；
+- 当前方案是否存在悬垂、支撑不足、热失控演练或送料负载等风险信号。
+
+这个阶段适合比较方案和排除明显问题，不需要占用真实打印机。
+
+### 2. 打印后：预测与实测对账
+
+导入本次任务使用的真实 G-code 和打印机日志，系统会并列展示：
+
+- 切片器声明值；
+- FORGE·X 根据路径重新计算的值；
+- 真机实际完成时间、耗材、层数、状态和温度记录。
+
+三组数字不一致时，系统保留原值和差异，不把任何一方直接当成“绝对正确”。持续积累配对任务后，可以建立更贴合具体设备的时间校准模型。
+
+### 3. 多次打印后：找出重复问题
+
+上传生产任务 CSV，或直接使用仿真任务沉淀的记录，可以回答：
+
+1. 哪台机器的故障率更高，主要是什么故障；
+2. 不同材料的失败率是否存在明显差异；
+3. 层高与打印时长是否相关；
+4. 成本由耗材、能耗和机时中的哪一项主导；
+5. 失败任务是否集中在某台机器、某种材料或某段时间。
+
+## 模拟和真实打印的区别
+
+| FORGE·X 模拟                                   | 真实打印                                                       |
+| ---------------------------------------------- | -------------------------------------------------------------- |
+| 根据模型、G-code、机器 Profile 和工艺参数计算  | 由真实设备、固件、材料和环境执行                               |
+| 可以快速重复，不消耗耗材，不占用机器           | 会消耗材料、机时和设备寿命                                     |
+| 适合比较参数、检查路径、估算时间和预演故障流程 | 才能验证真实尺寸、表面质量、层间结合和设备稳定性               |
+| 只能覆盖已经建模或有数据支撑的因素             | 还会受到耗材受潮、喷嘴磨损、皮带松紧、气流、振动和操作误差影响 |
+
+因此，FORGE·X 的定位不是“替代真机”，而是：
+
+> **模拟负责低成本预演和排雷，真机负责最终验证；真机结果再用于校准下一次模拟。**
 
 ## 核心能力
 
-### 从模型到洞察的一体化流程
+### 模型、切片与路径
 
-`模型/真实 G-code → 路径预览 → 设备校准 → 过程回放 → 质量评估 → 生产洞察`
+- 内置参数化模型、摆放缩放、图片浮雕和剪影建模；
+- 周界、顶底实心层、扫描线填充、支撑和裙边；
+- 二进制 STL、ASCII OBJ 和 Marlin 风格 G-code 导出；
+- Cura、PrusaSlicer、OrcaSlicer 和 SuperSlicer 常见 G-code 方言解析；
+- 绝对/相对 E、床角/中心原点和逐层 2D/3D 回放。
 
-- **模型准备**：内置参数化模型、摆放与缩放、图片浮雕和剪影建模。
-- **路径切片**：周界、顶底实心层、扫描线填充、支撑与裙边；任意层路径可在 2D/3D 中同步预览。
-- **真实任务复盘**：导入 Cura、PrusaSlicer、OrcaSlicer 与 SuperSlicer 常见方言，保留真实 E 增量逐层回放，并与切片器声明和真机任务日志并列对比。
-- **时间校准**：版本化候选包经 API Key 双人审核后发布，按机型、固件和材料精确匹配；只有真实来源且通过至少五个 holdout 的 `active` 模型会自动生效，后续任务持续检查误差和漂移。
-- **设备仿真**：CoreXY、i3、Delta 与大幅面龙门四套运动学，覆盖预热、调平、打印、暂停、恢复和完成状态。
-- **过程监控**：喷嘴/热床温度、耗材、负载、进度和事件时间线实时更新。
-- **质量评估**：基于本次任务的温度偏差、调平残差、速度变化与故障记录生成质量报告。
-- **生产洞察**：围绕机台、材料、层高、成本和失败批次生成可解释的分析结果。
+### 设备过程仿真
 
-## 为什么是 FORGE·X
+- CoreXY、i3、Delta 和大幅面龙门运动学；
+- 预热、调平、打印、暂停、恢复、完成和故障状态；
+- 喷嘴/热床温度、耗材、负载、进度和事件时间线；
+- 床面误差、3×3 探测、5×5 补偿网格和打印时插值；
+- 温度偏差、送料负载、悬垂和翘边等机制的演练与记录。
 
-### 物理过程驱动
+### 真机日志与校准
 
-切片路径、热惯性、床面误差、调平补偿和挤出量均由运行时计算。热失控演练会改变加热器状态并由监测链路识别，其余故障演练用于验证报警与恢复流程，适合教学、方案验证和工艺讨论。
+- 标准 JSON 和常见 CSV 设备日志；
+- G-code 与日志通过 SHA-256 绑定，避免配错任务；
+- 按机型、固件和材料区分时间校准模型；
+- 只有通过来源、样本量和 holdout 门槛的模型才能自动生效；
+- 持续记录后续误差，漂移时停止自动匹配。
 
-### 仿真与数据同源
+### 生产数据分析
 
-单机任务可以直接沉淀为生产记录；虚拟机群工具能够以固定 seed 批量生成可复现的数据集。分析层读取的是同一条数据链，而不是另一套孤立的展示数据。
-
-### 开放配置，有边界
-
-机器与材料 Profile 使用声明式 JSON：社区可以扩展构建空间、温度、密度、流量、收缩、参考价格与物理特征，但不能注入代码、覆盖内置 ID 或声明尚未实现的运动学。数据集 manifest 同步记录来源、许可证、隐私状态、复现命令与文件哈希。
-
-### 校准结果可运营
-
-G-code 与真机日志通过 SHA-256 绑定；校准包继续记录训练集指纹、来源、作用域、版本、holdout 指标和启用阈值。服务端保留提交、审核、拒绝与发布审计事件，禁止提交者自批。后续配对任务会形成 `stable`、`warning` 或 `drift` 状态，漂移模型停止自动匹配。仓库内置示例明确标为合成演示，不作为生产精度证明。
-
-### 统计结果可解释
-
-分析报告保留样本量、置信区间、显著性与数据来源。内置统计核覆盖 Wilson 区间、Fisher 精确检验、偏相关和 Mann–Kendall 趋势检验，并对样本不足与混杂因素给出明确提示。
-
-### 本地优先，AI 可选
-
-默认规则引擎可在无密钥、无外部请求的环境中完成统计分析。接入 InfiniSynapse 或 OpenAI 兼容服务后，AI 负责组织叙述，报告中的数字、图表和证据仍由本地统计链路生成。
+- Wilson 置信区间与最小样本量保护；
+- Fisher 精确检验；
+- 控制机器、材料等混杂因素的偏相关；
+- Mann–Kendall 趋势检验；
+- 报告保留来源、证据、图表和不确定性。
 
 ## 快速开始
 
-### 直接体验
+### 只体验前端仿真
 
-直接打开 `index.html`，无需安装依赖、无需联网。
+直接打开 `index.html`。无需安装依赖，也无需联网。
 
 ### 启动完整服务
 
@@ -84,99 +126,38 @@ npm start
 
 访问 [http://127.0.0.1:8787](http://127.0.0.1:8787)。
 
-服务模式额外提供：
+完整服务额外提供数据持久化、真机日志与数据源接口、分析任务、分享页、知识检索、校准审核、健康检查和可选 AI 叙述。
 
-- 数据源、知识文档、分享页和用量信息持久化；
-- 分析任务进度与结果缓存；
-- API Key 鉴权、AI 并发与每日额度保护；
-- `/healthz` 健康检查和 `/metrics` Prometheus 指标；
-- 校准候选提交、双人审核、原子发布与浏览器只读同步。
+> 需要 Node.js 18 或更高版本。项目运行时没有 npm 依赖；ESLint、Prettier 与 Playwright 仅用于开发和测试。
 
-> Node.js 仅需 18 或更高版本。应用运行时没有 npm 依赖；ESLint、Prettier 与 Playwright 仅用于开发和测试。
+## AI 如何参与
 
-## 数据分析
+没有 AI 时，确定性统计核仍可完成聚合、置信区间、显著性检验和图表生成。
 
-### 数据入口
+接入 InfiniSynapse 后，AI 只负责根据已经核算的统计简报组织叙述，不重新计算数字，也不覆盖本地证据。线上版本采用 **B｜InfiniSynapse Partner SSO**：用户在 InfiniSynapse 官方页面登录，分析调用与用量归属用户自己的账号；`clientSecret`、一次性授权码和用户 Partner API Key 只保存在服务端。
 
-| 来源             | 用途                         |
-| ---------------- | ---------------------------- |
-| 内置虚拟机群数据 | 开箱即用地体验完整分析链路   |
-| CSV 上传         | 分析自有生产任务记录         |
-| 仿真任务采集     | 将当前打印过程沉淀为生产记录 |
+## 数据真实性与安全边界
 
-内置数据与仿真采集数据会携带来源标记，上传数据保持独立的 provenance，报告和分享页沿用同一来源信息。
+- 仓库内置数据、演示日志和演示校准包均明确标记为合成数据，不作为真实打印精度证明；
+- 上传数据保持独立来源标记，报告和分享页沿用该标记；
+- Profile 和校准包使用声明式 JSON，不能注入代码或覆盖内置 ID；
+- 服务端静态资源采用 allowlist，拒绝访问 `.env` 和内部代码；
+- AI 密钥只从服务端环境变量读取，不进入浏览器或仓库；
+- 导出的制造文件进入实体设备前，仍需使用目标切片器、固件配置和设备安全流程复核。
 
-### 分析维度
-
-1. 机台故障率排行与归因
-2. 材料失败率对比
-3. 层高与打印时长关系
-4. 成本趋势与构成
-5. 失败批次归因
-
-每份报告由结论、证据、图表、可信度和可执行建议组成；当问题不属于已有分析维度或证据不足时，界面会提供可继续探索的方向。
-
-## 仿真与导出
-
-| 能力           | 实现                                                                  |
-| -------------- | --------------------------------------------------------------------- |
-| 切片           | 周界偏置、奇偶规则扫描线填充、实心层、支撑、裙边                      |
-| G-code 复盘    | 常见 Cura/Prusa 注释、绝对/相对 E、床角/中心原点、2D/3D 逐层回放      |
-| 真机日志与校准 | 标准 JSON 或常见 CSV；版本化 bundle、精确作用域、holdout 准入与漂移   |
-| 温控与调平     | 热惯性模型；3×3 探测、5×5 补偿网格、打印时双线性插值                  |
-| Profile 扩展   | 机器/材料 JSON bundle、schema、白名单、范围校验、参考价格与本地持久化 |
-| 网格/路径导出  | 二进制 STL、ASCII OBJ、Marlin 风格 G-code                             |
-
-导出的制造文件应在进入实体设备工作流前，使用目标切片器、固件配置和设备安全流程再次校验。
-
-## 技术架构
-
-```text
-Browser
-├─ 3D scene / printer kinematics / print animation
-├─ slicer / G-code replay / machine-log comparison / time calibration
-├─ profile + calibration registries / reviewed releases / simulator
-├─ statistics kernel / insight engine / fleet view
-└─ API client
-        │
-        ▼
-Node.js service
-├─ datasource / analysis / knowledge / share / calibration review
-├─ file store / cache / auth / quota / metrics
-└─ providers
-   ├─ local rules
-   ├─ InfiniSynapse
-   └─ OpenAI-compatible endpoint
-```
-
-- **前端**：Three.js r152 + 原生 JavaScript，零构建即可运行。
-- **后端**：Node.js 原生 `http`，零运行时依赖。
-- **存储**：默认写入 `data/`；容器部署通过卷保留数据。
-- **安全**：静态资源 allowlist、路径穿越防护、可选 API Key、AI 成本闸门。
+- **前端**：Three.js r152 + 原生 JavaScript，无构建步骤；
+- **后端**：Node.js 原生 `http`，零运行时依赖；
+- **存储**：默认写入 `data/`，容器部署可挂载持久化卷。
 
 ## 验证
 
 ```bash
-npm test             # 639 项核心/服务断言 + 17 项生态、61 项夹具、22 项校准、25 项发布检查
-npm run test:e2e     # 27 个浏览器场景：Chromium 全量 + Firefox/WebKit 关键链路
-npm run validate:fixtures
-npm run validate:calibrations
-npm run release:check
-npm run lint
-npm run format:check
+npm run check       # ESLint + Prettier + 完整单元/契约/发布测试
+npm run test:e2e    # Chromium 全量 + Firefox/WebKit 关键流程
+npm run demo:check  # 演示素材与真实导入链校验
 ```
 
-测试覆盖切片、G-code、真机日志、时间校准、Profile、调平、仿真状态机、导出、统计核、洞察引擎、虚拟机群、数据集完整性、后端契约以及三浏览器关键界面流程。
-
-P6 方言夹具与真实数据贡献流程见 [`validation/README.md`](./validation/README.md)；
-P7/P8 校准包格式、准入、审核发布和漂移生命周期见 [`calibration/README.md`](./calibration/README.md)。
-内置报告和 bundle 都是 `synthetic-conformance`，不会自动用于用户任务。
-
-部署后可执行：
-
-```bash
-node tests/deploy-check.js https://your-domain.example
-```
+测试覆盖切片、导出、G-code、真机日志、时间校准、Profile、调平、仿真状态机、统计核、生产洞察、Partner SSO、服务端接口和三浏览器关键流程。
 
 ## 部署
 
@@ -186,8 +167,6 @@ node tests/deploy-check.js https://your-domain.example
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
-默认不配置外部 AI 服务，直接使用本地分析引擎。[`deploy/docker-compose.yml`](./deploy/docker-compose.yml) 已配置持久化卷。
-
 ### Node
 
 ```bash
@@ -195,45 +174,30 @@ copy server\.env.example server\.env
 node server/index.js
 ```
 
-常用环境变量：
-
-| 变量                                      | 说明                                         |
-| ----------------------------------------- | -------------------------------------------- |
-| `ANALYSIS_PROVIDER`                       | `auto`、`local`、`infinisynapse` 或 `openai` |
-| `DATA_DIR`                                | 持久化目录；未设置时默认为项目下的 `data/`   |
-| `API_KEYS` / `REQUIRE_AUTH`               | API Key、全局鉴权及双 key 校准审批           |
-| `AI_CONCURRENCY` / `AI_QUEUE_MAX`         | AI 并发与排队上限                            |
-| `AI_DAILY_PER_CALLER` / `AI_DAILY_GLOBAL` | 调用方与实例级每日额度                       |
-| `PUBLIC_BASE`                             | 分享链接的公网地址前缀                       |
-
-完整配置见 [`server/.env.example`](./server/.env.example)，安全建议见 [`.github/SECURITY.md`](./.github/SECURITY.md)。
+常用配置见 [`server/.env.example`](./server/.env.example)。部署完成后可访问 `/healthz` 检查服务和分析引擎状态，访问 `/metrics` 获取运行指标。
 
 ## 项目结构
 
 ```text
-css/                  interface design system
-js/                   simulation, slicing, analytics and UI
-server/               HTTP service, providers and platform controls
-datasets/             reproducible virtual-farm datasets
-profiles/             machine/material profile schema and examples
-logs/                 machine-log schema and examples
-validation/           paired G-code/log fixtures and calibration reports
-calibration/          versioned calibration bundle schema and demonstration
-deploy/               Docker image and Compose deployment definitions
-.github/               community policies, release history and English overview
-tools/                headless simulation and dataset generation
-tests/                unit, contract and end-to-end tests
+css/          界面样式
+js/           切片、仿真、分析和前端交互
+server/       HTTP 服务、登录、存储和 AI provider
+datasets/     可复现的虚拟机群数据
+profiles/     机器与材料 Profile
+logs/         真机日志格式与示例
+validation/   G-code/日志配对夹具与校准报告
+calibration/  校准包格式、审核和漂移生命周期
+demo/         录屏演示素材
+deploy/       Docker 部署文件
+tools/        数据生成和校验工具
+tests/        单元、契约和端到端测试
 ```
 
-## 项目定位
+## 项目边界
 
-FORGE·X Insight 面向数字仿真、工艺探索、教学演示和生产数据分析。它可以输出制造文件，但不直接连接或控制实体打印机。
+FORGE·X Insight 面向打印前预演、工艺比较、教学演示、真机任务复盘和生产数据分析。它可以导出制造文件，但不直接连接或控制实体打印机，也不对未经真机验证的参数作生产安全承诺。
 
-版本变化见 [`.github/CHANGELOG.md`](./.github/CHANGELOG.md)。
-
-## 参与贡献
-
-请先阅读 [`.github/CONTRIBUTING.md`](./.github/CONTRIBUTING.md)。提交功能时需同步测试与用户文档，并确保界面描述可以由当前实现直接验证。
+版本变化见 [`.github/CHANGELOG.md`](./.github/CHANGELOG.md)，贡献说明见 [`.github/CONTRIBUTING.md`](./.github/CONTRIBUTING.md)。
 
 ## License
 
