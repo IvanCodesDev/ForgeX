@@ -2,7 +2,6 @@
 
 ### 打印前验证参数与路径，打印后用真机数据校准和复盘
 
-[![CI](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml/badge.svg)](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml)
 ![Version](https://img.shields.io/badge/version-0.19.0-2563eb)
 ![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-16a34a)
 ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-0f172a)
@@ -72,7 +71,7 @@
 | 适合比较参数、检查路径、估算时间和预演故障流程 | 才能验证真实尺寸、表面质量、层间结合和设备稳定性               |
 | 只能覆盖已经建模或有数据支撑的因素             | 还会受到耗材受潮、喷嘴磨损、皮带松紧、气流、振动和操作误差影响 |
 
-因此，FORGE·X 的定位不是“替代真机”，而是：
+因此，FORGE·X 的定位不是替代真机，而是：
 
 > **模拟负责低成本预演和排雷，真机负责最终验证；真机结果再用于校准下一次模拟。**
 
@@ -111,12 +110,6 @@
 - 报告保留来源、证据、图表和不确定性。
 
 ## 快速开始
-
-### 只体验前端仿真
-
-直接打开 `index.html`。无需安装依赖，也无需联网。
-
-### 启动完整服务
 
 ```bash
 node server/index.js
