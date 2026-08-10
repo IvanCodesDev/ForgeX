@@ -1,0 +1,1522 @@
+{
+  "format": "forgex-stage0-golden-set",
+  "version": 1,
+  "capturedAt": "2026-08-10",
+  "baselineEngineVersion": "0.19.0-stage0",
+  "approvedBy": "workspace-owner-directed-baseline",
+  "updatePolicy": "不得在测试失败时覆盖；仅在解释算法/契约变化后显式运行 golden:update。",
+  "engineSourceSha256": "f8e0fa3761c650f629d1510d5491193b132034a8f3adb09cc5dd7efa9ef71316",
+  "caseCount": 24,
+  "cases": [
+    {
+      "id": "slice-gear-draft-pla",
+      "category": "slicing",
+      "input": {
+        "type": "builtin-model-settings",
+        "sha256": "c0ebda341d9fddbfe382dcb4ed965a2ad8535a45ab8201311fb44880e983c51a",
+        "value": {
+          "modelId": "gear",
+          "transform": {
+            "scale": 1,
+            "rotZ": 0,
+            "offX": 0,
+            "offY": 0
+          },
+          "settings": {
+            "material": "PLA",
+            "layerHeight": 0.28,
+            "extrusionWidth": 0.45,
+            "perimeters": 2,
+            "solidLayers": 3,
+            "infillDensity": 0.12,
+            "nozzleTemp": 210,
+            "bedTemp": 60,
+            "speed": 150,
+            "travelSpeed": 260,
+            "retraction": 1.2,
+            "fanSpeed": 100,
+            "supportEnabled": false,
+            "supportSpacing": 4.5,
+            "skirtLoops": 2,
+            "skirtGap": 5,
+            "zOffset": 0,
+            "autoLevel": true
+          }
+        }
+      },
+      "machineProfile": "FX-256",
+      "materialProfile": "PLA-default",
+      "firmware": "preview-engine",
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 57,
+        "height": 16,
+        "stats": {
+          "extLenMm": 63414.182574,
+          "travelMm": 14939.171521,
+          "timeSec": 880.73376,
+          "volumeCm3": 7.990187,
+          "filamentM": 3.321934
+        }
+      }
+    },
+    {
+      "id": "slice-gear-standard-pla",
+      "category": "slicing",
+      "input": {
+        "type": "builtin-model-settings",
+        "sha256": "0a061de4c9db407536b4049636e49caa216cd06dd9f1d3f82fdf1f4b5d674c34",
+        "value": {
+          "modelId": "gear",
+          "transform": {
+            "scale": 1,
+            "rotZ": 0,
+            "offX": 0,
+            "offY": 0
+          },
+          "settings": {
+            "material": "PLA",
+            "layerHeight": 0.2,
+            "extrusionWidth": 0.45,
+            "perimeters": 2,
+            "solidLayers": 3,
+            "infillDensity": 0.18,
+            "nozzleTemp": 210,
+            "bedTemp": 60,
+            "speed": 120,
+            "travelSpeed": 260,
+            "retraction": 1.2,
+            "fanSpeed": 100,
+            "supportEnabled": true,
+            "supportSpacing": 4.5,
+            "skirtLoops": 2,
+            "skirtGap": 5,
+            "zOffset": 0,
+            "autoLevel": true
+          }
+        }
+      },
+      "machineProfile": "FX-256",
+      "materialProfile": "PLA-default",
+      "firmware": "preview-engine",
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 80,
+        "height": 16,
+        "stats": {
+          "extLenMm": 92052.26526,
+          "travelMm": 25280.717698,
+          "timeSec": 1515.673755,
+          "volumeCm3": 8.284704,
+          "filamentM": 3.44438
+        }
+      }
+    },
+    {
+      "id": "slice-gear-durable-abs",
+      "category": "slicing",
+      "input": {
+        "type": "builtin-model-settings",
+        "sha256": "1942f03b53e403b0a8fc55506331199c26e190c93e9acfa87c64e06333e3306b",
+        "value": {
+          "modelId": "gear",
+          "transform": {
+            "scale": 1,
+            "rotZ": 0,
+            "offX": 0,
+            "offY": 0
+          },
+          "settings": {
+            "material": "ABS",
+            "layerHeight": 0.2,
+            "extrusionWidth": 0.45,
+            "perimeters": 2,
+            "solidLayers": 3,
+            "infillDensity": 0.3,
+            "nozzleTemp": 250,
+            "bedTemp": 100,
+            "speed": 90,
+            "travelSpeed": 260,
+            "retraction": 1.2,
+            "fanSpeed": 100,
+            "supportEnabled": true,
+            "supportSpacing": 4.5,
+            "skirtLoops": 2,
+            "skirtGap": 5,
+            "zOffset": 0,
+            "autoLevel": true
+          }
+        }
+      },
+      "machineProfile": "FX-256",
+      "materialProfile": "ABS-default",
+      "firmware": "preview-engine",
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 80,
+        "height": 16,
+        "stats": {
+          "extLenMm": 104483.643239,
+          "travelMm": 38661.063053,
+          "timeSec": 2204.843118,
+          "volumeCm3": 9.403528,
+          "filamentM": 3.909533
+        }
+      }
+    },
+    {
+      "id": "slice-gear-detail-petg",
+      "category": "slicing",
+      "input": {
+        "type": "builtin-model-settings",
+        "sha256": "e1e03608723c22ae438a925c9b6894094c2c123dcf55cf94cc96f2e9d830750b",
+        "value": {
+          "modelId": "gear",
+          "transform": {
+            "scale": 1,
+            "rotZ": 0,
+            "offX": 0,
+            "offY": 0
+          },
+          "settings": {
+            "material": "PETG",
+            "layerHeight": 0.12,
+            "extrusionWidth": 0.45,
+            "perimeters": 2,
+            "solidLayers": 3,
+            "infillDensity": 0.25,
+            "nozzleTemp": 240,
+            "bedTemp": 75,
+            "speed": 70,
+            "travelSpeed": 260,
+            "retraction": 1.2,
+            "fanSpeed": 100,
+            "supportEnabled": true,
+            "supportSpacing": 4.5,
+            "skirtLoops": 2,
+            "skirtGap": 5,
+            "zOffset": 0,
+            "autoLevel": true
+          }
+        }
+      },
+      "machineProfile": "FX-256",
+      "materialProfile": "PETG-default",
+      "firmware": "preview-engine",
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 133,
+        "height": 16,
+        "stats": {
+          "extLenMm": 158981.658414,
+          "travelMm": 53271.632316,
+          "timeSec": 4089.226077,
+          "volumeCm3": 8.58501,
+          "filamentM": 3.569232
+        }
+      }
+    },
+    {
+      "id": "slice-impeller-draft-pla",
+      "category": "slicing",
+      "input": {
+        "type": "builtin-model-settings",
+        "sha256": "819f447dbda186d856e9689602003db81ac60dccdd219dbff876b393f3c797e1",
+        "value": {
+          "modelId": "impeller",
+          "transform": {
+            "scale": 1,
+            "rotZ": 0,
+            "offX": 0,
+            "offY": 0
+          },
+          "settings": {
+            "material": "PLA",
+            "layerHeight": 0.28,
+            "extrusionWidth": 0.45,
+            "perimeters": 2,
+            "solidLayers": 3,
+            "infillDensity": 0.12,
+            "nozzleTemp": 210,
+            "bedTemp": 60,
+            "speed": 150,
+            "travelSpeed": 260,
+            "retraction": 1.2,
+            "fanSpeed": 100,
+            "supportEnabled": false,
+            "supportSpacing": 4.5,
+            "skirtLoops": 2,
+            "skirtGap": 5,
+            "zOffset": 0,
+            "autoLevel": true
+          }
+        }
+      },
+      "machineProfile": "FX-256",
+      "materialProfile": "PLA-default",
+      "firmware": "preview-engine",
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 107,
+        "height": 30,
+        "stats": {
+          "extLenMm": 81548.210031,
+          "travelMm": 11093.548374,
+          "timeSec": 1111.499748,
+          "volumeCm3": 10.275074,
+          "filamentM": 4.27188
+        }
+      }
+    },
+    {
+      "id": "slice-impeller-standard-pla",
+      "category": "slicing",
+      "input": {
+        "type": "builtin-model-settings",
+        "sha256": "3273e65e2e6adde2f7e908e8d3fbc60be117682a65acd119700eed74672790c7",
+        "value": {
+          "modelId": "impeller",
+          "transform": {
+            "scale": 1,
+            "rotZ": 0,
+            "offX": 0,
+            "offY": 0
+          },
+          "settings": {
+            "material": "PLA",
+            "layerHeight": 0.2,
+            "extrusionWidth": 0.45,
+            "perimeters": 2,
+            "solidLayers": 3,
+            "infillDensity": 0.18,
+            "nozzleTemp": 210,
+            "bedTemp": 60,
+            "speed": 120,
+            "travelSpeed": 260,
+            "retraction": 1.2,
+            "fanSpeed": 100,
+            "supportEnabled": true,
+            "supportSpacing": 4.5,
+            "skirtLoops": 2,
+            "skirtGap": 5,
+            "zOffset": 0,
+            "autoLevel": true
+          }
+        }
+      },
+      "machineProfile": "FX-256",
+      "materialProfile": "PLA-default",
+      "firmware": "preview-engine",
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 150,
+        "height": 30,
+        "stats": {
+          "extLenMm": 115126.589061,
+          "travelMm": 19585.310989,
+          "timeSec": 1896.589334,
+          "volumeCm3": 10.361393,
+          "filamentM": 4.307767
+        }
+      }
+    },
+    {
+      "id": "slice-impeller-durable-abs",
+      "category": "slicing",
+      "input": {
+        "type": "builtin-model-settings",
+        "sha256": "5ea038aab1ac995024b822f7047975aa0d4762a0e7caf5af2d6fde0a04de0924",
+        "value": {
+          "modelId": "impeller",
+          "transform": {
+            "scale": 1,
+            "rotZ": 0,
+            "offX": 0,
+            "offY": 0
+          },
+          "settings": {
+            "material": "ABS",
+            "layerHeight": 0.2,
+            "extrusionWidth": 0.45,
+            "perimeters": 2,
+            "solidLayers": 3,
+            "infillDensity": 0.3,
+            "nozzleTemp": 250,
+            "bedTemp": 100,
+            "speed": 90,
+            "travelSpeed": 260,
+            "retraction": 1.2,
+            "fanSpeed": 100,
+            "supportEnabled": true,
+            "supportSpacing": 4.5,
+            "skirtLoops": 2,
+            "skirtGap": 5,
+            "zOffset": 0,
+            "autoLevel": true
+          }
+        }
+      },
+      "machineProfile": "FX-256",
+      "materialProfile": "ABS-default",
+      "firmware": "preview-engine",
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 150,
+        "height": 30,
+        "stats": {
+          "extLenMm": 127442.275568,
+          "travelMm": 26836.306036,
+          "timeSec": 2634.905809,
+          "volumeCm3": 11.469805,
+          "filamentM": 4.768591
+        }
+      }
+    },
+    {
+      "id": "slice-impeller-detail-petg",
+      "category": "slicing",
+      "input": {
+        "type": "builtin-model-settings",
+        "sha256": "be1430bfea5db21f4a828f1fd1b3a131444afdebde92844e850f14941dd3f68c",
+        "value": {
+          "modelId": "impeller",
+          "transform": {
+            "scale": 1,
+            "rotZ": 0,
+            "offX": 0,
+            "offY": 0
+          },
+          "settings": {
+            "material": "PETG",
+            "layerHeight": 0.12,
+            "extrusionWidth": 0.45,
+            "perimeters": 2,
+            "solidLayers": 3,
+            "infillDensity": 0.25,
+            "nozzleTemp": 240,
+            "bedTemp": 75,
+            "speed": 70,
+            "travelSpeed": 260,
+            "retraction": 1.2,
+            "fanSpeed": 100,
+            "supportEnabled": true,
+            "supportSpacing": 4.5,
+            "skirtLoops": 2,
+            "skirtGap": 5,
+            "zOffset": 0,
+            "autoLevel": true
+          }
+        }
+      },
+      "machineProfile": "FX-256",
+      "materialProfile": "PETG-default",
+      "firmware": "preview-engine",
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 250,
+        "height": 30,
+        "stats": {
+          "extLenMm": 196293.318018,
+          "travelMm": 39235.971092,
+          "timeSec": 5059.272871,
+          "volumeCm3": 10.599839,
+          "filamentM": 4.406901
+        }
+      }
+    },
+    {
+      "id": "slice-bracket-draft-pla",
+      "category": "slicing",
+      "input": {
+        "type": "builtin-model-settings",
+        "sha256": "49bf90743a8d359a597c37d87d183eaa6421ccf566f014c1a39bad2c024b9c53",
+        "value": {
+          "modelId": "bracket",
+          "transform": {
+            "scale": 1,
+            "rotZ": 0,
+            "offX": 0,
+            "offY": 0
+          },
+          "settings": {
+            "material": "PLA",
+            "layerHeight": 0.28,
+            "extrusionWidth": 0.45,
+            "perimeters": 2,
+            "solidLayers": 3,
+            "infillDensity": 0.12,
+            "nozzleTemp": 210,
+            "bedTemp": 60,
+            "speed": 150,
+            "travelSpeed": 260,
+            "retraction": 1.2,
+            "fanSpeed": 100,
+            "supportEnabled": false,
+            "supportSpacing": 4.5,
+            "skirtLoops": 2,
+            "skirtGap": 5,
+            "zOffset": 0,
+            "autoLevel": true
+          }
+        }
+      },
+      "machineProfile": "FX-256",
+      "materialProfile": "PLA-default",
+      "firmware": "preview-engine",
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 107,
+        "height": 30,
+        "stats": {
+          "extLenMm": 54567.664372,
+          "travelMm": 3571.545255,
+          "timeSec": 686.452115,
+          "volumeCm3": 6.875526,
+          "filamentM": 2.858511
+        }
+      }
+    },
+    {
+      "id": "slice-bracket-standard-pla",
+      "category": "slicing",
+      "input": {
+        "type": "builtin-model-settings",
+        "sha256": "e101767a75de798b842bae1133feb791cb4e64dfe0d6a5ffde4f314b65780781",
+        "value": {
+          "modelId": "bracket",
+          "transform": {
+            "scale": 1,
+            "rotZ": 0,
+            "offX": 0,
+            "offY": 0
+          },
+          "settings": {
+            "material": "PLA",
+            "layerHeight": 0.2,
+            "extrusionWidth": 0.45,
+            "perimeters": 2,
+            "solidLayers": 3,
+            "infillDensity": 0.18,
+            "nozzleTemp": 210,
+            "bedTemp": 60,
+            "speed": 120,
+            "travelSpeed": 260,
+            "retraction": 1.2,
+            "fanSpeed": 100,
+            "supportEnabled": true,
+            "supportSpacing": 4.5,
+            "skirtLoops": 2,
+            "skirtGap": 5,
+            "zOffset": 0,
+            "autoLevel": true
+          }
+        }
+      },
+      "machineProfile": "FX-256",
+      "materialProfile": "PLA-default",
+      "firmware": "preview-engine",
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 150,
+        "height": 30,
+        "stats": {
+          "extLenMm": 103116.086776,
+          "travelMm": 5525.043642,
+          "timeSec": 1383.781407,
+          "volumeCm3": 9.280448,
+          "filamentM": 3.858362
+        }
+      }
+    },
+    {
+      "id": "slice-bracket-durable-abs",
+      "category": "slicing",
+      "input": {
+        "type": "builtin-model-settings",
+        "sha256": "1a01a2ce0bf922fc618861d2dbca92a3687b2161b184458c54dadc1fc5c6a6d1",
+        "value": {
+          "modelId": "bracket",
+          "transform": {
+            "scale": 1,
+            "rotZ": 0,
+            "offX": 0,
+            "offY": 0
+          },
+          "settings": {
+            "material": "ABS",
+            "layerHeight": 0.2,
+            "extrusionWidth": 0.45,
+            "perimeters": 2,
+            "solidLayers": 3,
+            "infillDensity": 0.3,
+            "nozzleTemp": 250,
+            "bedTemp": 100,
+            "speed": 90,
+            "travelSpeed": 260,
+            "retraction": 1.2,
+            "fanSpeed": 100,
+            "supportEnabled": true,
+            "supportSpacing": 4.5,
+            "skirtLoops": 2,
+            "skirtGap": 5,
+            "zOffset": 0,
+            "autoLevel": true
+          }
+        }
+      },
+      "machineProfile": "FX-256",
+      "materialProfile": "ABS-default",
+      "firmware": "preview-engine",
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 150,
+        "height": 30,
+        "stats": {
+          "extLenMm": 116493.355144,
+          "travelMm": 6783.768882,
+          "timeSec": 1937.716052,
+          "volumeCm3": 10.484402,
+          "filamentM": 4.358908
+        }
+      }
+    },
+    {
+      "id": "slice-bracket-detail-petg",
+      "category": "slicing",
+      "input": {
+        "type": "builtin-model-settings",
+        "sha256": "d2713ff42f03f48213a3d2973dd1f667ee18a07a7ba4fcbdd458315da11fc255",
+        "value": {
+          "modelId": "bracket",
+          "transform": {
+            "scale": 1,
+            "rotZ": 0,
+            "offX": 0,
+            "offY": 0
+          },
+          "settings": {
+            "material": "PETG",
+            "layerHeight": 0.12,
+            "extrusionWidth": 0.45,
+            "perimeters": 2,
+            "solidLayers": 3,
+            "infillDensity": 0.25,
+            "nozzleTemp": 240,
+            "bedTemp": 75,
+            "speed": 70,
+            "travelSpeed": 260,
+            "retraction": 1.2,
+            "fanSpeed": 100,
+            "supportEnabled": true,
+            "supportSpacing": 4.5,
+            "skirtLoops": 2,
+            "skirtGap": 5,
+            "zOffset": 0,
+            "autoLevel": true
+          }
+        }
+      },
+      "machineProfile": "FX-256",
+      "materialProfile": "PETG-default",
+      "firmware": "preview-engine",
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 250,
+        "height": 30,
+        "stats": {
+          "extLenMm": 176635.219378,
+          "travelMm": 10172.520887,
+          "timeSec": 3723.895798,
+          "volumeCm3": 9.538302,
+          "filamentM": 3.965565
+        }
+      }
+    },
+    {
+      "id": "gcode-cura-marlin-pla-default",
+      "category": "gcode",
+      "input": {
+        "type": "file",
+        "path": "validation/fixtures/cura-marlin.gcode",
+        "sha256": "0881cfdac2ef41f6df48f7f5e0f47fd632dcddec8238955ce3a59a6bd754cf07"
+      },
+      "machineProfile": "FX-256",
+      "materialProfile": "PLA-default",
+      "firmware": "Marlin",
+      "parameters": {
+        "bedSize": 256,
+        "origin": "corner",
+        "densityG": 1.24
+      },
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 2,
+        "height": 0.4,
+        "stats": {
+          "extLenMm": 720,
+          "travelMm": 42.426407,
+          "timeSec": 36.424264,
+          "volumeCm3": 0.014432,
+          "filamentM": 0.006,
+          "filamentG": 0.017895
+        },
+        "coordinateOrigin": "corner",
+        "bounds": {
+          "minX": -108,
+          "maxX": -8,
+          "minY": -108,
+          "maxY": -8
+        },
+        "warnings": [],
+        "claims": {
+          "slicer": "Cura_SteamEngine 5.10.0",
+          "firmware": "Marlin",
+          "timeSec": 140,
+          "filamentMm": 6
+        },
+        "pathTypes": [
+          "infill",
+          "perimeter"
+        ]
+      }
+    },
+    {
+      "id": "gcode-cura-marlin-petg-default",
+      "category": "gcode",
+      "input": {
+        "type": "file",
+        "path": "validation/fixtures/cura-marlin.gcode",
+        "sha256": "0881cfdac2ef41f6df48f7f5e0f47fd632dcddec8238955ce3a59a6bd754cf07"
+      },
+      "machineProfile": "FX-256",
+      "materialProfile": "PETG-default",
+      "firmware": "Marlin",
+      "parameters": {
+        "bedSize": 256,
+        "origin": "corner",
+        "densityG": 1.27
+      },
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 2,
+        "height": 0.4,
+        "stats": {
+          "extLenMm": 720,
+          "travelMm": 42.426407,
+          "timeSec": 36.424264,
+          "volumeCm3": 0.014432,
+          "filamentM": 0.006,
+          "filamentG": 0.018328
+        },
+        "coordinateOrigin": "corner",
+        "bounds": {
+          "minX": -108,
+          "maxX": -8,
+          "minY": -108,
+          "maxY": -8
+        },
+        "warnings": [],
+        "claims": {
+          "slicer": "Cura_SteamEngine 5.10.0",
+          "firmware": "Marlin",
+          "timeSec": 140,
+          "filamentMm": 6
+        },
+        "pathTypes": [
+          "infill",
+          "perimeter"
+        ]
+      }
+    },
+    {
+      "id": "gcode-orca-klipper-pla-default",
+      "category": "gcode",
+      "input": {
+        "type": "file",
+        "path": "validation/fixtures/orca-klipper.gcode",
+        "sha256": "bc39cbac84e164415eb9902586f52cf186c1116bc270260958a2b8694dc13324"
+      },
+      "machineProfile": "FX-256",
+      "materialProfile": "PLA-default",
+      "firmware": "Klipper",
+      "parameters": {
+        "bedSize": 256,
+        "origin": "corner",
+        "densityG": 1.24
+      },
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 3,
+        "height": 0.6,
+        "stats": {
+          "extLenMm": 840,
+          "travelMm": 56.568542,
+          "timeSec": 168.565685,
+          "volumeCm3": 0.023091,
+          "filamentM": 0.0096,
+          "filamentG": 0.028632
+        },
+        "coordinateOrigin": "corner",
+        "bounds": {
+          "minX": -98,
+          "maxX": -18,
+          "minY": -98,
+          "maxY": -18
+        },
+        "warnings": [],
+        "claims": {
+          "slicer": "OrcaSlicer 2.2.0",
+          "timeSec": 330,
+          "filamentMm": 9.6
+        },
+        "pathTypes": [
+          "infill",
+          "perimeter",
+          "solid"
+        ]
+      }
+    },
+    {
+      "id": "gcode-orca-klipper-petg-default",
+      "category": "gcode",
+      "input": {
+        "type": "file",
+        "path": "validation/fixtures/orca-klipper.gcode",
+        "sha256": "bc39cbac84e164415eb9902586f52cf186c1116bc270260958a2b8694dc13324"
+      },
+      "machineProfile": "FX-256",
+      "materialProfile": "PETG-default",
+      "firmware": "Klipper",
+      "parameters": {
+        "bedSize": 256,
+        "origin": "corner",
+        "densityG": 1.27
+      },
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 3,
+        "height": 0.6,
+        "stats": {
+          "extLenMm": 840,
+          "travelMm": 56.568542,
+          "timeSec": 168.565685,
+          "volumeCm3": 0.023091,
+          "filamentM": 0.0096,
+          "filamentG": 0.029325
+        },
+        "coordinateOrigin": "corner",
+        "bounds": {
+          "minX": -98,
+          "maxX": -18,
+          "minY": -98,
+          "maxY": -18
+        },
+        "warnings": [],
+        "claims": {
+          "slicer": "OrcaSlicer 2.2.0",
+          "timeSec": 330,
+          "filamentMm": 9.6
+        },
+        "pathTypes": [
+          "infill",
+          "perimeter",
+          "solid"
+        ]
+      }
+    },
+    {
+      "id": "gcode-prusa-marlin-pla-default",
+      "category": "gcode",
+      "input": {
+        "type": "file",
+        "path": "validation/fixtures/prusa-marlin.gcode",
+        "sha256": "079510b978079066a4a4328cd583bf375508a7706eb8031dafe5c4d903e4828c"
+      },
+      "machineProfile": "FX-220",
+      "materialProfile": "PLA-default",
+      "firmware": "Marlin",
+      "parameters": {
+        "bedSize": 220,
+        "origin": "corner",
+        "densityG": 1.24
+      },
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 2,
+        "height": 0.4,
+        "stats": {
+          "extLenMm": 720,
+          "travelMm": 28.284271,
+          "timeSec": 72.471405,
+          "volumeCm3": 0.017318,
+          "filamentM": 0.0072,
+          "filamentG": 0.021474
+        },
+        "coordinateOrigin": "corner",
+        "bounds": {
+          "minX": -100,
+          "maxX": 0,
+          "minY": -100,
+          "maxY": 0
+        },
+        "warnings": [],
+        "claims": {
+          "slicer": "PrusaSlicer 2.8.1",
+          "timeSec": 180,
+          "filamentMm": 7.2
+        },
+        "pathTypes": [
+          "perimeter",
+          "solid"
+        ]
+      }
+    },
+    {
+      "id": "gcode-prusa-marlin-petg-default",
+      "category": "gcode",
+      "input": {
+        "type": "file",
+        "path": "validation/fixtures/prusa-marlin.gcode",
+        "sha256": "079510b978079066a4a4328cd583bf375508a7706eb8031dafe5c4d903e4828c"
+      },
+      "machineProfile": "FX-220",
+      "materialProfile": "PETG-default",
+      "firmware": "Marlin",
+      "parameters": {
+        "bedSize": 220,
+        "origin": "corner",
+        "densityG": 1.27
+      },
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 2,
+        "height": 0.4,
+        "stats": {
+          "extLenMm": 720,
+          "travelMm": 28.284271,
+          "timeSec": 72.471405,
+          "volumeCm3": 0.017318,
+          "filamentM": 0.0072,
+          "filamentG": 0.021994
+        },
+        "coordinateOrigin": "corner",
+        "bounds": {
+          "minX": -100,
+          "maxX": 0,
+          "minY": -100,
+          "maxY": 0
+        },
+        "warnings": [],
+        "claims": {
+          "slicer": "PrusaSlicer 2.8.1",
+          "timeSec": 180,
+          "filamentMm": 7.2
+        },
+        "pathTypes": [
+          "perimeter",
+          "solid"
+        ]
+      }
+    },
+    {
+      "id": "gcode-superslicer-rrf-pla-default",
+      "category": "gcode",
+      "input": {
+        "type": "file",
+        "path": "validation/fixtures/superslicer-rrf.gcode",
+        "sha256": "1c652a1ff1802277cf54500764c4b78e2436c8a2a9bbaf62825ffa467cf4fac0"
+      },
+      "machineProfile": "FX-500",
+      "materialProfile": "PLA-default",
+      "firmware": "RepRapFirmware",
+      "parameters": {
+        "bedSize": 500,
+        "origin": "corner",
+        "densityG": 1.24
+      },
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 4,
+        "height": 0.8,
+        "stats": {
+          "extLenMm": 1680,
+          "travelMm": 35.355339,
+          "timeSec": 420.441942,
+          "volumeCm3": 0.030788,
+          "filamentM": 0.0128,
+          "filamentG": 0.038177
+        },
+        "coordinateOrigin": "corner",
+        "bounds": {
+          "minX": -240,
+          "maxX": -120,
+          "minY": -240,
+          "maxY": -120
+        },
+        "warnings": [],
+        "claims": {
+          "slicer": "SuperSlicer 2.5.60",
+          "timeSec": 690,
+          "filamentMm": 12.8
+        },
+        "pathTypes": [
+          "perimeter",
+          "solid"
+        ]
+      }
+    },
+    {
+      "id": "gcode-superslicer-rrf-petg-default",
+      "category": "gcode",
+      "input": {
+        "type": "file",
+        "path": "validation/fixtures/superslicer-rrf.gcode",
+        "sha256": "1c652a1ff1802277cf54500764c4b78e2436c8a2a9bbaf62825ffa467cf4fac0"
+      },
+      "machineProfile": "FX-500",
+      "materialProfile": "PETG-default",
+      "firmware": "RepRapFirmware",
+      "parameters": {
+        "bedSize": 500,
+        "origin": "corner",
+        "densityG": 1.27
+      },
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "totalLayers": 4,
+        "height": 0.8,
+        "stats": {
+          "extLenMm": 1680,
+          "travelMm": 35.355339,
+          "timeSec": 420.441942,
+          "volumeCm3": 0.030788,
+          "filamentM": 0.0128,
+          "filamentG": 0.0391
+        },
+        "coordinateOrigin": "corner",
+        "bounds": {
+          "minX": -240,
+          "maxX": -120,
+          "minY": -240,
+          "maxY": -120
+        },
+        "warnings": [],
+        "claims": {
+          "slicer": "SuperSlicer 2.5.60",
+          "timeSec": 690,
+          "filamentMm": 12.8
+        },
+        "pathTypes": [
+          "perimeter",
+          "solid"
+        ]
+      }
+    },
+    {
+      "id": "analysis-machine-fault",
+      "category": "analysis",
+      "input": {
+        "type": "question-dataset",
+        "sha256": "519c17962850b236199827a93e5a26a0ea5f440605472c16b2b307112c2d40ca",
+        "question": "哪台机故障率最高，主要故障是什么",
+        "datasetSha256": "71be7cb1f832754ee964920d7d2e0b76ba1831418ac9df79683168df68667f25"
+      },
+      "machineProfile": "sim-farm-v1",
+      "materialProfile": "mixed-farm-materials",
+      "firmware": "mixed-farm-firmware",
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "intent": "machine_fault",
+        "intentMatched": true,
+        "title": "机台故障率排行",
+        "verdict": "FX-256-01 故障率最高且显著高于其余机台：30.6%（95%CI 19.5–44.5%）（15/49，p=0.015），主要故障：断料 × 13",
+        "confidence": "high",
+        "rowCount": 400,
+        "chart": {
+          "kind": "bar-rate",
+          "title": "机台故障率（误差线为 95%CI）",
+          "items": [
+            {
+              "label": "FX-256-01",
+              "value": 0.306122,
+              "weak": false,
+              "ciLo": 0.195155,
+              "ciHi": 0.445279,
+              "hint": "15/49 失败 · 95%CI 19.5%–44.5%"
+            },
+            {
+              "label": "FX-220-01",
+              "value": 0.288889,
+              "weak": false,
+              "ciLo": 0.177301,
+              "ciHi": 0.433685,
+              "hint": "13/45 失败 · 95%CI 17.7%–43.4%"
+            },
+            {
+              "label": "FX-256-04",
+              "value": 0.264151,
+              "weak": false,
+              "ciLo": 0.164374,
+              "ciHi": 0.395807,
+              "hint": "14/53 失败 · 95%CI 16.4%–39.6%"
+            },
+            {
+              "label": "FX-220-02",
+              "value": 0.195652,
+              "weak": false,
+              "ciLo": 0.106506,
+              "ciHi": 0.331713,
+              "hint": "9/46 失败 · 95%CI 10.7%–33.2%"
+            },
+            {
+              "label": "FX-500-01",
+              "value": 0.106383,
+              "weak": false,
+              "ciLo": 0.046305,
+              "ciHi": 0.225943,
+              "hint": "5/47 失败 · 95%CI 4.6%–22.6%"
+            },
+            {
+              "label": "FX-Δ260-01",
+              "value": 0.102041,
+              "weak": false,
+              "ciLo": 0.04438,
+              "ciHi": 0.217564,
+              "hint": "5/49 失败 · 95%CI 4.4%–21.8%"
+            },
+            {
+              "label": "FX-256-02",
+              "value": 0.085106,
+              "weak": false,
+              "ciLo": 0.033594,
+              "ciHi": 0.199315,
+              "hint": "4/47 失败 · 95%CI 3.4%–19.9%"
+            },
+            {
+              "label": "FX-256-03",
+              "value": 0.078125,
+              "weak": false,
+              "ciLo": 0.033831,
+              "ciHi": 0.170195,
+              "hint": "5/64 失败 · 95%CI 3.4%–17.0%"
+            }
+          ]
+        },
+        "highlight": {
+          "type": "machine",
+          "id": "FX-256-01"
+        },
+        "evidence": [
+          {
+            "claim": "FX-256-01 的失败率显著高于其余机台",
+            "method": "Fisher 精确检验（2×2，双侧）",
+            "n": 400,
+            "statistic": 2.374332,
+            "ci95": [
+              0.195155,
+              0.445279
+            ],
+            "pValue": 0.015167
+          },
+          {
+            "claim": "「断料」是 FX-256-01 的主导故障类型",
+            "method": "Wilson 置信区间下界 > 40%",
+            "n": 15,
+            "statistic": null,
+            "ci95": [
+              0.62118,
+              0.962639
+            ],
+            "pValue": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "analysis-material-compare",
+      "category": "analysis",
+      "input": {
+        "type": "question-dataset",
+        "sha256": "e90203ad6aa48447e7b48c966fe3c9c9ce1d219c0ce576e8146ae393c38b5a8c",
+        "question": "不同材料失败率对比",
+        "datasetSha256": "71be7cb1f832754ee964920d7d2e0b76ba1831418ac9df79683168df68667f25"
+      },
+      "machineProfile": "sim-farm-v1",
+      "materialProfile": "mixed-farm-materials",
+      "firmware": "mixed-farm-firmware",
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "intent": "material_cmp",
+        "intentMatched": true,
+        "title": "材料失败率对比",
+        "verdict": "失败率最高的材料是 ABS：42.9%（95%CI 30.0–56.7%）（n=49），显著高于其余材料（p<0.0001）",
+        "confidence": "high",
+        "rowCount": 400,
+        "chart": {
+          "kind": "bar-rate",
+          "title": "各材料失败率（误差线为 95%CI）",
+          "items": [
+            {
+              "label": "ABS",
+              "value": 0.428571,
+              "weak": false,
+              "ciLo": 0.300233,
+              "ciHi": 0.567295,
+              "hint": "21/49 失败 · 95%CI 30.0%–56.7% · 良品均本 ¥1.28"
+            },
+            {
+              "label": "TPU",
+              "value": 0.171875,
+              "weak": false,
+              "ciLo": 0.098777,
+              "ciHi": 0.282132,
+              "hint": "11/64 失败 · 95%CI 9.9%–28.2% · 良品均本 ¥2.09"
+            },
+            {
+              "label": "PLA",
+              "value": 0.152174,
+              "weak": false,
+              "ciLo": 0.101737,
+              "ciHi": 0.221451,
+              "hint": "21/138 失败 · 95%CI 10.2%–22.1% · 良品均本 ¥0.94"
+            },
+            {
+              "label": "PETG",
+              "value": 0.114094,
+              "weak": false,
+              "ciLo": 0.072466,
+              "ciHi": 0.17512,
+              "hint": "17/149 失败 · 95%CI 7.2%–17.5% · 良品均本 ¥1.24"
+            }
+          ]
+        },
+        "evidence": [
+          {
+            "claim": "ABS 的失败率显著高于 TPU",
+            "method": "Fisher 精确检验（2×2，双侧）",
+            "n": 113,
+            "statistic": 3.613636,
+            "ci95": null,
+            "pValue": 0.003335
+          },
+          {
+            "claim": "ABS 的失败率显著高于 PLA",
+            "method": "Fisher 精确检验（2×2，双侧）",
+            "n": 187,
+            "statistic": 4.178571,
+            "ci95": null,
+            "pValue": 0.000227
+          },
+          {
+            "claim": "ABS 的失败率显著高于 PETG",
+            "method": "Fisher 精确检验（2×2，双侧）",
+            "n": 198,
+            "statistic": 5.823529,
+            "ci95": null,
+            "pValue": 0.000006
+          },
+          {
+            "claim": "ABS 的失败率显著高于其余材料",
+            "method": "Fisher 精确检验（2×2，双侧）",
+            "n": 400,
+            "statistic": 4.622449,
+            "ci95": [
+              0.300233,
+              0.567295
+            ],
+            "pValue": 0.000007
+          }
+        ]
+      }
+    },
+    {
+      "id": "analysis-layer-correlation",
+      "category": "analysis",
+      "input": {
+        "type": "question-dataset",
+        "sha256": "2fb4c78b06554d3b82f4b25a78c836ee36356c1845df3a20f506c78b4a102e41",
+        "question": "层高与打印时长的相关性",
+        "datasetSha256": "71be7cb1f832754ee964920d7d2e0b76ba1831418ac9df79683168df68667f25"
+      },
+      "machineProfile": "sim-farm-v1",
+      "materialProfile": "mixed-farm-materials",
+      "firmware": "mixed-farm-firmware",
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "intent": "corr_layer",
+        "intentMatched": true,
+        "title": "层高与打印时长关系",
+        "verdict": "控制材料与模型后，层高与打印时长 r=-0.83（强负相关，n=330，p<0.0001）；未控制时为 r=-0.53，两者差异说明混杂因素的影响程度",
+        "confidence": "low",
+        "rowCount": 400,
+        "chart": {
+          "kind": "bar-value",
+          "title": "各层高平均时长（分钟）",
+          "items": [
+            {
+              "label": "0.12mm",
+              "value": 55,
+              "weak": false,
+              "hint": "平均 55 分钟 · n=72"
+            },
+            {
+              "label": "0.20mm",
+              "value": 33,
+              "weak": false,
+              "hint": "平均 33 分钟 · n=200"
+            },
+            {
+              "label": "0.28mm",
+              "value": 25,
+              "weak": false,
+              "hint": "平均 25 分钟 · n=58"
+            }
+          ]
+        },
+        "evidence": [
+          {
+            "claim": "层高与时长的粗相关",
+            "method": "Pearson + Fisher-z 正态近似",
+            "n": 330,
+            "statistic": -0.531282,
+            "ci95": [
+              -0.604568,
+              -0.449077
+            ],
+            "pValue": 0
+          },
+          {
+            "claim": "层高与时长的偏相关（控制材料与模型）",
+            "method": "组内中心化偏相关（控制：material、model_name）+ fisher-z 近似",
+            "n": 330,
+            "statistic": -0.834123,
+            "ci95": [
+              -0.864728,
+              -0.797345
+            ],
+            "pValue": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "analysis-cost-trend",
+      "category": "analysis",
+      "input": {
+        "type": "question-dataset",
+        "sha256": "a2f7a6b038843e047d70e4445395d00354650fc0cb2371b527e4da5500de5254",
+        "question": "成本趋势与失败损耗",
+        "datasetSha256": "71be7cb1f832754ee964920d7d2e0b76ba1831418ac9df79683168df68667f25"
+      },
+      "machineProfile": "sim-farm-v1",
+      "materialProfile": "mixed-farm-materials",
+      "firmware": "mixed-farm-firmware",
+      "tolerance": {
+        "numericAbs": 0.000001,
+        "numericRel": 0.000001
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "intent": "cost_trend",
+        "intentMatched": true,
+        "title": "成本趋势与拆解",
+        "verdict": "期间（2026-06-29 → 2026-07-19（21 天））总成本 ¥420.24，良品平均单件 ¥1.27，失败损耗 ¥19.45（占 4.6%）；每日成本无显著趋势（p=0.880）",
+        "confidence": "low",
+        "rowCount": 400,
+        "chart": {
+          "kind": "line",
+          "title": "每日成本（元）",
+          "items": [
+            {
+              "label": "06-29",
+              "value": 25.84,
+              "hint": "2026-06-29 · ¥25.84 · 24 件"
+            },
+            {
+              "label": "06-30",
+              "value": 11.19,
+              "hint": "2026-06-30 · ¥11.19 · 13 件"
+            },
+            {
+              "label": "07-01",
+              "value": 24.61,
+              "hint": "2026-07-01 · ¥24.61 · 23 件"
+            },
+            {
+              "label": "07-02",
+              "value": 27.09,
+              "hint": "2026-07-02 · ¥27.09 · 24 件"
+            },
+            {
+              "label": "07-03",
+              "value": 14.58,
+              "hint": "2026-07-03 · ¥14.58 · 16 件"
+            },
+            {
+              "label": "07-04",
+              "value": 13.55,
+              "hint": "2026-07-04 · ¥13.55 · 17 件"
+            },
+            {
+              "label": "07-05",
+              "value": 18.93,
+              "hint": "2026-07-05 · ¥18.93 · 16 件"
+            },
+            {
+              "label": "07-06",
+              "value": 20.95,
+              "hint": "2026-07-06 · ¥20.95 · 18 件"
+            },
+            {
+              "label": "07-07",
+              "value": 25.03,
+              "hint": "2026-07-07 · ¥25.03 · 22 件"
+            },
+            {
+              "label": "07-08",
+              "value": 26.49,
+              "hint": "2026-07-08 · ¥26.49 · 27 件"
+            },
+            {
+              "label": "07-09",
+              "value": 27.12,
+              "hint": "2026-07-09 · ¥27.12 · 26 件"
+            },
+            {
+              "label": "07-10",
+              "value": 22.03,
+              "hint": "2026-07-10 · ¥22.03 · 19 件"
+            },
+            {
+              "label": "07-11",
+              "value": 16.89,
+              "hint": "2026-07-11 · ¥16.89 · 17 件"
+            },
+            {
+              "label": "07-12",
+              "value": 13.48,
+              "hint": "2026-07-12 · ¥13.48 · 13 件"
+            },
+            {
+              "label": "07-13",
+              "value": 16.29,
+              "hint": "2026-07-13 · ¥16.29 · 17 件"
+            },
+            {
+              "label": "07-14",
+              "value": 12.69,
+              "hint": "2026-07-14 · ¥12.69 · 12 件"
+            },
+            {
+              "label": "07-15",
+              "value": 15.35,
+              "hint": "2026-07-15 · ¥15.35 · 16 件"
+            },
+            {
+              "label": "07-16",
+              "value": 22.81,
+              "hint": "2026-07-16 · ¥22.81 · 19 件"
+            },
+            {
+              "label": "07-17",
+              "value": 20.13,
+              "hint": "2026-07-17 · ¥20.13 · 19 件"
+            },
+            {
+              "label": "07-18",
+              "value": 19.23,
+              "hint": "2026-07-18 · ¥19.23 · 15 件"
+            },
+            {
+              "label": "07-19",
+              "value": 25.96,
+              "hint": "2026-07-19 · ¥25.96 · 27 件"
+            }
+          ]
+        },
+        "evidence": [
+          {
+            "claim": "每日成本无显著趋势",
+            "method": "Mann-Kendall 非参数趋势检验（正态近似 + 并列修正）",
+            "n": 21,
+            "statistic": -0.028571,
+            "ci95": null,
+            "pValue": 0.879988
+          }
+        ]
+      }
+    }
+  ]
+}

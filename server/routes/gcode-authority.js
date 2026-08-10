@@ -1,0 +1,230 @@
+/* C# G-code 权威分析 sidecar 代理。
+   固定目标路径、流式转发原始字节、严格限长，并刻意采用请求头白名单，
+   避免把 Node 会话、API Key 或 Authorization 泄露给独立计算进程。 */
+"use strict";
+const http = require("http");
+const https = require("https");
+const { resolveIdentity } = require("../lib/identity");
+
+const ANALYZE_PATH = "/api/v1/gcode/analyze";
+const RESPONSE_HEADERS = [
+  "content-type",
+  "traceparent",
+  "tracestate",
+  "x-request-id",
+  "x-correlation-id",
+  "x-trace-id",
+  "server-timing",
+];
+
+function sendProblem(res, status, code, title, traceId, closeConnection) {
+  const body = JSON.stringify({
+    type: "about:blank",
+    title,
+    status,
+    code,
+    traceId,
+  });
+  const headers = {
+    "Content-Type": "application/problem+json; charset=utf-8",
+    "Content-Length": Buffer.byteLength(body),
+    "Cache-Control": "no-store",
+    "X-Request-ID": traceId,
+  };
+  if (closeConnection) headers.Connection = "close";
+  res.writeHead(status, headers);
+  res.end(body);
+}
+
+function contentLength(req) {
+  const raw = req.headers["content-length"];
+  if (raw == null) return null;
+  if (Array.isArray(raw) || !/^\d+$/.test(raw)) return NaN;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) ? value : NaN;
+}
+
+function upstreamHeaders(req, length, reqId) {
+  const headers = { "x-request-id": reqId };
+  if (typeof req.headers.accept === "string") headers.accept = req.headers.accept;
+  if (typeof req.headers["content-type"] === "string") {
+    headers["content-type"] = req.headers["content-type"];
+  }
+  if (length != null) headers["content-length"] = String(length);
+  return headers;
+}
+
+function responseHeaders(upstream, reqId) {
+  const headers = { "cache-control": "no-store", "x-request-id": reqId };
+  for (const name of RESPONSE_HEADERS) {
+    const value = upstream.headers[name];
+    if (value == null) continue;
+    headers[name] = Array.isArray(value) ? value.join(", ") : value;
+  }
+  return headers;
+}
+
+function proxyAnalyze(req, res, rc, ctx) {
+  const { cfg, log } = ctx;
+  // 与其他写接口共用同一身份优先级和同一 IP 冷却窗口；守卫与限流都在
+  // 创建 sidecar 连接前执行，拒绝的请求不会向权威计算进程泄漏任何字节。
+  resolveIdentity(req, rc, ctx);
+  ctx.rateLimit(rc.ip);
+
+  if (!cfg.gcodeAuthorityUrl) {
+    sendProblem(res, 503, "authority_not_configured", "C# G-code 权威计算服务未配置", rc.reqId);
+    req.resume();
+    return Promise.resolve();
+  }
+
+  const declaredLength = contentLength(req);
+  if (Number.isNaN(declaredLength)) {
+    sendProblem(res, 400, "invalid_content_length", "Content-Length 不合法", rc.reqId, true);
+    req.resume();
+    return Promise.resolve();
+  }
+  if (declaredLength != null && declaredLength > cfg.gcodeAuthorityMaxBytes) {
+    sendProblem(res, 413, "payload_too_large", "G-code 超过 64 MiB 上限", rc.reqId, true);
+    req.resume();
+    return Promise.resolve();
+  }
+
+  const requestUrl = new URL(req.url, "http://node.invalid");
+  const target = new URL(ANALYZE_PATH + requestUrl.search, cfg.gcodeAuthorityUrl);
+  const transport = target.protocol === "https:" ? https : http;
+
+  return new Promise((resolve) => {
+    let finished = false;
+    let terminal = false;
+    let uploadEnded = false;
+    let responseStarted = false;
+    let transferred = 0;
+    let pendingResponse = null;
+    let timeout = null;
+
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      if (timeout) clearTimeout(timeout);
+      resolve();
+    };
+
+    let upstreamReq;
+
+    const fail = (status, code, title, error) => {
+      if (terminal) return;
+      terminal = true;
+      if (pendingResponse) pendingResponse.destroy();
+      if (upstreamReq && !upstreamReq.destroyed) upstreamReq.destroy();
+      req.resume();
+
+      if (error) {
+        log.warn("gcode authority proxy failed", {
+          reqId: rc.reqId,
+          code,
+          error: error.message,
+        });
+      }
+      if (!res.headersSent && !res.destroyed) {
+        sendProblem(res, status, code, title, rc.reqId);
+      } else if (!res.destroyed) {
+        res.destroy();
+      }
+    };
+
+    const startResponse = (upstreamRes) => {
+      if (terminal) {
+        upstreamRes.destroy();
+        return;
+      }
+      if (!uploadEnded) {
+        pendingResponse = upstreamRes;
+        upstreamRes.pause();
+        return;
+      }
+
+      pendingResponse = null;
+      responseStarted = true;
+      res.writeHead(upstreamRes.statusCode || 502, responseHeaders(upstreamRes, rc.reqId));
+      upstreamRes.on("error", (error) => {
+        fail(502, "authority_response_error", "C# G-code 权威计算响应中断", error);
+      });
+      upstreamRes.on("aborted", () => {
+        fail(502, "authority_response_aborted", "C# G-code 权威计算响应中断");
+      });
+      upstreamRes.pipe(res);
+      upstreamRes.resume();
+    };
+
+    try {
+      upstreamReq = transport.request(target, {
+        method: "POST",
+        headers: upstreamHeaders(req, declaredLength, rc.reqId),
+      });
+    } catch (error) {
+      fail(502, "authority_unavailable", "C# G-code 权威计算服务不可用", error);
+      finish();
+      return;
+    }
+
+    timeout = setTimeout(() => {
+      fail(504, "authority_timeout", "C# G-code 权威计算超时");
+    }, cfg.gcodeAuthorityTimeoutMs);
+    timeout.unref();
+
+    upstreamReq.on("response", startResponse);
+    upstreamReq.on("error", (error) => {
+      if (terminal) return;
+      const code = responseStarted ? "authority_response_error" : "authority_unavailable";
+      const title = responseStarted ? "C# G-code 权威计算响应中断" : "C# G-code 权威计算服务不可用";
+      fail(502, code, title, error);
+    });
+    upstreamReq.on("drain", () => {
+      if (!terminal) req.resume();
+    });
+
+    req.on("data", (chunk) => {
+      if (terminal) return;
+      transferred += chunk.length;
+      if (transferred > cfg.gcodeAuthorityMaxBytes) {
+        fail(413, "payload_too_large", "G-code 超过 64 MiB 上限");
+        return;
+      }
+      if (!upstreamReq.write(chunk)) req.pause();
+    });
+    req.on("end", () => {
+      if (terminal) return;
+      uploadEnded = true;
+      upstreamReq.end();
+      if (pendingResponse) startResponse(pendingResponse);
+    });
+    req.on("aborted", () => {
+      if (terminal) return;
+      terminal = true;
+      if (pendingResponse) pendingResponse.destroy();
+      upstreamReq.destroy();
+      finish();
+    });
+    req.on("error", (error) => {
+      fail(400, "request_stream_error", "G-code 上传中断", error);
+    });
+
+    res.once("finish", finish);
+    res.once("close", () => {
+      if (!res.writableEnded && !terminal) {
+        terminal = true;
+        if (pendingResponse) pendingResponse.destroy();
+        upstreamReq.destroy();
+      }
+      finish();
+    });
+  });
+}
+
+function register(router, ctx) {
+  router.add("POST", /^\/api\/v1\/gcode\/analyze$/, (req, res, _match, rc) => {
+    return proxyAnalyze(req, res, rc, ctx);
+  });
+}
+
+module.exports = { register };

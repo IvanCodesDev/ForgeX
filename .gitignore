@@ -3,6 +3,11 @@ server/.env
 .env
 
 node_modules/
+.dotnet/
+.dotnet-home/
+.nuget-packages/
+.tmp-dotnet-install.ps1
+.dotnet-sdk-*.zip
 *.log
 Thumbs.db
 .DS_Store
@@ -26,6 +31,21 @@ coverage/
 .nyc_output/
 test-results/
 playwright-report/
+
+# 文档渲染与本地迁移审计产物
+doc/_render_*/
+doc/_tmp_*/
+_tmp_render*/
+_tmp_render2/
+# 本地迁移、截图和验证证据包含绝对工作区路径，不进入公开源码仓库。
+optimization/
+dist/
+frontend/dist/
+*.tsbuildinfo
+backend/**/bin/
+backend/**/obj/
+# CI 会重新生成并上传权威计算差异报告。
+backend/artifacts/
 
 # 运行时持久化数据（数据源 / 分享页 / 知识库 / 用量计数）
 # 这是用户数据，不该进仓库；容器部署时挂卷到这里。

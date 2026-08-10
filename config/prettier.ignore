@@ -17,3 +17,12 @@
 # Playwright 产物
 ../test-results/
 ../playwright-report/
+
+# 生成文档、视觉渲染和迁移基线记录
+../doc/
+../optimization/
+../_tmp_render*/
+doc/
+optimization/
+_tmp_render*/
+_tmp_render2/

@@ -6,6 +6,9 @@
 "use strict";
 
 const js = require("@eslint/js");
+const tseslint = require("typescript-eslint");
+
+const TS_RECOMMENDED_RULES = Object.assign({}, ...tseslint.configs.recommended.map((config) => config.rules || {}));
 
 /** 前端模块通过 window 互相引用（经典脚本，无 import）。
     这份清单必须与各模块底部的 `root.FXxxx = ...` 一一对应——
@@ -120,9 +123,18 @@ module.exports = [
       // 自动生成（node tools/farm-sim.js --emit-js），内嵌大段 CSV，不手工维护
       "js/farm-dataset.js",
       "node_modules/**",
+      ".dotnet/**",
+      ".dotnet-home/**",
+      ".nuget-packages/**",
+      "backend/**/bin/**",
+      "backend/**/obj/**",
       "coverage/**",
       "test-results/**",
       "playwright-report/**",
+      "dist/**",
+      "doc/**",
+      "optimization/**",
+      "_tmp_render*/**",
       "**/.tmp-*",
     ],
   },
@@ -141,6 +153,35 @@ module.exports = [
       ...COMMON_RULES,
       // 经典脚本靠 IIFE + window 挂载，不存在 import/export
       "no-undef": "error",
+    },
+  },
+
+  // ── React + TypeScript：模块化前端与 Web Worker ──
+  {
+    files: ["**/*.{ts,tsx}"],
+    languageOptions: {
+      parser: tseslint.parser,
+      parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: "module",
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    plugins: { "@typescript-eslint": tseslint.plugin },
+    rules: {
+      ...COMMON_RULES,
+      ...TS_RECOMMENDED_RULES,
+      "no-undef": "off",
+      "no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          args: "after-used",
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrors: "none",
+        },
+      ],
     },
   },
 

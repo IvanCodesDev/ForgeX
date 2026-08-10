@@ -18,6 +18,7 @@ const { KnowledgeStore } = require("./services/knowledge");
 const { ShareStore } = require("./services/share");
 const { CalibrationStore } = require("./services/calibration");
 const { InfiniClient } = require("./services/infini");
+const { PartnerSSO } = require("./services/partner-sso");
 const { CostGate } = require("./lib/quota");
 const { Auth } = require("./lib/auth");
 
@@ -48,6 +49,7 @@ function createApp(overrides) {
   const infini = new InfiniClient(cfg, log);
   const gate = new CostGate(cfg, log);
   const auth = new Auth(cfg, log);
+  const partnerSSO = new PartnerSSO(cfg, log);
   const datasources = new DatasourceStore(cfg, log);
   const knowledge = new KnowledgeStore(cfg, log);
   const tasks = new TaskStore(cfg, log, infini, knowledge, gate);
@@ -56,8 +58,21 @@ function createApp(overrides) {
 
   /* 运行指标。不引依赖，就是几个计数器——够 /metrics 用，也够排查线上问题。 */
   const metrics = {
-    tasks: 0, failed: 0, degraded: 0, cached: 0, requests: 0, lastDurationMs: 0,
-    snapshot() { return { ...this }; },
+    tasks: 0,
+    failed: 0,
+    degraded: 0,
+    cached: 0,
+    requests: 0,
+    lastDurationMs: 0,
+    snapshot() {
+      return { ...this };
+    },
+  };
+  tasks.onTerminal = (task) => {
+    metrics.lastDurationMs = Math.max(0, task.finishedAt - task.createdAt);
+    if (task.status === "failed") metrics.failed++;
+    if (task.degraded) metrics.degraded++;
+    if (task.cached) metrics.cached++;
   };
 
   // 同 IP 冷却限流（仅分析接口调用）。
@@ -94,6 +109,7 @@ function createApp(overrides) {
     rateLimit,
     gate,
     auth,
+    partnerSSO,
     metrics,
   };
   const router = new Router();
@@ -101,16 +117,22 @@ function createApp(overrides) {
   router.add("GET", /^\/healthz$/, (req, res) => {
     // engine 与报告里的 engine 字段取同一个值（provider.id），避免 healthz 说一套、报告说另一套
     const p = tasks.provider;
+    const partnerIdentity = partnerSSO.enabled ? partnerSSO.identity(req) : null;
+    const userAi = !!(partnerIdentity && partnerIdentity.apiKey);
     sendJson(res, 200, {
       ok: true,
-      engine: p.id,
-      provider: cfg.provider,
-      label: p.label,
-      capabilities: p.capabilities,
-      reason: cfg.providerReason,
+      engine: userAi ? "infinisynapse" : p.id,
+      provider: userAi ? "infinisynapse" : cfg.provider,
+      label: userAi ? "InfiniSynapse Partner 用户密钥" : p.label,
+      capabilities: userAi
+        ? { ai: true, streaming: true, structuredOutput: true }
+        : p.capabilities,
+      capabilityScope: userAi ? "current-user" : "system",
+      reason: userAi ? "当前 SSO 用户持有有效 Partner API Key" : cfg.providerReason,
       // 公网访问者有权知道自己面对的是什么限制，而不是撞上 429 才发现
       quota: p.capabilities.ai ? gate.snapshot() : null,
       auth: { enabled: auth.enabled, required: auth.required },
+      sso: { enabled: partnerSSO.enabled, integration: "partner-sso-b" },
       persistence: cfg.dataDir ? "file" : "memory",
       calibrations: {
         approved: calibrations.approvedCount,
@@ -157,10 +179,12 @@ function createApp(overrides) {
     res.end(L.join("\n") + "\n");
   });
   require("./routes/analyze").register(router, ctx);
+  require("./services/partner-sso").register(router, ctx);
   require("./routes/datasource").register(router, ctx);
   require("./routes/knowledge").register(router, ctx);
   require("./routes/share").register(router, ctx);
   require("./routes/calibration").register(router, ctx);
+  require("./routes/gcode-authority").register(router, ctx);
 
   function applyCors(req, res) {
     const origin = req.headers.origin;
@@ -184,12 +208,22 @@ function createApp(overrides) {
       return sendJson(res, 400, { error: "URL 不合法" });
     }
     applyCors(req, res);
-    if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      return res.end();
+    }
 
     metrics.requests++;
     res.on("finish", () => {
       // SSE 长连接结束时也会走到这，一并计入访问日志
-      log.info("http", { reqId, ip, method: req.method, path: pathname, status: res.statusCode, ms: Date.now() - started });
+      log.info("http", {
+        reqId,
+        ip,
+        method: req.method,
+        path: pathname,
+        status: res.statusCode,
+        ms: Date.now() - started,
+      });
     });
 
     try {
@@ -205,7 +239,14 @@ function createApp(overrides) {
       }
       sendJson(res, 404, { error: "接口不存在" });
     } catch (err) {
-      if (res.headersSent) { try { res.end(); } catch (e2) { /* 已断开 */ } return; }
+      if (res.headersSent) {
+        try {
+          res.end();
+        } catch (e2) {
+          /* 已断开 */
+        }
+        return;
+      }
       if (err instanceof HttpError) return sendJson(res, err.status, { error: err.message });
       log.error("unhandled", { reqId, path: pathname, error: err.message, stack: err.stack });
       sendJson(res, 500, { error: "服务器内部错误" });
@@ -219,12 +260,13 @@ function createApp(overrides) {
     tasks.sweep(now);
     knowledge.sweep(now);
     shares.sweep(now);
+    partnerSSO.sweep(now);
   }, 60 * 1000);
   sweeper.unref();
 
   function close() {
     clearInterval(sweeper);
-    gate.state.save();          // 用量计数落盘，避免停机丢掉当日额度记录
+    gate.state.save(); // 用量计数落盘，避免停机丢掉当日额度记录
     tasks.closeAll();
     return new Promise((resolve) => server.close(resolve));
   }
@@ -253,7 +295,7 @@ if (require.main === module) {
     closing = true;
     log.info("shutting down", { sig });
     app.close().then(() => process.exit(0));
-    setTimeout(() => process.exit(1), 5000).unref();   // 兜底强退
+    setTimeout(() => process.exit(1), 5000).unref(); // 兜底强退
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);

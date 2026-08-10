@@ -23,6 +23,23 @@
 
   /** 防御性上限：真实 G-code 可以有几百万行，浏览器里得有个头 */
   P.MAX_BYTES = 64 * 1024 * 1024;
+
+  /** 对原始 G-code 字节计算 SHA-256；用于与真机日志声明的摘要建立责任链。 */
+  P.sha256 = function (input) {
+    var webCrypto = root.crypto;
+    if (!webCrypto || !webCrypto.subtle) return Promise.reject(new Error("当前运行环境不支持 SHA-256 校验"));
+    var bytes;
+    if (typeof input === "string") bytes = new root.TextEncoder().encode(input);
+    else if (input instanceof ArrayBuffer) bytes = new Uint8Array(input);
+    else if (ArrayBuffer.isView(input)) bytes = new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+    else return Promise.reject(new Error("SHA-256 输入必须是文本或字节数据"));
+    var exact = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    return webCrypto.subtle.digest("SHA-256", exact).then(function (digest) {
+      return Array.from(new Uint8Array(digest)).map(function (v) {
+        return v.toString(16).padStart(2, "0");
+      }).join("");
+    });
+  };
   P.MAX_LINES = 4000000;
 
   /** ⌀1.75 耗材横截面积（mm²），E 值换算体积用 */
@@ -96,29 +113,20 @@
   }
 
   /**
-   * 解析 G-code 文本 → 与 FXSlicer.slice() 同构的结构。
+   * 创建增量解析器。调用方可以逐块解码大文件，而不必先把全文拼成一个字符串；
+   * 内部只保留尚未结束的当前行，CRLF 即使横跨两个 chunk 也只计一个换行。
    *
-   * @param text G-code 全文
    * @param opt.densityG   材料密度（g/cm³），用于换算克重；默认 PLA 1.24
    * @param opt.bedSize    打印床尺寸（mm），用于居中坐标；默认 256
    * @param opt.origin     "corner"（默认）或 "center"（Delta 等中心原点机型）
-   * @returns {{layers, totalLayers, height, stats, claims, warnings, source}}
-   *          解析不出任何挤出路径时抛错——空结果比报错更难排查
+   * @returns {{push: function(string): object, finish: function(): object}}
    */
-  P.parse = function (text, opt) {
+  P.createIncrementalParser = function (opt) {
     opt = opt || {};
-    var src = String(text || "");
-    if (src.length > P.MAX_BYTES) {
-      throw new Error("G-code 超过 " + Math.round(P.MAX_BYTES / 1024 / 1024) + "MB，请先精简");
-    }
-
     var bed = opt.bedSize || 256;
     var half = bed / 2;
     var offset = opt.origin === "center" ? 0 : half;
     var densityG = opt.densityG || 1.24;
-
-    var lines = src.split(/\r\n|\n|\r/);
-    if (lines.length > P.MAX_LINES) throw new Error("G-code 行数超过上限（" + P.MAX_LINES + "）");
 
     /* 机器状态 */
     var absXYZ = true, absE = true;
@@ -140,6 +148,15 @@
     var totalFilamentMm = 0;   // E 的真实增量合计（**精确值**，非估算）
     var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     var arcCount = 0;
+
+    /* 流式输入状态。lineCount 从 1 开始，与旧实现 split(...).length 完全一致。 */
+    var lineBuffer = "";
+    var pendingCR = false;
+    var lineCount = 1;
+    var inputLength = 0;
+    var finished = false;
+    var result = null;
+    var finishError = null;
 
     function startLayer(zv) {
       closePath();
@@ -163,18 +180,17 @@
       return L;
     }
 
-    for (var li = 0; li < lines.length; li++) {
-      var raw = lines[li];
-      if (!raw) continue;
+    function processLine(raw) {
+      if (!raw) return;
       var line = raw.trim();
-      if (!line) continue;
+      if (!line) return;
 
       if (line.charCodeAt(0) === 59) {          // ';' 注释行
         readClaims(line, claims);
         var t = /^;\s*TYPE\s*:\s*(.+)$/i.exec(line);
         if (t) pendingType = mapType(t[1]);
         // `;LAYER:` 只作为提示；真正的分层依据是挤出态下的 Z 变化（更普适）
-        continue;
+        return;
       }
 
       // 去掉行内注释
@@ -184,35 +200,35 @@
         var ct = /;\s*TYPE\s*:\s*(.+)$/i.exec(inlineComment);
         if (ct) pendingType = mapType(ct[1]);
         line = line.slice(0, semi).trim();
-        if (!line) continue;
+        if (!line) return;
       }
 
       var g = /^G(\d+)/i.exec(line);
       if (g) {
         var code = +g[1];
 
-        if (code === 90) { absXYZ = true; continue; }
-        if (code === 91) { absXYZ = false; continue; }
+        if (code === 90) { absXYZ = true; return; }
+        if (code === 91) { absXYZ = false; return; }
         if (code === 92) {                     // 设置当前位置（常用于 E 归零）
           var ge = word(line, "E");
           if (ge != null) e = ge;
           var gx = word(line, "X"); if (gx != null) x = gx;
           var gy = word(line, "Y"); if (gy != null) y = gy;
           var gz = word(line, "Z"); if (gz != null) z = gz;
-          continue;
+          return;
         }
         if (code === 28) {                     // 归位
           homed = true;
           x = 0; y = 0; z = 0;
           closePath();
-          continue;
+          return;
         }
         if (code === 2 || code === 3) {
           // 圆弧插补：本解析器按直线段近似端点，弧长会略短。
           // 真实切片器很少默认输出 G2/G3，遇到时如实警告而不是假装支持。
           arcCount++;
         }
-        if (code !== 0 && code !== 1 && code !== 2 && code !== 3) continue;
+        if (code !== 0 && code !== 1 && code !== 2 && code !== 3) return;
 
         var nx = word(line, "X"), ny = word(line, "Y"), nz = word(line, "Z");
         var ne = word(line, "E"), nf = word(line, "F");
@@ -270,7 +286,7 @@
             if (cur) { cur.travelLen += dist; cur.timeSec += dist / speed; }
           }
         }
-        continue;
+        return;
       }
 
       var m = /^M(\d+)/i.exec(line);
@@ -287,48 +303,147 @@
         }
       }
     }
-    closePath();
 
-    /* 收尾：丢掉没有任何路径的空层（抬升/换料常制造这种层） */
-    layers = layers.filter(function (L) { return L.paths.length > 0; });
-    if (!layers.length) {
-      throw new Error("未解析到任何挤出路径 —— 请确认这是 FDM 打印机的 G-code");
+    function tooManyLines() {
+      return new Error("G-code 行数超过上限（" + P.MAX_LINES + "）");
     }
-    layers.sort(function (a, b) { return a.z - b.z; });
 
-    /* 统计。挤出体积用 E 的真实增量换算，不是「路径长 × 截面积」的估算——
-       这是导入真实 G-code 相对自产切片的核心优势。 */
-    var volumeMm3 = Math.max(0, totalFilamentMm) * P.FILAMENT_AREA_175;
-    var height = layers[layers.length - 1].z;
-
-    if (!homed) warnings.push("文件中没有 G28 归位指令，坐标可能不是绝对机床坐标");
-    if (arcCount) warnings.push("含 " + arcCount + " 条圆弧指令（G2/G3），已按直线段近似，弧长略偏小");
-    var cMinX = minX - offset, cMaxX = maxX - offset;
-    var cMinY = minY - offset, cMaxY = maxY - offset;
-    if (cMinX < -half || cMaxX > half || cMinY < -half || cMaxY > half) {
-      warnings.push("模型尺寸超出 " + bed + "mm 打印床，路径预览可能溢出");
+    function emitLineBreak() {
+      processLine(lineBuffer);
+      lineBuffer = "";
+      lineCount++;
+      if (lineCount > P.MAX_LINES) throw tooManyLines();
     }
-    if (layers.length < 2) warnings.push("只解析到 1 层，请确认文件完整");
 
-    return {
-      layers: layers,
-      totalLayers: layers.length,
-      height: height,
-      stats: {
-        extLenMm: totalExtMm,
-        travelMm: totalTravelMm,
-        timeSec: totalTimeSec,
-        volumeCm3: volumeMm3 / 1000,
-        filamentM: Math.max(0, totalFilamentMm) / 1000,
-        filamentG: (volumeMm3 / 1000) * densityG,
+    function consumeChunk(chunk) {
+      var i = 0;
+      var start = 0;
+
+      /* 上一个 chunk 以 CR 结束：先确认本块开头是否是配对的 LF。 */
+      if (pendingCR && chunk.length) {
+        pendingCR = false;
+        emitLineBreak();
+        if (chunk.charCodeAt(0) === 10) {
+          i = 1;
+          start = 1;
+        }
+      }
+
+      for (; i < chunk.length; i++) {
+        var ch = chunk.charCodeAt(i);
+        if (ch === 13) {
+          lineBuffer += chunk.slice(start, i);
+          if (i + 1 < chunk.length) {
+            if (chunk.charCodeAt(i + 1) === 10) i++;
+            emitLineBreak();
+            start = i + 1;
+          } else {
+            pendingCR = true;
+            start = chunk.length;
+          }
+        } else if (ch === 10) {
+          lineBuffer += chunk.slice(start, i);
+          emitLineBreak();
+          start = i + 1;
+        }
+      }
+
+      if (start < chunk.length) lineBuffer += chunk.slice(start);
+    }
+
+    function finalize() {
+      if (pendingCR) {
+        pendingCR = false;
+        emitLineBreak();
+      }
+      /* split() 总会产生最后一个字段；即使文件以换行结尾，也处理对应的空行。 */
+      processLine(lineBuffer);
+      lineBuffer = "";
+      closePath();
+
+      /* 收尾：丢掉没有任何路径的空层（抬升/换料常制造这种层） */
+      layers = layers.filter(function (L) { return L.paths.length > 0; });
+      if (!layers.length) {
+        throw new Error("未解析到任何挤出路径 —— 请确认这是 FDM 打印机的 G-code");
+      }
+      layers.sort(function (a, b) { return a.z - b.z; });
+
+      /* 统计。挤出体积用 E 的真实增量换算，不是「路径长 × 截面积」的估算——
+         这是导入真实 G-code 相对自产切片的核心优势。 */
+      var volumeMm3 = Math.max(0, totalFilamentMm) * P.FILAMENT_AREA_175;
+      var height = layers[layers.length - 1].z;
+
+      if (!homed) warnings.push("文件中没有 G28 归位指令，坐标可能不是绝对机床坐标");
+      if (arcCount) warnings.push("含 " + arcCount + " 条圆弧指令（G2/G3），已按直线段近似，弧长略偏小");
+      var cMinX = minX - offset, cMaxX = maxX - offset;
+      var cMinY = minY - offset, cMaxY = maxY - offset;
+      if (cMinX < -half || cMaxX > half || cMinY < -half || cMaxY > half) {
+        warnings.push("模型尺寸超出 " + bed + "mm 打印床，路径预览可能溢出");
+      }
+      if (layers.length < 2) warnings.push("只解析到 1 层，请确认文件完整");
+
+      return {
+        layers: layers,
+        totalLayers: layers.length,
+        height: height,
+        stats: {
+          extLenMm: totalExtMm,
+          travelMm: totalTravelMm,
+          timeSec: totalTimeSec,
+          volumeCm3: volumeMm3 / 1000,
+          filamentM: Math.max(0, totalFilamentMm) / 1000,
+          filamentG: (volumeMm3 / 1000) * densityG,
+        },
+        // 切片器自报的数字，供对账；解析不到就是 undefined，不编造
+        claims: claims,
+        warnings: warnings,
+        bounds: { minX: cMinX, maxX: cMaxX, minY: cMinY, maxY: cMaxY },
+        coordinateOrigin: opt.origin === "center" ? "center" : "corner",
+        source: "gcode-import",
+      };
+    }
+
+    var api = {
+      push: function (textChunk) {
+        if (finished) throw new Error("增量 G-code 解析已经结束");
+        if (typeof textChunk !== "string") throw new TypeError("G-code chunk 必须是文本");
+        inputLength += textChunk.length;
+        if (inputLength > P.MAX_BYTES) {
+          throw new Error("G-code 超过 " + Math.round(P.MAX_BYTES / 1024 / 1024) + "MB，请先精简");
+        }
+        if (textChunk.length) consumeChunk(textChunk);
+        return api;
       },
-      // 切片器自报的数字，供对账；解析不到就是 undefined，不编造
-      claims: claims,
-      warnings: warnings,
-      bounds: { minX: cMinX, maxX: cMaxX, minY: cMinY, maxY: cMaxY },
-      coordinateOrigin: opt.origin === "center" ? "center" : "corner",
-      source: "gcode-import",
+      finish: function () {
+        if (finished) {
+          if (finishError) throw finishError;
+          return result;
+        }
+        finished = true;
+        try {
+          result = finalize();
+          return result;
+        } catch (err) {
+          finishError = err;
+          throw err;
+        }
+      },
     };
+    return api;
+  };
+
+  /**
+   * 解析 G-code 全文 → 与 FXSlicer.slice() 同构的结构。
+   * 全量入口与增量入口共用同一状态机，避免两套实现发生语义漂移。
+   *
+   * @param text G-code 全文
+   * @returns {{layers, totalLayers, height, stats, claims, warnings, source}}
+   *          解析不出任何挤出路径时抛错——空结果比报错更难排查
+   */
+  P.parse = function (text, opt) {
+    var parser = P.createIncrementalParser(opt);
+    parser.push(String(text || ""));
+    return parser.finish();
   };
 
   /**

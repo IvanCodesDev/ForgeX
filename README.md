@@ -2,6 +2,7 @@
 
 ### 打印前验证参数与路径，打印后用真机数据校准和复盘
 
+[![CI](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml/badge.svg)](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml)
 ![Version](https://img.shields.io/badge/version-0.19.0-2563eb)
 ![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-16a34a)
 ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-0f172a)
@@ -9,7 +10,7 @@
 
 **简体中文** · [English](./.github/README.en.md)
 
-真实 3D 打印最费时间的部分，往往不是点击开始，而是反复试错：参数是否合适、支撑是否足够、预计要打印多久、为什么同一个文件换一台机器就失败，以及失败后该改哪一项。
+真实 3D 打印最费时间的部分，往往不是点击“开始”，而是反复试错：参数是否合适、支撑是否足够、预计要打印多久、为什么同一个文件换一台机器就失败，以及失败后该改哪一项。
 
 **FORGE·X Insight** 用于 FDM 3D 打印的打印前预演和打印后分析。它可以在不消耗材料、不占用设备的情况下比较工艺方案、查看实际切片路径、估算时间与耗材；打印完成后，还能导入真实 G-code 和设备日志，把预测与真机结果放在一起复盘。
 
@@ -71,7 +72,7 @@
 | 适合比较参数、检查路径、估算时间和预演故障流程 | 才能验证真实尺寸、表面质量、层间结合和设备稳定性               |
 | 只能覆盖已经建模或有数据支撑的因素             | 还会受到耗材受潮、喷嘴磨损、皮带松紧、气流、振动和操作误差影响 |
 
-因此，FORGE·X 的定位不是替代真机，而是：
+因此，FORGE·X 的定位不是“替代真机”，而是：
 
 > **模拟负责低成本预演和排雷，真机负责最终验证；真机结果再用于校准下一次模拟。**
 
@@ -111,6 +112,12 @@
 
 ## 快速开始
 
+### 只体验前端仿真
+
+直接打开 `index.html`。无需安装依赖，也无需联网。
+
+### 启动完整服务
+
 ```bash
 node server/index.js
 # 或
@@ -138,14 +145,39 @@ npm start
 - AI 密钥只从服务端环境变量读取，不进入浏览器或仓库；
 - 导出的制造文件进入实体设备前，仍需使用目标切片器、固件配置和设备安全流程复核。
 
-- **前端**：Three.js r152 + 原生 JavaScript，无构建步骤；
-- **后端**：Node.js 原生 `http`，零运行时依赖；
+## 技术架构
+
+```text
+Browser
+├─ /             现有 JavaScript 工作台（迁移期稳定基线）
+└─ /react/       React + TypeScript 新工作台
+   ├─ Web Worker 增量解析、原始字节 SHA-256、即时预览
+   ├─ Three.js 分层路径抽样与交互
+   └─ browser / shadow / dotnet 三态权威切换
+             │ 同源 raw-body 流式代理
+             ▼
+Node.js service :8787
+├─ datasource / analysis / knowledge / share
+├─ calibration / SSO / auth / quota / metrics
+└─ /api/v1/gcode/analyze ───────────────┐
+                                        ▼
+                              C# .NET 10 sidecar :8788
+                              ├─ StreamingGCodeAnalyzer
+                              ├─ 确定性摘要、单位与稳定错误码
+                              └─ JS/C# GoldenDiff 门禁
+```
+
+- **前端**：旧页面继续可用；新页面采用 React、TypeScript、Vite 与 Three.js，G-code 在 Worker 中解析；
+- **业务后端**：Node.js 原生 `http`，零运行时依赖，并只对白名单路由提供 C# 同源代理；
+- **权威计算**：.NET 10、零外部 NuGet；默认仅监听 `127.0.0.1:8788`，不直接暴露公网；
 - **存储**：默认写入 `data/`，容器部署可挂载持久化卷。
 
 ## 验证
 
 ```bash
 npm run check       # ESLint + Prettier + 完整单元/契约/发布测试
+npm run frontend:build:offline  # 生成可由 file:// 打开的 React 单文件包
+npm run dotnet:golden           # 构建 .NET 10 核心并执行 JS/C# 字段级黄金差异
 npm run test:e2e    # Chromium 全量 + Firefox/WebKit 关键流程
 npm run demo:check  # 演示素材与真实导入链校验
 ```
@@ -167,13 +199,21 @@ copy server\.env.example server\.env
 node server/index.js
 ```
 
-常用配置见 [`server/.env.example`](./server/.env.example)。部署完成后可访问 `/healthz` 检查服务和分析引擎状态，访问 `/metrics` 获取运行指标。
+如需启用 `shadow` 或 `dotnet` 权威模式，先在另一进程启动 loopback sidecar：
+
+```bash
+npm run dotnet:api
+```
+
+常用配置见 [`server/.env.example`](./server/.env.example) 与 [`frontend/.env.example`](./frontend/.env.example)。Node 会先执行统一的 Partner SSO/API Key 身份守卫与冷却限流，再将唯一的 G-code 原始请求流式代理到 `GCODE_AUTHORITY_URL`；浏览器 Cookie、API Key 与 Authorization 均不会转发给 C# sidecar。React 默认使用同源 HttpOnly Cookie；只有在凭据允许随浏览器产物分发时，才使用 `VITE_NODE_API_KEY` 或 `VITE_NODE_BEARER`。部署完成后可访问 `/healthz` 与 C# `/health/ready` 检查服务状态，访问 `/metrics` 获取运行指标。迁移期间 `/` 保持旧工作台，`/react/` 提供新工作台。
 
 ## 项目结构
 
 ```text
 css/          界面样式
 js/           切片、仿真、分析和前端交互
+frontend/     React + TypeScript 新工作台
+backend/      .NET 10 权威计算核心、API 与 GoldenDiff
 server/       HTTP 服务、登录、存储和 AI provider
 datasets/     可复现的虚拟机群数据
 profiles/     机器与材料 Profile

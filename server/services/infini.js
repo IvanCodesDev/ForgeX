@@ -27,6 +27,18 @@ class InfiniClient {
     this.log = log;
   }
 
+  /** Partner SSO 为每个登录用户签发独立 Key；派生客户端，绝不改写全局配置。 */
+  withKey(apiKey) {
+    return new InfiniClient(
+      Object.assign({}, this.cfg, {
+        infiniKey: String(apiKey || ""),
+        mode: "infinisynapse",
+        modeReason: "InfiniSynapse Partner SSO 用户授权",
+      }),
+      this.log
+    );
+  }
+
   _ensureUsable() {
     if (this.cfg.mode !== "infinisynapse") {
       throw new Error("InfiniSynapse 通道未启用：" + this.cfg.modeReason);
@@ -103,7 +115,11 @@ class InfiniClient {
 
       const consume = (event, data) => {
         let j;
-        try { j = JSON.parse(data); } catch (e) { return; }   // heartbeat: "ping" 等非 JSON
+        try {
+          j = JSON.parse(data);
+        } catch (e) {
+          return;
+        } // heartbeat: "ping" 等非 JSON
         if (j && j.taskId && !taskId) {
           taskId = String(j.taskId);
           this.log.info("infini task created", { infiniTaskId: taskId });
@@ -118,7 +134,7 @@ class InfiniClient {
           // partial 流式增长：partial:false 的终稿无条件采信；中途只保留最长文本（防晚到的短 update 回退）
           if (t && t !== "null" && (msg.partial === false || t.length > resultText.length)) resultText = t;
           if (msg.partial === false) done = true;
-        } else if (msg.type === "ask" && msg.ask === "completion_result") done = true;   // 兜底终结标志
+        } else if (msg.type === "ask" && msg.ask === "completion_result") done = true; // 兜底终结标志
       };
 
       sse.onEvent(consume);
@@ -135,7 +151,8 @@ class InfiniClient {
       throttled("submitted", "任务已提交，等待云端受理");
 
       while (!done) {
-        if (Date.now() > deadline) throw new Error("上游任务超时（" + Math.round(this.cfg.infiniTimeoutMs / 1000) + "s）");
+        if (Date.now() > deadline)
+          throw new Error("上游任务超时（" + Math.round(this.cfg.infiniTimeoutMs / 1000) + "s）");
         if (sse.failed) throw new Error("上游事件流中断：" + sse.failed.message);
         await new Promise((r) => setTimeout(r, 250));
       }
@@ -170,7 +187,8 @@ class InfiniClient {
           while ((idx = buf.indexOf("\n\n")) >= 0) {
             const block = buf.slice(0, idx);
             buf = buf.slice(idx + 2);
-            let event = "message", data = "";
+            let event = "message",
+              data = "";
             for (const line of block.split("\n")) {
               if (line.startsWith("event:")) event = line.slice(6).trim();
               else if (line.startsWith("data:")) data += line.slice(5).trim();
@@ -183,9 +201,19 @@ class InfiniClient {
       }
     })();
     return {
-      onEvent: (fn) => { state.handler = fn; },
-      close: () => { try { ctrl.abort(); } catch (e) { /* 已关闭 */ } },
-      get failed() { return state.failed; },
+      onEvent: (fn) => {
+        state.handler = fn;
+      },
+      close: () => {
+        try {
+          ctrl.abort();
+        } catch (e) {
+          /* 已关闭 */
+        }
+      },
+      get failed() {
+        return state.failed;
+      },
     };
   }
 
@@ -202,13 +230,7 @@ class InfiniClient {
    * 已经没有数据文件要加载了。
    */
   _buildPrompt(question, systemPrompt, userText, datasourceName) {
-    return [
-      systemPrompt,
-      "",
-      "数据集名称：" + (datasourceName || "print_jobs"),
-      "",
-      userText,
-    ].join("\n");
+    return [systemPrompt, "", "数据集名称：" + (datasourceName || "print_jobs"), "", userText].join("\n");
   }
 }
 

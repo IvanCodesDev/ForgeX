@@ -37,6 +37,7 @@ class ShareStore {
       report: task.report,
       question: task.question,
       engine: task.engine,
+      owner: task.caller,
       upstreamTaskId: task.upstreamTaskId,
       createdAt: Date.now(),
       expiresAt: Date.now() + ttl,

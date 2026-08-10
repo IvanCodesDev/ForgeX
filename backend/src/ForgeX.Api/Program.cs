@@ -1,0 +1,143 @@
+using System.Diagnostics;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using ForgeX.Api;
+using ForgeX.Application;
+using ForgeX.Contracts;
+using ForgeX.Simulation;
+
+const long MaxGCodeBytes = 64L * 1024 * 1024;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    // The authoritative endpoint accepts a raw G-code body and never needs a larger request.
+    options.Limits.MaxRequestBodySize = MaxGCodeBytes;
+});
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+    options.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+});
+var allowedOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .GetChildren()
+    .Select(static value => value.Value)
+    .Where(static value => !string.IsNullOrWhiteSpace(value))
+    .Cast<string>()
+    .ToArray();
+if (allowedOrigins.Length > 0)
+{
+    builder.Services.AddCors(options => options.AddPolicy("ConfiguredFrontend", policy => policy
+        .WithOrigins(allowedOrigins)
+        .WithMethods("GET", "POST")
+        .WithHeaders("Accept", "Content-Type")
+        .WithExposedHeaders("X-Trace-Id", "X-Request-Id", "traceparent")));
+}
+builder.Services.AddSingleton<IGCodeAnalyzer, StreamingGCodeAnalyzer>();
+
+var app = builder.Build();
+
+app.Use(async (context, next) =>
+{
+    var activity = Activity.Current;
+    var traceId = activity?.TraceId.ToHexString() ?? context.TraceIdentifier;
+    var traceParent = activity?.Id;
+
+    context.Response.OnStarting(() =>
+    {
+        context.Response.Headers["X-Trace-Id"] = traceId;
+        context.Response.Headers["X-Request-Id"] = context.TraceIdentifier;
+        if (!string.IsNullOrWhiteSpace(traceParent))
+        {
+            context.Response.Headers.TraceParent = traceParent;
+        }
+
+        return Task.CompletedTask;
+    });
+
+    try
+    {
+        await next(context);
+    }
+    catch (Exception exception) when (!context.Response.HasStarted)
+    {
+        await ApiProblemResults.WriteExceptionAsync(context, exception);
+    }
+});
+
+if (allowedOrigins.Length > 0)
+{
+    app.UseCors("ConfiguredFrontend");
+}
+
+app.UseStatusCodePages(async statusCodeContext =>
+{
+    var context = statusCodeContext.HttpContext;
+    var (code, title) = context.Response.StatusCode switch
+    {
+        StatusCodes.Status400BadRequest => ("invalid_request", "Invalid request"),
+        StatusCodes.Status404NotFound => ("route_not_found", "Route not found"),
+        StatusCodes.Status405MethodNotAllowed => ("method_not_allowed", "Method not allowed"),
+        StatusCodes.Status413PayloadTooLarge => ("payload_too_large", "G-code payload is too large"),
+        StatusCodes.Status415UnsupportedMediaType => ("unsupported_media_type", "Unsupported media type"),
+        StatusCodes.Status422UnprocessableEntity => ("gcode_invalid", "G-code analysis failed"),
+        StatusCodes.Status500InternalServerError => ("internal_error", "Unexpected server error"),
+        _ => ("http_error", "HTTP request failed"),
+    };
+    await ApiProblemResults.Create(context, context.Response.StatusCode, code, title)
+        .ExecuteAsync(context);
+});
+
+var serviceVersion = typeof(Program).Assembly.GetName().Version?.ToString() ?? "1.0.0";
+
+app.MapGet("/health/live", () => Results.Ok(new HealthResponse(
+        "healthy",
+        "forgex-authoritative-api",
+        serviceVersion,
+        DateTimeOffset.UtcNow)))
+    .WithName("GetLiveness")
+    .Produces<HealthResponse>();
+
+app.MapGet("/health/ready", (IGCodeAnalyzer analyzer) => Results.Ok(new HealthResponse(
+        "ready",
+        "forgex-authoritative-api",
+        serviceVersion,
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, string>
+        {
+            ["gcodeAnalyzer"] = analyzer.GetType().Name,
+        })))
+    .WithName("GetReadiness")
+    .Produces<HealthResponse>();
+
+app.MapGet("/healthz", () => Results.Ok(new LegacyHealthResponse(
+        true,
+        "csharp-authoritative",
+        "local",
+        new LegacyCapabilities(false, true, true, true),
+        "system",
+        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())))
+    .WithName("GetLegacyHealth")
+    .Produces<LegacyHealthResponse>();
+
+app.MapGet("/openapi/v1.json", () => Results.Text(
+        OpenApiDocument.Json,
+        "application/json; charset=utf-8"))
+    .WithName("GetOpenApiDocument")
+    .ExcludeFromDescription();
+
+app.MapPost("/api/v1/gcode/analyze", GCodeEndpoints.AnalyzeAsync)
+    .WithName("AnalyzeGCode")
+    .Accepts<Stream>("application/x-gcode")
+    .Produces<GCodeAnalysisResponse>()
+    .Produces<ApiProblem>(StatusCodes.Status400BadRequest, "application/problem+json")
+    .Produces<ApiProblem>(StatusCodes.Status413PayloadTooLarge, "application/problem+json")
+    .Produces<ApiProblem>(StatusCodes.Status415UnsupportedMediaType, "application/problem+json")
+    .Produces<ApiProblem>(StatusCodes.Status422UnprocessableEntity, "application/problem+json")
+    .Produces<ApiProblem>(StatusCodes.Status500InternalServerError, "application/problem+json");
+
+app.Run();

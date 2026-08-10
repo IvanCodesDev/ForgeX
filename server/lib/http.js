@@ -76,7 +76,8 @@ const MIME = {
   ".csv": "text/csv; charset=utf-8", ".md": "text/markdown; charset=utf-8",
   ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg", ".webp": "image/webp", ".ico": "image/x-icon",
-  ".map": "application/json",
+  ".map": "application/json", ".wasm": "application/wasm", ".woff": "font/woff",
+  ".woff2": "font/woff2",
 };
 
 /** 静态托管默认拒绝（deny-by-default）：只放行前端资产，server/ 与 .env 永远不可达 */
@@ -90,29 +91,67 @@ const STATIC_ALLOW = [
   /^\/validation\/(?:fixture-manifest|time-calibration-report)\.json$/,
 ];
 
+/**
+ * URL 到磁盘相对路径的唯一映射入口。React 构建只暴露入口和 assets，
+ * 不把 dist/ 本身加入通用 allowlist，避免 sourcemap、清单或其他构建文件意外公开。
+ */
+function staticDiskPath(urlPath) {
+  if (urlPath === "/react" || urlPath === "/react/") return "/dist/react/index.html";
+  if (/^\/react\/assets\/[^/].*/.test(urlPath)) {
+    return "/dist/react/assets/" + urlPath.slice("/react/assets/".length);
+  }
+  if (STATIC_ALLOW.some((re) => re.test(urlPath))) return urlPath;
+  return "";
+}
+
 function serveStatic(req, res, root) {
   let p;
   try {
+    // URL 会在读取 pathname 时先折叠点路径；因此必须先检查原始 request-target，
+    // 否则 /assets/../assets/x 可能在 allowlist 前被“洗白”为合法路径。
+    const rawPath = decodeURIComponent(String(req.url || "").split(/[?#]/, 1)[0]);
+    const hasControl = Array.from(rawPath).some((char) => {
+      const code = char.charCodeAt(0);
+      return code < 32 || code === 127;
+    });
+    if (
+      rawPath.includes("\\") ||
+      hasControl ||
+      rawPath.split("/").some((part) => part === "." || part === "..")
+    ) {
+      return sendJson(res, 404, { error: "资源不存在" });
+    }
     p = decodeURIComponent(new URL(req.url, "http://x").pathname);
   } catch (e) {
     return sendJson(res, 400, { error: "路径不合法" });
   }
-  p = path.posix.normalize(p);
+  const normalized = path.posix.normalize(p);
+  if ((p === "/react" || p.startsWith("/react/")) && p !== normalized) {
+    return sendJson(res, 404, { error: "资源不存在" });
+  }
+  p = normalized;
   if (p === "/") p = "/index.html";
   // 归一化后仍含 ..、反斜杠或控制符的一律拒绝（防 ../ 与 %5C 编码穿越）
   if (!p.startsWith("/") || p.includes("..") || p.includes("\\") || p.includes("\0")) {
     return sendJson(res, 404, { error: "资源不存在" });
   }
-  if (!STATIC_ALLOW.some((re) => re.test(p))) return sendJson(res, 404, { error: "资源不存在" });
-  const abs = path.normalize(path.join(root, p));
-  if (!abs.startsWith(root + path.sep)) return sendJson(res, 404, { error: "资源不存在" });
+  const diskPath = staticDiskPath(p);
+  if (!diskPath) return sendJson(res, 404, { error: "资源不存在" });
+
+  const rootAbs = path.resolve(root);
+  const abs = path.resolve(rootAbs, "." + diskPath);
+  const rel = path.relative(rootAbs, abs);
+  if (!rel || rel.startsWith(".." + path.sep) || path.isAbsolute(rel)) {
+    return sendJson(res, 404, { error: "资源不存在" });
+  }
 
   fs.stat(abs, (err, st) => {
     if (err || !st.isFile()) return sendJson(res, 404, { error: "资源不存在" });
+    const isReactAsset = p.startsWith("/react/assets/");
     res.writeHead(200, {
       "Content-Type": MIME[path.extname(abs).toLowerCase()] || "application/octet-stream",
       "Content-Length": st.size,
-      "Cache-Control": "no-cache",
+      "Cache-Control": isReactAsset ? "public, max-age=31536000, immutable" : "no-cache",
     });
     if (req.method === "HEAD") return res.end();
     fs.createReadStream(abs).pipe(res);

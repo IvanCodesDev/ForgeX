@@ -19,18 +19,26 @@ class KnowledgeStore {
     });
   }
 
-  create(name, text) {
+  create(name, text, owner) {
     const body = String(text || "");
     if (!body.trim()) throw new HttpError(400, "知识文档内容为空");
     if (body.length > MAX_TEXT) throw new HttpError(413, "知识文档超过 512KB");
     const id = "kb_" + crypto.randomBytes(8).toString("hex");
-    const doc = { id, name: String(name || "knowledge.md").slice(0, 80), text: body, createdAt: Date.now() };
+    const doc = {
+      id,
+      name: String(name || "knowledge.md").slice(0, 80),
+      text: body,
+      owner: String(owner || "legacy:unowned"),
+      createdAt: Date.now(),
+    };
     this.map.set(doc);        // FileStore 自带容量淘汰
     return doc;
   }
 
-  all() {
-    return this.map.all();
+  all(owner) {
+    const docs = this.map.all();
+    if (owner == null) return docs;
+    return docs.filter((doc) => doc.owner === owner);
   }
 
   sweep(now) {

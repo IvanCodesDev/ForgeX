@@ -1,0 +1,30 @@
+@ForgeX_Api = http://127.0.0.1:8788
+
+### Liveness
+GET {{ForgeX_Api}}/health/live
+Accept: application/json
+
+### Readiness
+GET {{ForgeX_Api}}/health/ready
+Accept: application/json
+
+### Compatibility health
+GET {{ForgeX_Api}}/healthz
+Accept: application/json
+
+### OpenAPI contract
+GET {{ForgeX_Api}}/openapi/v1.json
+Accept: application/json
+
+### Authoritative streaming G-code analysis
+POST {{ForgeX_Api}}/api/v1/gcode/analyze?bedSizeMm=256&coordinateOrigin=corner&filamentDensityGPerCm3=1.24
+Content-Type: application/x-gcode
+Accept: application/json
+
+< ../../../validation/fixtures/cura-marlin.gcode
+
+### Stable problem+json example (unsupported media type)
+POST {{ForgeX_Api}}/api/v1/gcode/analyze
+Content-Type: text/plain
+
+G28

@@ -13,7 +13,10 @@ function loadEnvFile(file) {
     const eq = t.indexOf("=");
     if (eq <= 0) continue;
     const k = t.slice(0, eq).trim();
-    const v = t.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
+    const v = t
+      .slice(eq + 1)
+      .trim()
+      .replace(/^["']|["']$/g, "");
     if (!(k in process.env)) process.env[k] = v;
   }
 }
@@ -23,60 +26,120 @@ function num(v, dflt) {
   return Number.isFinite(n) ? n : dflt;
 }
 
+const GCODE_AUTHORITY_HARD_MAX_BYTES = 64 * 1024 * 1024;
+
+function normalizeAuthorityOrigin(value, allowRemote) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  let target;
+  try {
+    target = new URL(raw);
+  } catch (e) {
+    throw new Error("GCODE_AUTHORITY_URL 必须是合法的 http(s) origin", { cause: e });
+  }
+  if (target.protocol !== "http:" && target.protocol !== "https:") {
+    throw new Error("GCODE_AUTHORITY_URL 只允许 http(s)");
+  }
+  if (target.username || target.password) {
+    throw new Error("GCODE_AUTHORITY_URL 禁止携带凭据");
+  }
+  if (target.pathname !== "/" || target.search || target.hash) {
+    throw new Error("GCODE_AUTHORITY_URL 只能配置 origin，禁止路径、查询参数或片段");
+  }
+
+  const hostname = target.hostname.toLowerCase();
+  const loopback = hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]";
+  if (!allowRemote && !loopback) {
+    throw new Error("GCODE_AUTHORITY_URL 默认只允许 loopback；远端部署需显式启用 GCODE_AUTHORITY_ALLOW_REMOTE=1");
+  }
+  return target.origin;
+}
+
 function getConfig(overrides) {
   loadEnvFile(path.join(__dirname, ".env"));
   const env = process.env;
-  const cfg = Object.assign({
-    host: env.HOST || "127.0.0.1",          // 部署平台一般要求 HOST=0.0.0.0
-    port: num(env.PORT, 8787),
-    staticRoot: path.resolve(__dirname, ".."),
-    publicBase: env.PUBLIC_BASE || "",       // 分享链接前缀（部署后填公网域名）
-    allowOrigins: (env.ALLOW_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean),
-    trustProxy: env.TRUST_PROXY === "1",
-    rateLimitMs: num(env.RATE_LIMIT_MS, 5000),
-    // 规则引擎每阶段的人造延时。默认 0：规则引擎本就是毫秒级，
-    // 拖慢进度条只是为了「看起来在思考」，属于欺骗性 UI。仅演示录屏时才显式打开。
-    mockDelayMs: num(env.MOCK_DELAY_MS, 0),
-    taskTtlMs: num(env.TASK_TTL_MS, 60 * 60 * 1000),
-    logLevel: env.LOG_LEVEL || "info",
-    infiniKey: env.INFINI_API_KEY || "",
-    infiniServerUrl: env.INFINI_SERVER_URL || "https://app.infinisynapse.cn",
-    infiniConsoleUrl: env.INFINI_CONSOLE_URL || "https://api.infinisynapse.cn/api",
-    infiniVerified: env.INFINI_VERIFIED === "1",
-    infiniTimeoutMs: num(env.INFINI_TIMEOUT_MS, 180000),
-    forceMock: env.INFINI_MOCK === "1",
+  const cfg = Object.assign(
+    {
+      host: env.HOST || "127.0.0.1", // 部署平台一般要求 HOST=0.0.0.0
+      port: num(env.PORT, 8787),
+      staticRoot: path.resolve(__dirname, ".."),
+      publicBase: env.PUBLIC_BASE || "", // 分享链接前缀（部署后填公网域名）
+      allowOrigins: (env.ALLOW_ORIGINS || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+      trustProxy: env.TRUST_PROXY === "1",
+      rateLimitMs: num(env.RATE_LIMIT_MS, 5000),
+      // 规则引擎每阶段的人造延时。默认 0：规则引擎本就是毫秒级，
+      // 拖慢进度条只是为了「看起来在思考」，属于欺骗性 UI。仅演示录屏时才显式打开。
+      mockDelayMs: num(env.MOCK_DELAY_MS, 0),
+      taskTtlMs: num(env.TASK_TTL_MS, 60 * 60 * 1000),
+      logLevel: env.LOG_LEVEL || "info",
+      infiniKey: env.INFINI_API_KEY || "",
+      infiniServerUrl: env.INFINI_SERVER_URL || "https://app.infinisynapse.cn",
+      infiniConsoleUrl: env.INFINI_CONSOLE_URL || "https://api.infinisynapse.cn/api",
+      infiniVerified: env.INFINI_VERIFIED === "1",
+      infiniTimeoutMs: num(env.INFINI_TIMEOUT_MS, 180000),
+      forceMock: env.INFINI_MOCK === "1",
 
-    // ── OpenAI 兼容 provider（OpenAI / Azure / Ollama / vLLM / 各家兼容端点）──
-    openaiKey: env.OPENAI_API_KEY || "",
-    openaiBaseUrl: env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-    openaiModel: env.OPENAI_MODEL || "",
-    openaiTimeoutMs: num(env.OPENAI_TIMEOUT_MS, 120000),
+      // ── InfiniSynapse Partner SSO（路线 B：用户授权、用户结算）──
+      // clientSecret 只能存在服务端；前端只接触登录入口与脱敏后的用户资料。
+      infiniPartnerApi: env.INFINI_PARTNER_API || "https://api.infinisynapse.cn/api",
+      infiniPartnerClientId: env.INFINI_PARTNER_CLIENT_ID || "",
+      infiniPartnerClientSecret: env.INFINI_PARTNER_CLIENT_SECRET || "",
+      loginSessionTtlMs: num(env.LOGIN_SESSION_TTL_MS, 7 * 24 * 60 * 60 * 1000),
 
-    // 显式指定 provider：auto / local / infinisynapse / openai
-    providerPref: env.ANALYSIS_PROVIDER || "auto",
+      // ── OpenAI 兼容 provider（OpenAI / Azure / Ollama / vLLM / 各家兼容端点）──
+      openaiKey: env.OPENAI_API_KEY || "",
+      openaiBaseUrl: env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+      openaiModel: env.OPENAI_MODEL || "",
+      openaiTimeoutMs: num(env.OPENAI_TIMEOUT_MS, 120000),
 
-    // 结果缓存：同一「问题 + 数据集 + provider」不重复调用 AI（省钱也省等待）
-    cacheTtlMs: num(env.RESULT_CACHE_TTL_MS, 30 * 60 * 1000),
-    cacheMax: num(env.RESULT_CACHE_MAX, 200),
+      // 显式指定 provider：auto / local / infinisynapse / openai
+      providerPref: env.ANALYSIS_PROVIDER || "auto",
 
-    // ── 持久化 ──────────────────────────────
-    // 重启不再丢一切。设为空字符串可显式关闭（回到纯内存）。
-    dataDir: env.DATA_DIR === "" ? "" : (env.DATA_DIR || path.resolve(__dirname, "..", "data")),
+      // 结果缓存：同一「问题 + 数据集 + provider」不重复调用 AI（省钱也省等待）
+      cacheTtlMs: num(env.RESULT_CACHE_TTL_MS, 30 * 60 * 1000),
+      cacheMax: num(env.RESULT_CACHE_MAX, 200),
 
-    // ── 成本闸门（公网部署的生死线，见 server/lib/quota.js）──
-    // 规则引擎不受任何闸门限制——它不花钱。这里限的只有 AI provider 调用。
-    aiConcurrency: num(env.AI_CONCURRENCY, 2),
-    aiQueueMax: num(env.AI_QUEUE_MAX, 8),
-    dailyPerCaller: num(env.AI_DAILY_PER_CALLER, 20),
-    dailyGlobal: num(env.AI_DAILY_GLOBAL, 200),
+      // ── 持久化 ──────────────────────────────
+      // 重启不再丢一切。设为空字符串可显式关闭（回到纯内存）。
+      dataDir: env.DATA_DIR === "" ? "" : env.DATA_DIR || path.resolve(__dirname, "..", "data"),
 
-    // ── 鉴权（默认关闭；配了 API_KEYS 才启用）──
-    apiKeys: env.API_KEYS || "",
-    requireAuth: env.REQUIRE_AUTH === "1",
+      // ── 成本闸门（公网部署的生死线，见 server/lib/quota.js）──
+      // 规则引擎不受任何闸门限制——它不花钱。这里限的只有 AI provider 调用。
+      aiConcurrency: num(env.AI_CONCURRENCY, 2),
+      aiQueueMax: num(env.AI_QUEUE_MAX, 8),
+      dailyPerCaller: num(env.AI_DAILY_PER_CALLER, 20),
+      dailyGlobal: num(env.AI_DAILY_GLOBAL, 200),
 
-    // 启动时探活 provider，失败自动降级为规则引擎（取代人工 INFINI_VERIFIED 门禁的下一步）
-    probeProvider: env.PROBE_PROVIDER !== "0",
-  }, overrides || {});
+      // ── 鉴权（默认关闭；配了 API_KEYS 才启用）──
+      apiKeys: env.API_KEYS || "",
+      requireAuth: env.REQUIRE_AUTH === "1",
+
+      // ── C# G-code 权威计算 sidecar ────────────
+      // 默认关闭；生产建议同机 loopback。代理固定到 /api/v1/gcode/analyze，
+      // 不接受目标路径，也不把浏览器凭据传给 sidecar。
+      gcodeAuthorityUrl: env.GCODE_AUTHORITY_URL || "",
+      gcodeAuthorityAllowRemote: env.GCODE_AUTHORITY_ALLOW_REMOTE === "1",
+      gcodeAuthorityTimeoutMs: num(env.GCODE_AUTHORITY_TIMEOUT_MS, 120000),
+      gcodeAuthorityMaxBytes: GCODE_AUTHORITY_HARD_MAX_BYTES,
+
+      // 启动时探活 provider，失败自动降级为规则引擎（取代人工 INFINI_VERIFIED 门禁的下一步）
+      probeProvider: env.PROBE_PROVIDER !== "0",
+    },
+    overrides || {}
+  );
+
+  cfg.gcodeAuthorityAllowRemote = cfg.gcodeAuthorityAllowRemote === true || cfg.gcodeAuthorityAllowRemote === "1";
+  cfg.gcodeAuthorityUrl = normalizeAuthorityOrigin(cfg.gcodeAuthorityUrl, cfg.gcodeAuthorityAllowRemote);
+  cfg.gcodeAuthorityTimeoutMs = Math.max(1, num(cfg.gcodeAuthorityTimeoutMs, 120000));
+  // 生产硬上限恒为 64 MiB；测试可通过 override 缩小，任何配置都不能放大。
+  cfg.gcodeAuthorityMaxBytes = Math.min(
+    GCODE_AUTHORITY_HARD_MAX_BYTES,
+    Math.max(1, num(cfg.gcodeAuthorityMaxBytes, GCODE_AUTHORITY_HARD_MAX_BYTES))
+  );
 
   /* ── provider 选择 ──────────────────────────
      优先级：强制降级 > 显式指定 > 自动探测（InfiniSynapse > OpenAI 兼容 > 本地规则）。
@@ -91,11 +154,13 @@ function getConfig(overrides) {
     cfg.providerReason = cfg.forceMock ? "INFINI_MOCK=1 强制使用规则引擎" : "ANALYSIS_PROVIDER=local";
   } else if (pref === "infinisynapse") {
     cfg.provider = infiniReady ? "infinisynapse" : "local";
-    cfg.providerReason = infiniReady ? "显式指定 InfiniSynapse"
+    cfg.providerReason = infiniReady
+      ? "显式指定 InfiniSynapse"
       : "指定了 InfiniSynapse 但密钥/核准不全，降级为规则引擎";
   } else if (pref === "openai") {
     cfg.provider = openaiReady ? "openai" : "local";
-    cfg.providerReason = openaiReady ? "显式指定 OpenAI 兼容端点（" + cfg.openaiModel + "）"
+    cfg.providerReason = openaiReady
+      ? "显式指定 OpenAI 兼容端点（" + cfg.openaiModel + "）"
       : "指定了 OpenAI 兼容端点但缺 OPENAI_API_KEY / OPENAI_MODEL，降级为规则引擎";
   } else if (infiniReady) {
     cfg.provider = "infinisynapse";
@@ -114,4 +179,4 @@ function getConfig(overrides) {
   return cfg;
 }
 
-module.exports = { getConfig };
+module.exports = { getConfig, GCODE_AUTHORITY_HARD_MAX_BYTES };

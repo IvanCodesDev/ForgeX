@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ["18", "20", "22"]
+        node: ["22"]
     steps:
       - uses: actions/checkout@v4
 
@@ -48,7 +48,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: 安装开发工具链
         run: npm install --no-audit --no-fund
@@ -56,6 +56,71 @@ jobs:
       - run: npm run lint
 
       - run: npm run format:check
+
+  frontend:
+    name: React frontend · typecheck, test & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: 安装锁定依赖
+        run: npm ci --no-audit --no-fund
+
+      - name: TypeScript 严格类型检查
+        run: npm run frontend:typecheck
+
+      - name: 前端单元测试
+        run: npm run test --workspace @forgex/frontend
+
+      - name: 生成 /react 构建产物
+        run: npm run frontend:build
+
+      - name: 生成并校验 file:// 单文件演示包
+        run: npm run frontend:build:offline
+
+  dotnet-authority:
+    name: .NET 10 authoritative core · golden gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.302"
+
+      - name: 验证生产项目无外部 NuGet 包
+        shell: bash
+        run: |
+          if grep -RIn --include='*.csproj' '<PackageReference' backend; then
+            echo "::error::生产 .NET 项目必须保持零外部 NuGet PackageReference"
+            exit 1
+          fi
+          echo "OK: backend 中无外部 NuGet PackageReference"
+
+      - name: Restore（空 NuGet 源）
+        run: npm run dotnet:restore
+
+      - name: Build（Release / no restore）
+        run: node tools/run-dotnet.js build backend/ForgeX.sln --configuration Release --no-restore
+
+      - name: JS/C# GoldenDiff
+        run: node tools/run-dotnet.js run --project backend/tests/ForgeX.GoldenDiff/ForgeX.GoldenDiff.csproj --configuration Release --no-build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gcode-golden-diff-dotnet-10.0.302
+          path: backend/artifacts/gcode-golden-diff.json
+          if-no-files-found: error
+          retention-days: 14
 
   honesty:
     name: 诚实性检查
@@ -65,7 +130,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: 密钥不得入库
         run: |
@@ -178,7 +243,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: 安装工具链与浏览器
         run: |

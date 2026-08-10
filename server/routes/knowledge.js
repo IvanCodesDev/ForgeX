@@ -10,15 +10,17 @@
         往提示词里塞无关内容只会干扰模型。 */
 "use strict";
 const { HttpError, readJson, sendJson } = require("../lib/http");
+const { resolveIdentity } = require("../lib/identity");
 const { retrieve } = require("../services/retrieval");
 
 function register(router, ctx) {
   const { knowledge, tasks } = ctx;
 
-  router.add("POST", /^\/api\/knowledge$/, async (req, res) => {
+  router.add("POST", /^\/api\/knowledge$/, async (req, res, m, rc) => {
+    const identity = resolveIdentity(req, rc, ctx);
     const body = await readJson(req, 600 * 1024);
     if (typeof body.text !== "string") throw new HttpError(400, "text 字段不能为空");
-    const doc = knowledge.create(body.name, body.text);
+    const doc = knowledge.create(body.name, body.text, identity.tenantId);
     const aiEnabled = !!(tasks && tasks.provider && tasks.provider.capabilities.ai);
     sendJson(res, 201, {
       knowledgeId: doc.id,
@@ -35,14 +37,16 @@ function register(router, ctx) {
   });
 
   /** 检索预览：让用户能自己验证「问这个问题时会检索到什么」，而不是盲信 */
-  router.add("POST", /^\/api\/knowledge\/search$/, async (req, res) => {
+  router.add("POST", /^\/api\/knowledge\/search$/, async (req, res, m, rc) => {
+    const identity = resolveIdentity(req, rc, ctx);
     const body = await readJson(req, 8 * 1024);
     const q = String(body.question || "").trim();
     if (!q) throw new HttpError(400, "question 不能为空");
-    const hits = retrieve(knowledge.all(), q, { topK: Number(body.topK) || 4 });
+    const docs = knowledge.all(identity.tenantId);
+    const hits = retrieve(docs, q, { topK: Number(body.topK) || 4 });
     sendJson(res, 200, {
       question: q,
-      docCount: knowledge.all().length,
+      docCount: docs.length,
       hits: hits,
       note: hits.length ? undefined : "没有检索到相关片段——分析时不会注入任何知识内容。",
     });

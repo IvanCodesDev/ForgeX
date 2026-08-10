@@ -182,6 +182,30 @@
     return parseCsv(src, name);
   };
 
+  /** 核对当前导入 G-code 的原始字节摘要与真机日志声明。 */
+  L.verifyGcodeBinding = function (gcode, log) {
+    var expected = String(log && log.gcodeSha256 || "").trim().toLowerCase();
+    var actual = String(gcode && gcode.sha256 || "").trim().toLowerCase();
+    if (!expected) {
+      return { verified: false, status: "missing", expected: "", actual: actual,
+        message: "真机日志未声明 gcodeSha256，本次对账未建立文件级绑定" };
+    }
+    if (!/^[a-f0-9]{64}$/.test(expected)) {
+      return { verified: false, status: "invalid", expected: expected, actual: actual,
+        message: "真机日志中的 gcodeSha256 格式无效" };
+    }
+    if (!/^[a-f0-9]{64}$/.test(actual)) {
+      return { verified: false, status: "unavailable", expected: expected, actual: actual,
+        message: "当前 G-code 尚未完成 SHA-256 计算" };
+    }
+    if (expected !== actual) {
+      return { verified: false, status: "mismatch", expected: expected, actual: actual,
+        message: "真机日志绑定的 G-code SHA-256 与当前文件不匹配" };
+    }
+    return { verified: true, status: "verified", expected: expected, actual: actual,
+      message: "真机日志与当前 G-code 的 SHA-256 已验证一致" };
+  };
+
   function comparison(name, planned, actual, unit, tolerance, note) {
     var rel = planned > 0 ? Math.abs(actual - planned) / planned : 0;
     return {

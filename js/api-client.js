@@ -7,16 +7,33 @@
   var C = {
     /** 后端地址：同源部署留空；分离部署在此处或 window.FX_API_BASE 配置 */
     base: (typeof window !== "undefined" && window.FX_API_BASE) || "",
-    available: false,       // healthz 探测结果
-    engineMode: "",         // 后端引擎 id（server-rules / infinisynapse / openai-compatible）
-    providerLabel: "",      // 人类可读的 provider 名称
-    capabilities: null,     // {ai, streaming, structuredOutput}
+    available: false, // healthz 探测结果
+    engineMode: "", // 后端引擎 id（server-rules / infinisynapse / openai-compatible）
+    providerLabel: "", // 人类可读的 provider 名称
+    capabilities: null, // {ai, streaming, structuredOutput}
     calibrationSync: { status: "idle", count: 0, error: "" },
     _probed: false,
     _probePromise: null,
   };
 
-  function join(p) { return C.base + p; }
+  function join(p) {
+    return C.base + p;
+  }
+  C.url = join;
+
+  C.authMe = function () {
+    return fetch(join("/api/auth/infini/me"), { method: "GET", credentials: "same-origin" }).then(function (r) {
+      if (!r.ok) throw new Error("登录状态读取失败");
+      return r.json();
+    });
+  };
+
+  C.logout = function () {
+    return fetch(join("/api/auth/infini/logout"), { method: "POST", credentials: "same-origin" }).then(function (r) {
+      if (!r.ok) throw new Error("退出失败");
+      return r.json();
+    });
+  };
 
   /** 探测后端可用性（file:// 直开 / 后端未部署时静默失败） */
   C.probe = function () {
@@ -26,7 +43,9 @@
       return Promise.resolve(false);
     }
     C._probePromise = fetch(join("/healthz"), { method: "GET" })
-      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (r) {
+        return r.ok ? r.json() : null;
+      })
       .then(function (j) {
         C.available = !!(j && j.ok);
         C.engineMode = (j && j.engine) || "";
@@ -36,7 +55,11 @@
         C._probed = true;
         return C.available;
       })
-      .catch(function () { C.available = false; C._probed = true; return false; })
+      .catch(function () {
+        C.available = false;
+        C._probed = true;
+        return false;
+      })
       .then(function (available) {
         C._probePromise = null;
         return available;
@@ -84,26 +107,39 @@
   /** 订阅任务进度 SSE：/api/analyze/:taskId/stream
       onEvent({stage, message, progress}) / onDone() / onError(err)；返回 close() */
   C.stream = function (taskId, onEvent, onDone, onError) {
-    if (typeof EventSource === "undefined") { onError(new Error("浏览器不支持 SSE")); return function () {}; }
+    if (typeof EventSource === "undefined") {
+      onError(new Error("浏览器不支持 SSE"));
+      return function () {};
+    }
     var es = new EventSource(join("/api/analyze/" + encodeURIComponent(taskId) + "/stream"));
     es.onmessage = function (ev) {
       try {
         var data = JSON.parse(ev.data);
-        if (data.done) { es.close(); onDone(); return; }
+        if (data.done) {
+          es.close();
+          onDone();
+          return;
+        }
         onEvent(data);
-      } catch (e) { /* 忽略无法解析的心跳行 */ }
+      } catch (e) {
+        /* 忽略无法解析的心跳行 */
+      }
     };
-    es.onerror = function () { es.close(); onError(new Error("进度流中断")); };
-    return function () { es.close(); };
+    es.onerror = function () {
+      es.close();
+      onError(new Error("进度流中断"));
+    };
+    return function () {
+      es.close();
+    };
   };
 
   /** 拉取任务结果：GET /api/analyze/:taskId/result → 报告（与 FXInsightEngine.analyze 同构） */
   C.result = function (taskId) {
-    return fetch(join("/api/analyze/" + encodeURIComponent(taskId) + "/result"))
-      .then(function (r) {
-        if (!r.ok) throw new Error("结果获取失败（HTTP " + r.status + "）");
-        return r.json();
-      });
+    return fetch(join("/api/analyze/" + encodeURIComponent(taskId) + "/result")).then(function (r) {
+      if (!r.ok) throw new Error("结果获取失败（HTTP " + r.status + "）");
+      return r.json();
+    });
   };
 
   /** 上传数据源（CSV 文本）：POST /api/datasource → {datasourceId} */
@@ -121,11 +157,10 @@
 
   /** 生成公开分享页：POST /api/share/:taskId → {publicUrl} */
   C.share = function (taskId) {
-    return fetch(join("/api/share/" + encodeURIComponent(taskId)), { method: "POST" })
-      .then(function (r) {
-        if (!r.ok) throw new Error("分享生成失败（HTTP " + r.status + "）");
-        return r.json();
-      });
+    return fetch(join("/api/share/" + encodeURIComponent(taskId)), { method: "POST" }).then(function (r) {
+      if (!r.ok) throw new Error("分享生成失败（HTTP " + r.status + "）");
+      return r.json();
+    });
   };
 
   /** 上传知识文档（工艺术语表 / 材料参数 / 设备手册）：POST /api/knowledge */

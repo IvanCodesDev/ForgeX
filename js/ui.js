@@ -803,26 +803,28 @@
       const rd = new FileReader();
       rd.onerror = () => this.toast("G-code 文件读取失败", "err");
       rd.onload = () => {
-        try {
-          const origin = this.sim.printer.KIN_TAG === "delta" ? "center" : "corner";
-          const parsed = FXGcodeParser.parse(rd.result, {
+        FXGcodeParser.sha256(rd.result).then((sha256) => {
+          const sourceText = new root.TextDecoder("utf-8").decode(new Uint8Array(rd.result));
+          const origin = String(this.sim.printer.KIN_TAG || "").toLowerCase() === "delta" ? "center" : "corner";
+          const parsed = FXGcodeParser.parse(sourceText, {
             densityG: this.sim.material.densityG,
             bedSize: this.sim.printer.BED_SIZE || 256,
             origin,
           });
+          parsed.sha256 = sha256;
           const reconcile = FXGcodeParser.reconcile(parsed);
-          this.sim.loadImportedToolpath(parsed, { name: f.name, sourceText: rd.result });
-          this._gcodeState = { name: f.name, parsed, reconcile };
+          this.sim.loadImportedToolpath(parsed, { name: f.name, sourceText });
+          this._gcodeState = { name: f.name, parsed, reconcile, sha256 };
           this._machineLogState = null;
           this._applyLocks();
           if (this.currentNav === "import") this.renderCtx("import");
-          this.toast(`已解析 ${parsed.totalLayers} 层真实 G-code，可开始逐层回放`, "ok");
-        } catch (e) {
+          this.toast(`已解析 ${parsed.totalLayers} 层真实 G-code · SHA-256 ${sha256.slice(0, 12)}…`, "ok");
+        }).catch((e) => {
           console.error("[gcode-import]", e);
           this.toast("G-code 导入失败：" + (e && e.message || e), "err");
-        }
+        });
       };
-      rd.readAsText(f);
+      rd.readAsArrayBuffer(f);
     }
 
     _handleMachineLogFile(f) {
@@ -837,10 +839,16 @@
       rd.onload = () => {
         try {
           const log = FXMachineLog.parse(rd.result, { name: f.name });
+          const binding = FXMachineLog.verifyGcodeBinding(this._gcodeState.parsed, log);
+          if (binding.status === "invalid" || binding.status === "unavailable" || binding.status === "mismatch") {
+            throw new Error(binding.message);
+          }
+          log.gcodeBinding = binding;
+          if (!binding.verified) log.warnings.push(binding.message);
           const comparison = FXMachineLog.compare(this._gcodeState.parsed, log);
           const observation = FXTimeCalibration.observation(this._gcodeState.parsed, log);
           const calibration = this._calibrationFor(this._gcodeState.parsed, log, true);
-          this._machineLogState = { log, comparison, observation, calibration };
+          this._machineLogState = { log, comparison, observation, calibration, binding };
           if (this.currentNav === "import") this.renderCtx("import");
           this.toast(`真机日志已接入：生成 ${comparison.length} 项计划/实测对比`, "ok");
         } catch (e) {

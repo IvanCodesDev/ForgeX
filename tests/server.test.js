@@ -8,6 +8,7 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const { createApp } = require("../server/index");
+const { getConfig, GCODE_AUTHORITY_HARD_MAX_BYTES } = require("../server/config");
 
 /* 测试必须与真实数据完全隔离：每个实例一个临时目录，跑完删掉。
    否则测试会往仓库的 data/ 里写文件，还会读到上一次跑的残留。 */
@@ -32,6 +33,35 @@ function check(name, cond, detail) {
 function listen(app) {
   return new Promise((resolve) => {
     app.server.listen(0, "127.0.0.1", () => resolve(app.server.address().port));
+  });
+}
+
+function listenServer(server) {
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => resolve(server.address().port));
+  });
+}
+
+function closeServer(server) {
+  return new Promise((resolve) => server.close(() => resolve()));
+}
+
+function rawRequest(url, headers, chunks) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url);
+    const req = http.request(target, { method: "POST", headers: headers || {} }, (res) => {
+      const body = [];
+      res.on("data", (chunk) => body.push(chunk));
+      res.on("end", () => {
+        const text = Buffer.concat(body).toString("utf8");
+        let json = null;
+        try { json = JSON.parse(text); } catch (e) { /* 非 JSON 响应 */ }
+        resolve({ status: res.statusCode, headers: res.headers, text, json });
+      });
+    });
+    req.on("error", reject);
+    for (const chunk of chunks || []) req.write(chunk);
+    req.end();
   });
 }
 
@@ -132,6 +162,62 @@ async function main() {
     check("编码路径穿越被拒", trav.status === 404, String(trav.status));
     const docs = await jfetch(base, "/doc/architecture.md");
     check("已移除的 doc 目录不可达", docs.status === 404, String(docs.status));
+  }
+
+  console.log("\n[2b] React 构建产物严格映射");
+  {
+    // 不依赖工作区里是否恰好存在 dist：临时构造一份最小 Vite 产物，
+    // 从而保证 clean checkout 与开发机重复运行的结果完全一致。
+    const staticRoot = tmpDataDir();
+    const reactDist = path.join(staticRoot, "dist", "react");
+    const assetsDir = path.join(reactDist, "assets");
+    fs.mkdirSync(assetsDir, { recursive: true });
+    fs.writeFileSync(path.join(reactDist, "index.html"), "<!doctype html><title>React fixture</title>");
+    fs.writeFileSync(path.join(assetsDir, "app-abc123.js"), "globalThis.__REACT_FIXTURE__=true;");
+
+    const reactApp = createApp({
+      staticRoot,
+      dataDir: tmpDataDir(),
+      rateLimitMs: 0,
+      logLevel: "error",
+      forceMock: true,
+    });
+    const reactBase = "http://127.0.0.1:" + (await listen(reactApp));
+
+    const noSlash = await jfetch(reactBase, "/react");
+    check("GET /react 映射到 React index", noSlash.status === 200 && /React fixture/.test(noSlash.text), noSlash.text);
+    const slash = await jfetch(reactBase, "/react/");
+    check("GET /react/ 映射到 React index", slash.status === 200 && /React fixture/.test(slash.text), slash.text);
+    const asset = await jfetch(reactBase, "/react/assets/app-abc123.js");
+    check("仅 /react/assets/* 映射构建资产", asset.status === 200 && /REACT_FIXTURE/.test(asset.text), asset.text);
+    check(
+      "React 哈希资产使用 immutable 缓存",
+      /immutable/.test(asset.headers.get("cache-control") || ""),
+      asset.headers.get("cache-control")
+    );
+    const head = await jfetch(reactBase, "/react/assets/app-abc123.js", { method: "HEAD" });
+    check("React 资产支持 HEAD 且不返回正文", head.status === 200 && head.text === "", JSON.stringify(head));
+
+    const directDist = await jfetch(reactBase, "/dist/react/index.html");
+    check("磁盘 dist 路径不可直接访问", directDist.status === 404, String(directDist.status));
+    const rootAsset = await jfetch(reactBase, "/assets/app-abc123.js");
+    check("React 资产不泄露到根 /assets", rootAsset.status === 404, String(rootAsset.status));
+    const extraEntry = await jfetch(reactBase, "/react/index.html");
+    check("React 非约定入口默认拒绝", extraEntry.status === 404, String(extraEntry.status));
+    const emptyAsset = await jfetch(reactBase, "/react/assets/");
+    check("React assets 目录不可列出", emptyAsset.status === 404, String(emptyAsset.status));
+    const encodedTraversal = await jfetch(
+      reactBase,
+      "/react/assets/%2e%2e%2Fassets%2Fapp-abc123.js"
+    );
+    check("React assets 编码点路径被拒绝", encodedTraversal.status === 404, String(encodedTraversal.status));
+    const nonCanonical = await jfetch(reactBase, "/react//assets/app-abc123.js");
+    check("React 非规范双斜杠路径被拒绝", nonCanonical.status === 404, String(nonCanonical.status));
+
+    fs.rmSync(reactDist, { recursive: true, force: true });
+    const missing = await jfetch(reactBase, "/react");
+    check("React 构建产物缺失时明确返回 404", missing.status === 404, String(missing.status));
+    await reactApp.close();
   }
 
   console.log("\n[3] 数据源上传与校验");
@@ -675,6 +761,364 @@ console.log("\n[22] 分享页：可撤销 + 披露可信度与数据来源");
   const gone = await jfetch(base, "/share/" + sh.json.token);
   check("撤销后分享页立即失效", gone.status === 404, String(gone.status));
   await app.close();
+}
+
+console.log("\n[23] C# G-code 权威计算同源流式代理");
+{
+  const authorityRequests = [];
+  const authority = http.createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("error", () => { /* 代理主动中止超限请求时忽略 */ });
+    req.on("end", () => {
+      const body = Buffer.concat(chunks);
+      authorityRequests.push({ url: req.url, headers: req.headers, body });
+      const requestedStatus = new URL(req.url, "http://authority.invalid").searchParams.get("status");
+      res.writeHead(requestedStatus === "200" ? 200 : 207, {
+        "Content-Type": "application/vnd.forgex.authority+json; charset=utf-8",
+        Traceparent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        "X-Correlation-ID": "csharp-authority-42",
+      });
+      res.end(JSON.stringify({ receivedBytes: body.length, authoritative: true }));
+    });
+  });
+  const authorityPort = await listenServer(authority);
+  const authorityOrigin = "http://127.0.0.1:" + authorityPort;
+
+  const proxyApp = createApp({
+    logLevel: "error",
+    forceMock: true,
+    rateLimitMs: 0,
+    dataDir: tmpDataDir(),
+    gcodeAuthorityUrl: authorityOrigin,
+  });
+  const proxyBase = "http://127.0.0.1:" + (await listen(proxyApp));
+  const source = Buffer.from("G28\r\nG1 X10.25 Y4.5 E0.42\n; 原始字节\n", "utf8");
+  const success = await jfetch(proxyBase, "/api/v1/gcode/analyze?bedSizeX=220&origin=center", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "text/x-gcode",
+      Authorization: "Bearer browser-secret",
+      Cookie: "session=browser-secret",
+      "X-API-Key": "browser-secret",
+      "X-Request-ID": "browser-controlled-secret",
+    },
+    body: source,
+  });
+  const observed = authorityRequests[0];
+  check("权威代理透传上游状态码", success.status === 207, String(success.status));
+  check(
+    "权威代理透传 Content-Type",
+    /application\/vnd\.forgex\.authority\+json/.test(success.headers.get("content-type") || ""),
+    success.headers.get("content-type")
+  );
+  check(
+    "权威代理透传 trace headers",
+    success.headers.get("traceparent") === "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01" &&
+      success.headers.get("x-correlation-id") === "csharp-authority-42"
+  );
+  check(
+    "权威代理固定目标路径并保留 query",
+    observed && observed.url === "/api/v1/gcode/analyze?bedSizeX=220&origin=center",
+    observed && observed.url
+  );
+  check("权威代理逐字节保留 raw body", observed && observed.body.equals(source));
+  check(
+    "Cookie/API key/Authorization 均不转发到 C#",
+    observed && !observed.headers.cookie && !observed.headers.authorization && !observed.headers["x-api-key"],
+    observed && JSON.stringify(observed.headers)
+  );
+  check(
+    "客户端伪造的请求 ID 不透传，Node 生成新 trace ID",
+    observed && /^[0-9a-f]{8}$/.test(observed.headers["x-request-id"] || ""),
+    observed && observed.headers["x-request-id"]
+  );
+  check(
+    "生产 G-code 请求体硬上限固定为 64 MiB",
+    proxyApp.cfg.gcodeAuthorityMaxBytes === GCODE_AUTHORITY_HARD_MAX_BYTES,
+    String(proxyApp.cfg.gcodeAuthorityMaxBytes)
+  );
+  check("REQUIRE_AUTH=0 时保持匿名调用兼容", proxyApp.cfg.requireAuth === false && success.status === 207);
+  await proxyApp.close();
+
+  const protectedApp = createApp({
+    logLevel: "error",
+    forceMock: true,
+    rateLimitMs: 0,
+    dataDir: tmpDataDir(),
+    gcodeAuthorityUrl: authorityOrigin,
+    apiKeys: "authority-key",
+    requireAuth: true,
+  });
+  const protectedBase = "http://127.0.0.1:" + (await listen(protectedApp));
+  const beforeProtected = authorityRequests.length;
+  const anonymous = await jfetch(protectedBase, "/api/v1/gcode/analyze?status=200", {
+    method: "POST",
+    headers: { "Content-Type": "text/x-gcode" },
+    body: "G28\n",
+  });
+  check("REQUIRE_AUTH=1 时匿名权威分析返回 401", anonymous.status === 401, anonymous.text);
+  check("身份守卫拒绝时不连接 sidecar", authorityRequests.length === beforeProtected);
+
+  const apiKeyAccepted = await jfetch(protectedBase, "/api/v1/gcode/analyze?status=200&auth=x-api-key", {
+    method: "POST",
+    headers: { "Content-Type": "text/x-gcode", "X-API-Key": "authority-key" },
+    body: "G28\n",
+  });
+  const bearerAccepted = await jfetch(protectedBase, "/api/v1/gcode/analyze?status=200&auth=bearer", {
+    method: "POST",
+    headers: { "Content-Type": "text/x-gcode", Authorization: "Bearer authority-key" },
+    body: "G28\n",
+  });
+  const protectedObserved = authorityRequests.slice(beforeProtected);
+  check("合法 X-API-Key 可调用权威分析", apiKeyAccepted.status === 200, apiKeyAccepted.text);
+  check("合法 Bearer 可调用权威分析", bearerAccepted.status === 200, bearerAccepted.text);
+  check(
+    "合法 API Key/Bearer 只用于 Node 守卫且不转发 sidecar",
+    protectedObserved.length === 2 &&
+      protectedObserved.every((item) => !item.headers["x-api-key"] && !item.headers.authorization),
+    JSON.stringify(protectedObserved.map((item) => item.headers))
+  );
+  await protectedApp.close();
+
+  const cookieApp = createApp({
+    logLevel: "error",
+    forceMock: true,
+    rateLimitMs: 0,
+    dataDir: tmpDataDir(),
+    gcodeAuthorityUrl: authorityOrigin,
+    apiKeys: "authority-key",
+    requireAuth: true,
+    publicBase: "http://127.0.0.1:8787",
+    infiniPartnerClientId: "test-client",
+    infiniPartnerClientSecret: "test-secret",
+  });
+  const cookieToken = "authority-cookie-session";
+  cookieApp.ctx.partnerSSO.sessions.set(cookieToken, {
+    user: { id: "authority-user", nickname: "Authority User", email: "", avatar: "" },
+    apiKey: "partner-side-secret",
+    expiresAt: Date.now() + 60000,
+  });
+  const cookieBase = "http://127.0.0.1:" + (await listen(cookieApp));
+  const beforeCookie = authorityRequests.length;
+  const cookieAccepted = await jfetch(cookieBase, "/api/v1/gcode/analyze?status=200&auth=cookie", {
+    method: "POST",
+    headers: { "Content-Type": "text/x-gcode", Cookie: "fx_session=" + cookieToken },
+    body: "G28\n",
+  });
+  const cookieObserved = authorityRequests[beforeCookie];
+  check("合法 Partner SSO Cookie 可调用权威分析", cookieAccepted.status === 200, cookieAccepted.text);
+  check(
+    "合法 SSO Cookie 只用于 Node 守卫且不转发 sidecar",
+    cookieObserved && !cookieObserved.headers.cookie && !cookieObserved.headers.authorization,
+    cookieObserved && JSON.stringify(cookieObserved.headers)
+  );
+  await cookieApp.close();
+
+  const rateLimitedApp = createApp({
+    logLevel: "error",
+    forceMock: true,
+    rateLimitMs: 60000,
+    dataDir: tmpDataDir(),
+    gcodeAuthorityUrl: authorityOrigin,
+    apiKeys: "authority-key",
+    requireAuth: true,
+  });
+  const rateLimitedBase = "http://127.0.0.1:" + (await listen(rateLimitedApp));
+  const beforeRateLimit = authorityRequests.length;
+  const concurrent = await Promise.all([
+    jfetch(rateLimitedBase, "/api/v1/gcode/analyze?status=200&request=1", {
+      method: "POST",
+      headers: { "Content-Type": "text/x-gcode", "X-API-Key": "authority-key" },
+      body: "G28\n",
+    }),
+    jfetch(rateLimitedBase, "/api/v1/gcode/analyze?status=200&request=2", {
+      method: "POST",
+      headers: { "Content-Type": "text/x-gcode", "X-API-Key": "authority-key" },
+      body: "G28\n",
+    }),
+  ]);
+  const concurrentStatuses = concurrent.map((item) => item.status).sort((a, b) => a - b);
+  check(
+    "并发权威分析复用既有冷却限流并返回 429",
+    concurrentStatuses[0] === 200 && concurrentStatuses[1] === 429,
+    concurrentStatuses.join(",")
+  );
+  check("被限流请求不连接 sidecar", authorityRequests.length === beforeRateLimit + 1);
+  await rateLimitedApp.close();
+
+  const limitedApp = createApp({
+    logLevel: "error",
+    forceMock: true,
+    rateLimitMs: 0,
+    dataDir: tmpDataDir(),
+    gcodeAuthorityUrl: authorityOrigin,
+    gcodeAuthorityMaxBytes: 8,
+  });
+  const limitedBase = "http://127.0.0.1:" + (await listen(limitedApp));
+  const beforePreflight = authorityRequests.length;
+  const preflight = await rawRequest(
+    limitedBase + "/api/v1/gcode/analyze",
+    { "Content-Type": "text/x-gcode", "Content-Length": "9" },
+    []
+  );
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  check(
+    "Content-Length 预检超限返回结构化 413",
+    preflight.status === 413 && preflight.json && preflight.json.code === "payload_too_large",
+    preflight.text
+  );
+  check("Content-Length 预检失败时不连接 C#", authorityRequests.length === beforePreflight);
+
+  const chunked = await rawRequest(
+    limitedBase + "/api/v1/gcode/analyze",
+    { "Content-Type": "text/x-gcode" },
+    [Buffer.from("12345"), Buffer.from("67890")]
+  );
+  check(
+    "chunked 上传按实际字节计数并在超限时返回 413",
+    chunked.status === 413 && chunked.json && chunked.json.code === "payload_too_large",
+    chunked.text
+  );
+  await limitedApp.close();
+
+  const disabledApp = createApp({
+    logLevel: "error",
+    forceMock: true,
+    rateLimitMs: 0,
+    dataDir: tmpDataDir(),
+    gcodeAuthorityUrl: "",
+  });
+  const disabledBase = "http://127.0.0.1:" + (await listen(disabledApp));
+  const disabled = await jfetch(disabledBase, "/api/v1/gcode/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "text/x-gcode" },
+    body: "G28\n",
+  });
+  check(
+    "未配置 sidecar 时返回结构化 503",
+    disabled.status === 503 && disabled.json && disabled.json.code === "authority_not_configured",
+    disabled.text
+  );
+  check("新增代理不影响既有 healthz", (await jfetch(disabledBase, "/healthz")).status === 200);
+  await disabledApp.close();
+
+  const unused = http.createServer();
+  const unusedPort = await listenServer(unused);
+  await closeServer(unused);
+  const unavailableApp = createApp({
+    logLevel: "error",
+    forceMock: true,
+    rateLimitMs: 0,
+    dataDir: tmpDataDir(),
+    gcodeAuthorityUrl: "http://127.0.0.1:" + unusedPort,
+    gcodeAuthorityTimeoutMs: 500,
+  });
+  const unavailableBase = "http://127.0.0.1:" + (await listen(unavailableApp));
+  const unavailable = await jfetch(unavailableBase, "/api/v1/gcode/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "text/x-gcode" },
+    body: "G28\n",
+  });
+  check(
+    "C# sidecar 不可连接时返回结构化 502",
+    unavailable.status === 502 && unavailable.json && unavailable.json.code === "authority_unavailable",
+    unavailable.text
+  );
+  await unavailableApp.close();
+
+  const hanging = http.createServer((req) => {
+    req.on("error", () => { /* 代理超时后会主动断开 */ });
+    req.resume();
+  });
+  const hangingPort = await listenServer(hanging);
+  const timeoutApp = createApp({
+    logLevel: "error",
+    forceMock: true,
+    rateLimitMs: 0,
+    dataDir: tmpDataDir(),
+    gcodeAuthorityUrl: "http://127.0.0.1:" + hangingPort,
+    gcodeAuthorityTimeoutMs: 30,
+  });
+  const timeoutBase = "http://127.0.0.1:" + (await listen(timeoutApp));
+  const timedOut = await jfetch(timeoutBase, "/api/v1/gcode/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "text/x-gcode" },
+    body: "G28\n",
+  });
+  check(
+    "sidecar 超时返回结构化 504",
+    timedOut.status === 504 && timedOut.json && timedOut.json.code === "authority_timeout",
+    timedOut.text
+  );
+  await timeoutApp.close();
+  await closeServer(hanging);
+
+  let markStarted;
+  let markCancelled;
+  const upstreamStarted = new Promise((resolve) => { markStarted = resolve; });
+  const upstreamCancelled = new Promise((resolve) => { markCancelled = resolve; });
+  const cancellable = http.createServer((req) => {
+    markStarted();
+    req.on("aborted", markCancelled);
+    req.on("close", () => { if (!req.complete) markCancelled(); });
+    req.on("error", () => { /* 预期的客户端取消 */ });
+    req.resume();
+  });
+  const cancellablePort = await listenServer(cancellable);
+  const cancelApp = createApp({
+    logLevel: "error",
+    forceMock: true,
+    rateLimitMs: 0,
+    dataDir: tmpDataDir(),
+    gcodeAuthorityUrl: "http://127.0.0.1:" + cancellablePort,
+  });
+  const cancelPort = await listen(cancelApp);
+  const clientReq = http.request({
+    host: "127.0.0.1",
+    port: cancelPort,
+    method: "POST",
+    path: "/api/v1/gcode/analyze",
+    headers: { "Content-Type": "text/x-gcode" },
+  });
+  clientReq.on("error", () => { /* destroy() 的预期结果 */ });
+  clientReq.write(Buffer.alloc(1024, 65));
+  const started = await Promise.race([
+    upstreamStarted.then(() => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), 1000)),
+  ]);
+  clientReq.destroy();
+  const cancelled = await Promise.race([
+    upstreamCancelled.then(() => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), 1000)),
+  ]);
+  check("浏览器取消上传会中止 C# 上游请求", started && cancelled);
+  await cancelApp.close();
+  await closeServer(cancellable);
+
+  const invalidTargets = [
+    "ftp://127.0.0.1:8788",
+    "http://user:password@127.0.0.1:8788",
+    "http://127.0.0.1:8788/private/path",
+    "https://example.com",
+  ];
+  for (const target of invalidTargets) {
+    let rejected = false;
+    try {
+      getConfig({ gcodeAuthorityUrl: target, gcodeAuthorityAllowRemote: false });
+    } catch (e) {
+      rejected = /GCODE_AUTHORITY_URL/.test(e.message);
+    }
+    check("危险 authority target 配置被拒绝：" + target, rejected);
+  }
+  const optedInRemote = getConfig({
+    gcodeAuthorityUrl: "https://authority.example.com",
+    gcodeAuthorityAllowRemote: true,
+  });
+  check("远端 origin 仅在显式 opt-in 后接受", optedInRemote.gcodeAuthorityUrl === "https://authority.example.com");
+
+  await closeServer(authority);
 }
 
   cleanupTmp();

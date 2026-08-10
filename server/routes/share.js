@@ -2,13 +2,16 @@
    POST /api/share/:taskId → {publicUrl}；GET /share/:token → HTML。 */
 "use strict";
 const { HttpError, readJson, sendJson, escapeHtml } = require("../lib/http");
+const { resolveIdentity, requireOwner } = require("../lib/identity");
 
 function register(router, ctx) {
   const { tasks, shares, cfg, log } = ctx;
 
   router.add("POST", /^\/api\/share\/([A-Za-z0-9_]+)$/, (req, res, m, rc) => {
+    const identity = resolveIdentity(req, rc, ctx);
     const task = tasks.get(m[1]);
     if (!task) throw new HttpError(404, "任务不存在或已过期");
+    requireOwner({ owner: task.caller }, identity, ctx, "analysis-task", task.id);
     if (task.status !== "done") throw new HttpError(409, "任务尚未完成，无法分享");
     const out = shares.create(task);
     const base = cfg.publicBase || rc.origin || "";
@@ -30,7 +33,11 @@ function register(router, ctx) {
   });
 
   /* 撤销分享。分享出去的东西必须能收回来，这是分享功能的基本义务。 */
-  router.add("POST", /^\/api\/share\/([a-f0-9]+)\/revoke$/, async (req, res, m) => {
+  router.add("POST", /^\/api\/share\/([a-f0-9]+)\/revoke$/, async (req, res, m, rc) => {
+    const identity = resolveIdentity(req, rc, ctx);
+    const share = shares.get(m[1]);
+    if (!share) throw new HttpError(404, "分享不存在或已过期");
+    requireOwner(share, identity, ctx, "share", m[1]);
     const body = await readJson(req, 4 * 1024);
     const out = shares.revoke(m[1], body.revokeKey);
     if (!out.ok) {

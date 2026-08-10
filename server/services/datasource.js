@@ -22,7 +22,8 @@ class DatasourceStore {
     // 内置数据集每次启动都重建（它由代码决定，不该被旧盘数据固化）
     this.map.set({
       id: "sample", name: "内置机群仿真数据", rows, csv: engine.farmCsv(),
-      builtin: true, createdAt: Date.now(),
+      builtin: true, owner: "system:public", createdAt: Date.now(),
+      contentSha256: crypto.createHash("sha256").update(engine.farmCsv()).digest("hex"),
       provenance: engine.PROVENANCE.farm,
     });
   }
@@ -57,21 +58,35 @@ class DatasourceStore {
     return base;
   }
 
-  create(name, csvText, provenanceClaim) {
+  create(name, csvText, provenanceClaim, owner) {
     const out = engine.parseCsv(csvText);
     if (!out.rows.length) {
       throw new HttpError(400, "CSV 解析失败：" + (out.errors[0] || "无有效数据"));
     }
-    const id = "ds_" + crypto.randomBytes(8).toString("hex");
+    const csv = engine.toCsv(out.rows);   // 规范化后再摘要，换行/空白差异不制造重复数据源
+    const contentSha256 = crypto.createHash("sha256").update(csv).digest("hex");
+    const ownerKey = String(owner || "legacy:unowned");
+    const provenance = DatasourceStore.sanitizeProvenance(provenanceClaim);
+    const cacheKey = crypto.createHash("sha256")
+      .update(contentSha256).update("\0").update(JSON.stringify(provenance)).digest("hex");
+    const id = "ds_" + crypto.createHash("sha256")
+      .update(ownerKey).update("\0").update(cacheKey).digest("hex").slice(0, 24);
+    const existing = this.map.get(id);
+    if (existing && existing.owner === ownerKey && existing.cacheKey === cacheKey) {
+      return Object.assign({}, existing, { deduplicated: true });
+    }
     const ds = {
       id,
       name: String(name || "print_jobs.csv").slice(0, 80),
       rows: out.rows,
-      csv: engine.toCsv(out.rows),   // 重导出规范化后的 CSV，喂给上游时口径统一
+      csv,
+      contentSha256,
+      cacheKey,
+      owner: ownerKey,
       builtin: false,
       createdAt: Date.now(),
       warnings: out.errors,
-      provenance: DatasourceStore.sanitizeProvenance(provenanceClaim),
+      provenance,
     };
     this.map.set(ds);          // FileStore 自带容量淘汰
     return ds;
