@@ -127,6 +127,8 @@ public sealed partial class FileGCodeJobRepository : IGCodeJobRepository, IGCode
             Options = NormalizeOptions(job.Options),
             TenantId = string.IsNullOrWhiteSpace(job.TenantId) ? "tn_local" : job.TenantId,
             OwnerId = string.IsNullOrWhiteSpace(job.OwnerId) ? "ow_local" : job.OwnerId,
+            AttemptCount = Math.Max(0, job.AttemptCount),
+            MaxAttempts = job.MaxAttempts <= 0 ? 3 : job.MaxAttempts,
         };
 
         // Older completed results can predate the required layer-plan, visualization, material,

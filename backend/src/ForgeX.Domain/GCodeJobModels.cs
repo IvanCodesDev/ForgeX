@@ -39,4 +39,8 @@ public sealed record GCodeJobRecord(
     string? TraceId,
     IReadOnlyList<GCodeJobEvent> Events,
     string TenantId = "tn_local",
-    string OwnerId = "ow_local");
+    string OwnerId = "ow_local",
+    int AttemptCount = 0,
+    int MaxAttempts = 3,
+    DateTimeOffset? NextAttemptAtUtc = null,
+    DateTimeOffset? DeadLetteredAtUtc = null);

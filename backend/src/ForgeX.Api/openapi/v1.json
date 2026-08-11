@@ -900,6 +900,7 @@
           "engineVersion",
           "result",
           "error",
+          "retry",
           "links"
         ],
         "properties": {
@@ -970,6 +971,9 @@
                 "type": "null"
               }
             ]
+          },
+          "retry": {
+            "$ref": "#/components/schemas/GCodeJobRetry"
           },
           "links": {
             "$ref": "#/components/schemas/GCodeJobLinks"
@@ -1104,6 +1108,40 @@
           }
         }
       },
+      "GCodeJobRetry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "attemptCount",
+          "maxAttempts"
+        ],
+        "properties": {
+          "attemptCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "maxAttempts": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "nextAttemptAtUtc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "deadLetteredAtUtc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
       "GCodeJobEvent": {
         "type": "object",
         "additionalProperties": false,
@@ -1125,6 +1163,8 @@
             "type": "string",
             "enum": [
               "progress",
+              "retry",
+              "recovery",
               "heartbeat",
               "terminal"
             ]

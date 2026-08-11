@@ -9,6 +9,8 @@ public sealed class GCodeJobQueue : IGCodeJobQueue
 
     public GCodeJobQueue(int capacity = 64)
     {
+        if (capacity is < 1 or > 4096) throw new ArgumentOutOfRangeException(nameof(capacity));
+        Capacity = capacity;
         _channel = Channel.CreateBounded<string>(new BoundedChannelOptions(capacity)
         {
             SingleReader = true,
@@ -18,6 +20,8 @@ public sealed class GCodeJobQueue : IGCodeJobQueue
     }
 
     public bool IsAccepting => !_channel.Reader.Completion.IsCompleted;
+    public int Depth => _channel.Reader.CanCount ? _channel.Reader.Count : 0;
+    public int Capacity { get; }
 
     public ValueTask EnqueueAsync(string jobId, CancellationToken cancellationToken) =>
         _channel.Writer.WriteAsync(jobId, cancellationToken);

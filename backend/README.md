@@ -19,6 +19,7 @@ The local SDK is discovered by `tools/run-dotnet.js`. CI may use a system SDK wi
 npm run dotnet:build
 npm run dotnet:golden
 npm run dotnet:jobs
+npm run dotnet:resilience
 npm run dotnet:gcode-benchmark
 npm run dotnet:persistence
 npm run dotnet:analytics
@@ -113,6 +114,35 @@ trace ID. `/metrics` emits Prometheus text with bounded method/route/status labe
 histograms, uptime, build identity, and the latest file repository readiness/count. Concrete job IDs
 are never used as metric labels. This uses only the ASP.NET shared framework; no telemetry package is
 added in this slice.
+
+## Stage 6-A durable job resilience
+
+Every new asynchronous job persists `attemptCount`, `maxAttempts`, `nextAttemptAtUtc`, and
+`deadLetteredAtUtc`. Deterministic `GCodeAnalysisException` inputs fail once with their original
+stable code. Stream-read, content-store I/O, timeout, and unexpected failures are transient: the
+worker writes a `queued / retry-wait` event before scheduling bounded exponential backoff. After the
+configured budget, the snapshot becomes `failed / dead-letter / gcode_retry_exhausted`; the previous
+retry events retain the last classified error code. A process restart changes a persisted `running`
+record to `queued / recovered` and schedules it again, unless its budget was already exhausted.
+
+Defaults and deployment-style environment names are:
+
+```text
+GCodeJobs__QueueCapacity=64
+GCodeJobs__Retry__MaxAttempts=3
+GCodeJobs__Retry__BaseDelayMilliseconds=250
+GCodeJobs__Retry__MaxDelayMilliseconds=10000
+```
+
+Queue capacity is limited to 1–4096, attempts to 1–10, base delay to 10–60000 ms, and maximum delay
+to the base delay through 300000 ms. Invalid configuration fails during startup. `/health/ready`
+reports queue depth/capacity; `/metrics` exports `forgex_gcode_job_queue_depth`,
+`forgex_gcode_job_queue_capacity`, and cumulative retry, recovery, and dead-letter counters without
+job ID labels. The additive OpenAPI snapshot `retry` object lets operations and clients inspect the
+durable state without changing outer schema version `1.0`.
+
+Stage 6-B will use measured queue/service-time evidence to set tenant quotas and capacity targets;
+it will not guess those values from the in-process capacity alone.
 
 ## Stage 4 analytics dual-run
 

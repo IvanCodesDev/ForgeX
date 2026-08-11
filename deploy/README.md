@@ -39,6 +39,14 @@ The C# service logs one JSON object per request. Metric route labels use templat
 shipping and Prometheus scraper according to the platform. The bundled `json-file` rotation is a
 single-host default, not a centralized audit store.
 
+Stage 6-A adds `forgex_gcode_job_queue_depth`, `forgex_gcode_job_queue_capacity`,
+`forgex_gcode_job_retries_total`, `forgex_gcode_job_recoveries_total`, and
+`forgex_gcode_job_dead_letters_total`. During the measurement window, alert on a positive increase
+of dead letters and sustained queue-depth/capacity ratio rather than a single queue sample. Final
+thresholds and tenant quotas are capacity-plan outputs in Stage 6-B. Override retry settings only
+with bounded Compose environment values such as `GCodeJobs__Retry__MaxAttempts`; invalid values stop
+the authority at startup instead of silently changing behavior.
+
 Before an upgrade, create and verify an authority repository backup using the commands in
 `backend/README.md`, and separately back up the Node and authority named volumes according to the
 container platform. The CI script `deploy/verify-containers.sh` rebuilds the runtime contract by
@@ -49,9 +57,11 @@ authority metrics, and restart readiness.
 
 1. Keep the current named volumes and the verified authority backup; do not delete or recreate them.
 2. Set `GCODE_ASYNC_JOBS_ENABLED=0` if only the asynchronous authority path must be disabled.
-3. Restore the previously tagged `forgex-insight` and `forgex-authority` images in the Compose file.
-4. Run `docker compose ... up -d`, then verify `/healthz`, `/react/`, and authority `/health/ready`.
-5. If the authority is being removed entirely, set the React build to browser authority before
+3. If only retry behavior is being rolled back, restore the previous retry environment values first;
+   persisted Stage 6-A fields are additive and older readers ignore them.
+4. Restore the previously tagged `forgex-insight` and `forgex-authority` images in the Compose file.
+5. Run `docker compose ... up -d`, then verify `/healthz`, `/react/`, and authority `/health/ready`.
+6. If the authority is being removed entirely, set the React build to browser authority before
    stopping `forgex-api`; the legacy `/` page remains the product rollback boundary.
 
 The current PostgreSQL files are a frozen migration contract only. This Compose deployment keeps

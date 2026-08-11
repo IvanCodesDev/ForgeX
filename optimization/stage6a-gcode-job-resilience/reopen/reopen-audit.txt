@@ -1,0 +1,9 @@
+﻿schemaVersion=1.0
+reopenedAtUtc=2026-08-11T16:23:19.2630401+00:00
+modified=PASS bytes=74879 sha256=43ab4b269400579e0ddc88cb70c14ffb6ac63ee2ff7490e2b07503b7c9fdccd7
+patch=PASS bytes=61679 sha256=59086de875820277b690684deff498092d6383f438988c060080c9060b124a5a
+verification=PASS bytes=64926 sha256=3355deeed771a0595271f9159c3ed8b999d42f3da0bab74b67da04c8877db695
+rollback=PASS bytes=2238 sha256=477ad07dfe382a0102d07b884c77b4658deb367faafdda3c54ad15f0a3faa34b
+modifiedArchiveContent=PASS files=21 behavior=retry-after-unregister+dead-letter
+rollbackDryRun=DRY_RUN restore=18 remove=3 target=E:\Projects\3dprint
+FINAL_REOPEN=PASS

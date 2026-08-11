@@ -18,7 +18,8 @@ internal static class GCodeJobEndpoints
         HttpContext context,
         IContentObjectStore objects,
         IGCodeJobRepository repository,
-        IGCodeJobQueue queue)
+        IGCodeJobQueue queue,
+        GCodeJobRetryOptions retryOptions)
     {
         var caller = CallerContextBoundary.GetRequired(context);
         var mediaType = context.Request.ContentType?.Split(';', 2)[0].Trim();
@@ -79,7 +80,8 @@ internal static class GCodeJobEndpoints
             null,
             [initialEvent],
             caller.TenantId,
-            caller.OwnerId);
+            caller.OwnerId,
+            MaxAttempts: retryOptions.MaxAttempts);
         var result = await repository.CreateOrGetAsync(candidate, context.RequestAborted);
         if (result.Conflict)
         {
@@ -126,6 +128,7 @@ internal static class GCodeJobEndpoints
             Status = GCodeJobStatus.Cancelled,
             Phase = "cancelled",
             FinishedAtUtc = now,
+            NextAttemptAtUtc = null,
             ErrorCode = "gcode_cancelled",
             ErrorMessage = "The analysis job was cancelled.",
         }, "terminal", now);
@@ -208,6 +211,7 @@ internal static class GCodeJobEndpoints
         job.EngineVersion,
         job.Result is null ? null : GCodeEndpoints.ToResponse(job.Result, job.Options),
         job.ErrorCode is null ? null : new GCodeJobErrorDto(job.ErrorCode, job.ErrorMessage ?? job.ErrorCode, job.TraceId),
+        new GCodeJobRetryDto(job.AttemptCount, job.MaxAttempts, job.NextAttemptAtUtc, job.DeadLetteredAtUtc),
         Links(job.Id));
 
     private static async Task<GCodeJobRecord?> FindAsync(HttpContext context, string id, IGCodeJobRepository repository)

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using ForgeX.Application;
 using ForgeX.Domain;
 using ForgeX.Infrastructure;
 
@@ -68,6 +69,33 @@ try
         reopenedJob?.Status == GCodeJobStatus.Cancelled && reopenedJob.TenantId == tenantA && reopenedJob.OwnerId == ownerA,
         reopenedJob?.Status);
 
+    var retryOptions = new GCodeJobRetryOptions(3, 100, 1000).Validate();
+    Check("retry-delay-attempt-1", retryOptions.DelayAfterFailure(1) == TimeSpan.FromMilliseconds(100));
+    Check("retry-delay-attempt-2", retryOptions.DelayAfterFailure(2) == TimeSpan.FromMilliseconds(200));
+    Check("retry-delay-is-capped", retryOptions.DelayAfterFailure(5) == TimeSpan.FromMilliseconds(1000));
+    var deterministicFailure = GCodeJobResilience.Classify(new GCodeAnalysisException("GCODE_INVALID_UTF8", "invalid"));
+    Check("deterministic-analysis-failure-is-terminal", !deterministicFailure.Retryable, deterministicFailure);
+    var streamFailure = GCodeJobResilience.Classify(new GCodeAnalysisException("GCODE_STREAM_READ_FAILED", "read"));
+    Check("stream-read-failure-is-retryable", streamFailure.Retryable && streamFailure.Code == "GCODE_STREAM_READ_FAILED", streamFailure);
+    var storageFailure = GCodeJobResilience.Classify(new IOException("fixture unavailable"));
+    Check("storage-failure-is-retryable", storageFailure.Retryable && storageFailure.Code == "gcode_storage_unavailable", storageFailure);
+    var retrying = job with
+    {
+        Id = Guid.NewGuid().ToString("N"),
+        IdempotencyKey = null,
+        AttemptCount = 2,
+        MaxAttempts = 4,
+        NextAttemptAtUtc = now.AddSeconds(5),
+        ErrorCode = "gcode_storage_unavailable",
+    };
+    await repository.SaveAsync(retrying, CancellationToken.None);
+    var reopenedRetry = await repository.GetAsync(retrying.Id, CancellationToken.None);
+    Check(
+        "retry-metadata-persists",
+        reopenedRetry is { AttemptCount: 2, MaxAttempts: 4, NextAttemptAtUtc: not null } &&
+        reopenedRetry.NextAttemptAtUtc == retrying.NextAttemptAtUtc,
+        reopenedRetry);
+
     var legacyRoot = Path.Combine(root, "legacy-jobs");
     var legacyRepository = new FileGCodeJobRepository(legacyRoot);
     var legacyJob = job with
@@ -82,9 +110,12 @@ try
     var legacyJson = JsonNode.Parse(await File.ReadAllTextAsync(legacyPath))!.AsObject();
     legacyJson.Remove("tenantId");
     legacyJson.Remove("ownerId");
+    legacyJson.Remove("attemptCount");
+    legacyJson.Remove("maxAttempts");
     await File.WriteAllTextAsync(legacyPath, legacyJson.ToJsonString());
     var migratedLegacy = await legacyRepository.GetOwnedAsync("tn_local", "ow_local", legacyJob.Id, CancellationToken.None);
     Check("legacy-job-is-confined-to-local-scope", migratedLegacy?.Id == legacyJob.Id, migratedLegacy?.TenantId);
+    Check("legacy-job-retry-budget-migrates", migratedLegacy is { AttemptCount: 0, MaxAttempts: 3 }, migratedLegacy?.MaxAttempts);
     var legacyFromTrustedTenant = await legacyRepository.GetOwnedAsync(tenantA, ownerA, legacyJob.Id, CancellationToken.None);
     Check("legacy-job-is-hidden-from-trusted-tenants", legacyFromTrustedTenant is null, legacyFromTrustedTenant?.Id);
 
@@ -177,6 +208,8 @@ try
     var queue = new GCodeJobQueue(2);
     await queue.EnqueueAsync("first", CancellationToken.None);
     await queue.EnqueueAsync("second", CancellationToken.None);
+    Check("bounded-queue-capacity", queue.Capacity == 2, queue.Capacity);
+    Check("bounded-queue-depth-before-read", queue.Depth == 2, queue.Depth);
     var dequeued = new List<string>();
     await foreach (var id in queue.ReadAllAsync(CancellationToken.None))
     {
@@ -184,6 +217,7 @@ try
         if (dequeued.Count == 2) break;
     }
     Check("bounded-queue-fifo", dequeued.SequenceEqual(["first", "second"]), string.Join(",", dequeued));
+    Check("bounded-queue-depth-after-read", queue.Depth == 0, queue.Depth);
 
     var report = new
     {

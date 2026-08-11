@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
+using ForgeX.Application;
 
 namespace ForgeX.Api;
 
@@ -13,6 +14,9 @@ internal sealed class ForgeXMetrics
     private readonly long _startedTimestamp = Stopwatch.GetTimestamp();
     private long _repositoryReady;
     private long _repositoryRecords;
+    private long _jobRetries;
+    private long _jobDeadLetters;
+    private long _jobRecoveries;
 
     public void ObserveHttp(string method, PathString path, int statusCode, TimeSpan elapsed)
     {
@@ -29,7 +33,11 @@ internal sealed class ForgeXMetrics
         Interlocked.Exchange(ref _repositoryRecords, Math.Max(0, records));
     }
 
-    public string Render(string serviceVersion)
+    public void RecordJobRetry() => Interlocked.Increment(ref _jobRetries);
+    public void RecordJobDeadLetter() => Interlocked.Increment(ref _jobDeadLetters);
+    public void RecordJobRecovery() => Interlocked.Increment(ref _jobRecoveries);
+
+    public string Render(string serviceVersion, IGCodeJobQueue queue)
     {
         var output = new StringBuilder(8 * 1024);
         output.AppendLine("# HELP forgex_build_info Build and service identity.");
@@ -52,6 +60,21 @@ internal sealed class ForgeXMetrics
         output.Append("forgex_job_repository_records ")
             .Append(Interlocked.Read(ref _repositoryRecords).ToString(CultureInfo.InvariantCulture))
             .AppendLine();
+        output.AppendLine("# HELP forgex_gcode_job_queue_depth G-code jobs currently waiting in the bounded in-process queue.");
+        output.AppendLine("# TYPE forgex_gcode_job_queue_depth gauge");
+        output.Append("forgex_gcode_job_queue_depth ").Append(queue.Depth.ToString(CultureInfo.InvariantCulture)).AppendLine();
+        output.AppendLine("# HELP forgex_gcode_job_queue_capacity Configured bounded G-code job queue capacity.");
+        output.AppendLine("# TYPE forgex_gcode_job_queue_capacity gauge");
+        output.Append("forgex_gcode_job_queue_capacity ").Append(queue.Capacity.ToString(CultureInfo.InvariantCulture)).AppendLine();
+        output.AppendLine("# HELP forgex_gcode_job_retries_total Persisted retry transitions after transient G-code job failures.");
+        output.AppendLine("# TYPE forgex_gcode_job_retries_total counter");
+        output.Append("forgex_gcode_job_retries_total ").Append(Interlocked.Read(ref _jobRetries).ToString(CultureInfo.InvariantCulture)).AppendLine();
+        output.AppendLine("# HELP forgex_gcode_job_dead_letters_total G-code jobs moved to dead-letter terminal state after retry exhaustion.");
+        output.AppendLine("# TYPE forgex_gcode_job_dead_letters_total counter");
+        output.Append("forgex_gcode_job_dead_letters_total ").Append(Interlocked.Read(ref _jobDeadLetters).ToString(CultureInfo.InvariantCulture)).AppendLine();
+        output.AppendLine("# HELP forgex_gcode_job_recoveries_total Running G-code jobs durably requeued after worker restart.");
+        output.AppendLine("# TYPE forgex_gcode_job_recoveries_total counter");
+        output.Append("forgex_gcode_job_recoveries_total ").Append(Interlocked.Read(ref _jobRecoveries).ToString(CultureInfo.InvariantCulture)).AppendLine();
         output.AppendLine("# HELP forgex_http_requests_total Completed HTTP requests by bounded route label.");
         output.AppendLine("# TYPE forgex_http_requests_total counter");
         foreach (var item in _httpRequests.OrderBy(static item => item.Key.Method, StringComparer.Ordinal)

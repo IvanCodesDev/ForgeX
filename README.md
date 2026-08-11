@@ -185,7 +185,7 @@ Node.js service :8787
                                         ▼
                               C# .NET 10 sidecar :8788
                               ├─ StreamingGCodeAnalyzer
-                              ├─ 持久异步作业、SSE、取消与幂等键
+                              ├─ 持久异步作业、有限重试、死信、恢复、SSE 与幂等键
                               ├─ 文件仓库健康探针与可校验备份/恢复
                               ├─ PostgreSQL v1 迁移契约（运行时驱动待接入）
                               ├─ 确定性摘要、单位与稳定错误码
@@ -194,10 +194,10 @@ Node.js service :8787
 
 - **前端**：旧页面继续可用；React 已落地共享身份头、Profile 选择、G-code/日志对账、数据分析与校准治理等垂直切片，G-code 在 Worker 中解析；
 - **业务后端**：Node.js 原生 `http`，零运行时依赖，并只对白名单路由提供 C# 同源代理；
-- **G-code 计算边界**：.NET 10 sidecar 保留同步接口，并新增 `POST /api/v1/gcode/analyses`、作业快照、SSE 事件与幂等取消接口；同步与异步结果都返回机型/材料 Profile 标识、生效参数、确定性 SHA-256 Profile 指纹、最多 20,000 层的完整逐层计划，以及最多 100,000 段的 C# 有界二进制工具路径。引擎 1.4.0 还把材料价格、喷嘴温区、床温下限、最大速度和最大体积流量纳入 Profile v2 指纹，输出直接耗材成本与 low/medium/high 打印前风险；当前成本不包含尚无审计输入的能耗和机时。React Worker 在显示采样前生成同结构逐层摘要，`shadow / dotnet` 会逐字段核验；`dotnet` 校验并按层解码 C# 工具路径给 Three.js，同时采用 C# 成本与风险，`browser / shadow` 保留原 Worker 几何和主摘要作为回滚。Three.js 只负责显示，不参与权威计算；异步作业继续支持断线续传与轮询兜底。Node 会把已核验身份匿名化为稳定 `tenant/owner`，再通过独立内部密钥交给 C#，任务查询、SSE 与取消均按该边界过滤；
+- **G-code 计算边界**：.NET 10 sidecar 保留同步接口，并新增 `POST /api/v1/gcode/analyses`、作业快照、SSE 事件与幂等取消接口；同步与异步结果都返回机型/材料 Profile 标识、生效参数、确定性 SHA-256 Profile 指纹、最多 20,000 层的完整逐层计划，以及最多 100,000 段的 C# 有界二进制工具路径。引擎 1.4.0 还把材料价格、喷嘴温区、床温下限、最大速度和最大体积流量纳入 Profile v2 指纹，输出直接耗材成本与 low/medium/high 打印前风险；当前成本不包含尚无审计输入的能耗和机时。React Worker 在显示采样前生成同结构逐层摘要，`shadow / dotnet` 会逐字段核验；`dotnet` 校验并按层解码 C# 工具路径给 Three.js，同时采用 C# 成本与风险，`browser / shadow` 保留原 Worker 几何和主摘要作为回滚。Three.js 只负责显示，不参与权威计算；异步作业继续支持断线续传与轮询兜底。Stage 6-A 把尝试次数、预算、下次执行时间和死信时间持久化；瞬态故障有限退避，预算耗尽进入稳定 `failed / dead-letter` 终态，进程重启会把未完成的 `running` 作业重新排队。Node 会把已核验身份匿名化为稳定 `tenant/owner`，再通过独立内部密钥交给 C#，任务查询、SSE 与取消均按该边界过滤；
 - **契约边界**：`backend/src/ForgeX.Api/openapi/v1.json` 是 API 单一来源，构建前生成 TypeScript DTO、操作路径和路径参数函数；CI 通过源文件 SHA 与生成器复跑阻止前后端契约漂移；
 - **存储**：默认 `Persistence:Provider=file` 写入 `data/`，容器部署可挂载持久化卷；文件作业仓库提供逐条 SHA-256 的版本化备份、全量预检恢复和就绪探针。`backend/database/postgresql/` 已冻结 PostgreSQL v1 迁移、租户/归属键、事件表、幂等唯一约束与 RLS 策略，但本阶段未启用 PostgreSQL 运行时驱动，误配为 `postgresql` 会在启动时明确终止。
-- **可观测性**：C# 输出单行 JSON 请求日志，包含稳定路由模板、状态码、耗时与 trace ID；`/metrics` 提供有界标签的 Prometheus 文本指标，不把具体作业 ID 放入标签。
+- **可观测性**：C# 输出单行 JSON 请求日志，包含稳定路由模板、状态码、耗时与 trace ID；`/metrics` 提供有界标签的 Prometheus 文本指标，并公开队列深度/容量及 retry、recovery、dead-letter 计数，不把具体作业 ID 放入标签。
 - **分析迁移**：Stage 4-F 已把 CSV 归一、统计核、KPI 和六类确定性规则报告迁入零 NuGet 的 `ForgeX.Analytics`。`POST /api/v1/analytics/reports` 只接受归一化且带来源证据的最多 5000 行 JSON，并由 Node 同源白名单代理。线上默认 `dotnet`：React 先保留浏览器即时结果，C# 回包通过逐字段一致性门禁后才成为报告与导出的权威来源；差异、超时或错误会显式降级到 JS。`shadow` 继续只比对不切换，`browser` 在一个发布周期内保留为零请求回退，离线模式始终使用浏览器结果。
 
 ### React Stage 2 当前范围
@@ -237,7 +237,8 @@ npm run check                 # ESLint + Prettier + React 类型/单测 + Node �
 npm run frontend:build        # 生成由 Node 在 /react/ 提供的生产包
 npm run frontend:build:offline # 生成可由 file:// 打开的 React 单文件包
 npm run dotnet:golden         # 构建 .NET 10 G-code 核心并执行 JS/C# 字段级黄金差异
-npm run dotnet:jobs           # 验证内容寻址存储、文件作业仓库、幂等冲突与有界队列
+npm run dotnet:jobs           # 验证存储、仓库、幂等、重试持久化、退避分类与有界队列
+npm run dotnet:resilience     # 实启 API，验证重启恢复、有限重试、死信事件与指标
 npm run dotnet:gcode-benchmark # 生成 16 MiB 流式解析、内存、结果体积与取消延迟证据
 npm run gcode:layer-golden:update # 仅在审阅有意的逐层契约变更后更新金样本
 npm run postgres:migrations:check # 验证 PostgreSQL 迁移顺序、SHA、RLS 与非破坏性 DDL
@@ -292,7 +293,7 @@ node server/index.js
 npm run dotnet:api
 ```
 
-常用配置见 [`server/.env.example`](./server/.env.example) 与 [`frontend/.env.example`](./frontend/.env.example)。Node 会先执行统一的 Partner SSO/API Key 身份守卫，再把 G-code 同步分析、开启的异步作业以及可选 Analytics shadow 白名单路由流式代理到 `GCODE_AUTHORITY_URL`；浏览器 Cookie、API Key 与 Authorization 均不会转发给 C# sidecar。Analytics shadow 另受 `ANALYTICS_AUTHORITY_ENABLED`、`ANALYTICS_AUTHORITY_TIMEOUT_MS` 和不超过 5 MiB 的 `ANALYTICS_AUTHORITY_MAX_BYTES` 约束。生产环境应同时配置同一个至少 32 字节的 `GCODE_AUTHORITY_INTERNAL_SECRET` 与 C# `InternalAuth__SharedSecret`：Node 仅转发匿名化的 `tn_/ow_` 标识，C# 不接受浏览器自报租户。`GCODE_ASYNC_JOBS_ENABLED=0` 可独立关闭异步路由而保留同步分析。React 默认使用同源 HttpOnly Cookie；只有在凭据允许随浏览器产物分发时，才使用 `VITE_NODE_API_KEY` 或 `VITE_NODE_BEARER`。部署完成后可访问 Node `/healthz` 与 `/metrics`，并在内部网络访问 C# `/health/ready` 与 `/metrics` 检查仓库、队列、Worker、请求耗时和 CallerContext 状态。迁移期间 `/` 保持旧工作台，`/react/` 提供新工作台。文件仓库备份/恢复命令见 [`backend/README.md`](./backend/README.md)，PostgreSQL 部署和 `pg_dump/pg_restore` 演练见 [`backend/database/postgresql/README.md`](./backend/database/postgresql/README.md)。
+常用配置见 [`server/.env.example`](./server/.env.example) 与 [`frontend/.env.example`](./frontend/.env.example)。Node 会先执行统一的 Partner SSO/API Key 身份守卫，再把 G-code 同步分析、开启的异步作业以及可选 Analytics shadow 白名单路由流式代理到 `GCODE_AUTHORITY_URL`；浏览器 Cookie、API Key 与 Authorization 均不会转发给 C# sidecar。Analytics shadow 另受 `ANALYTICS_AUTHORITY_ENABLED`、`ANALYTICS_AUTHORITY_TIMEOUT_MS` 和不超过 5 MiB 的 `ANALYTICS_AUTHORITY_MAX_BYTES` 约束。生产环境应同时配置同一个至少 32 字节的 `GCODE_AUTHORITY_INTERNAL_SECRET` 与 C# `InternalAuth__SharedSecret`：Node 仅转发匿名化的 `tn_/ow_` 标识，C# 不接受浏览器自报租户。`GCODE_ASYNC_JOBS_ENABLED=0` 可独立关闭异步路由而保留同步分析。C# 作业韧性可通过 `GCodeJobs__QueueCapacity`、`GCodeJobs__Retry__MaxAttempts`、`GCodeJobs__Retry__BaseDelayMilliseconds` 与 `GCodeJobs__Retry__MaxDelayMilliseconds` 调整，越界值会在启动时终止。React 默认使用同源 HttpOnly Cookie；只有在凭据允许随浏览器产物分发时，才使用 `VITE_NODE_API_KEY` 或 `VITE_NODE_BEARER`。部署完成后可访问 Node `/healthz` 与 `/metrics`，并在内部网络访问 C# `/health/ready` 与 `/metrics` 检查仓库、队列、Worker、请求耗时和 CallerContext 状态。迁移期间 `/` 保持旧工作台，`/react/` 提供新工作台。文件仓库备份/恢复命令见 [`backend/README.md`](./backend/README.md)，PostgreSQL 部署和 `pg_dump/pg_restore` 演练见 [`backend/database/postgresql/README.md`](./backend/database/postgresql/README.md)。
 
 ## 项目结构
 

@@ -50,4 +50,6 @@ public interface IGCodeJobQueue
     ValueTask EnqueueAsync(string jobId, CancellationToken cancellationToken);
     IAsyncEnumerable<string> ReadAllAsync(CancellationToken cancellationToken);
     bool IsAccepting { get; }
+    int Depth { get; }
+    int Capacity { get; }
 }

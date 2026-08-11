@@ -59,12 +59,22 @@ if (allowedOrigins.Length > 0)
         .WithExposedHeaders("Location", "X-Trace-Id", "X-Request-Id", "traceparent")));
 }
 builder.Services.AddSingleton<IGCodeAnalyzer, StreamingGCodeAnalyzer>();
+var queueCapacity = ReadInt(builder.Configuration, "GCodeJobs:QueueCapacity", 64);
+if (queueCapacity is < 1 or > 4096)
+{
+    throw new InvalidOperationException("GCodeJobs:QueueCapacity must be between 1 and 4096.");
+}
+var retryOptions = new GCodeJobRetryOptions(
+    ReadInt(builder.Configuration, "GCodeJobs:Retry:MaxAttempts", 3),
+    ReadInt(builder.Configuration, "GCodeJobs:Retry:BaseDelayMilliseconds", 250),
+    ReadInt(builder.Configuration, "GCodeJobs:Retry:MaxDelayMilliseconds", 10_000)).Validate();
+builder.Services.AddSingleton(retryOptions);
 var storageRoot = Path.GetFullPath(builder.Configuration["Storage:Root"] ?? "data/dotnet-preview", builder.Environment.ContentRootPath);
 builder.Services.AddSingleton<IContentObjectStore>(_ => new ContentAddressedObjectStore(Path.Combine(storageRoot, "objects")));
 builder.Services.AddSingleton(_ => new FileGCodeJobRepository(Path.Combine(storageRoot, "jobs")));
 builder.Services.AddSingleton<IGCodeJobRepository>(static services => services.GetRequiredService<FileGCodeJobRepository>());
 builder.Services.AddSingleton<IGCodeJobRepositoryMaintenance>(static services => services.GetRequiredService<FileGCodeJobRepository>());
-builder.Services.AddSingleton<IGCodeJobQueue>(_ => new GCodeJobQueue());
+builder.Services.AddSingleton<IGCodeJobQueue>(_ => new GCodeJobQueue(queueCapacity));
 builder.Services.AddSingleton<GCodeJobRuntime>();
 builder.Services.AddSingleton<ForgeXMetrics>();
 builder.Services.AddSingleton<GCodeJobWorker>();
@@ -189,6 +199,8 @@ app.MapGet("/health/ready", async (IGCodeAnalyzer analyzer, IContentObjectStore 
                 ["jobRepositorySchema"] = repository.SchemaVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["jobRepositoryRecords"] = repository.RecordCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["jobQueue"] = queue.IsAccepting ? "accepting" : "closed",
+                ["jobQueueDepth"] = queue.Depth.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["jobQueueCapacity"] = queue.Capacity.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["jobWorker"] = worker.Started ? "started" : "starting",
                 ["callerContext"] = string.IsNullOrEmpty(internalSharedSecret) ? "local-development" : "trusted-node",
             });
@@ -207,8 +219,8 @@ app.MapGet("/healthz", () => Results.Ok(new LegacyHealthResponse(
     .WithName("GetLegacyHealth")
     .Produces<LegacyHealthResponse>();
 
-app.MapGet("/metrics", () => Results.Text(
-        metrics.Render(serviceVersion),
+app.MapGet("/metrics", (IGCodeJobQueue queue) => Results.Text(
+        metrics.Render(serviceVersion, queue),
         "text/plain; version=0.0.4; charset=utf-8"))
     .WithName("GetMetrics")
     .ExcludeFromDescription();
@@ -267,3 +279,13 @@ app.MapPost("/api/v1/jobs/{id}/cancel", GCodeJobEndpoints.CancelAsync)
     .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
 
 app.Run();
+
+static int ReadInt(IConfiguration configuration, string key, int fallback)
+{
+    var value = configuration[key];
+    return string.IsNullOrWhiteSpace(value)
+        ? fallback
+        : int.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : throw new InvalidOperationException($"{key} must be an integer.");
+}

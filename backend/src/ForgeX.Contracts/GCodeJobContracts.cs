@@ -11,6 +11,12 @@ public sealed record GCodeJobAcceptedResponse(
 
 public sealed record GCodeJobErrorDto(string Code, string Message, string? TraceId);
 
+public sealed record GCodeJobRetryDto(
+    int AttemptCount,
+    int MaxAttempts,
+    DateTimeOffset? NextAttemptAtUtc,
+    DateTimeOffset? DeadLetteredAtUtc);
+
 public sealed record GCodeJobSnapshotResponse(
     string SchemaVersion,
     string Id,
@@ -26,6 +32,7 @@ public sealed record GCodeJobSnapshotResponse(
     string? EngineVersion,
     GCodeAnalysisResponse? Result,
     GCodeJobErrorDto? Error,
+    GCodeJobRetryDto Retry,
     GCodeJobLinksDto Links);
 
 public sealed record GCodeJobEventDto(
