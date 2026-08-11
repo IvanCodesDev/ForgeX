@@ -111,7 +111,7 @@ test.describe("React Stage 2", () => {
     await page.getByRole("button", { name: "运行规则分析" }).click();
 
     const report = page.locator(".analytics-report");
-    await expect(report).toContainText("计算引擎：本地规则引擎（非 AI）");
+    await expect(report).toContainText("计算引擎：浏览器 JS 规则引擎（非 AI）");
     await expect(report.getByRole("img")).toBeVisible();
     await expect(report.getByRole("table", { name: /数据表$/ })).toBeVisible();
     await expect(report.getByRole("table", { name: "分析报告统计证据" })).toBeVisible();

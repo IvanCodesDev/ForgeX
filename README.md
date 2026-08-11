@@ -198,18 +198,18 @@ Node.js service :8787
 - **契约边界**：`backend/src/ForgeX.Api/openapi/v1.json` 是 API 单一来源，构建前生成 TypeScript DTO、操作路径和路径参数函数；CI 通过源文件 SHA 与生成器复跑阻止前后端契约漂移；
 - **存储**：默认 `Persistence:Provider=file` 写入 `data/`，容器部署可挂载持久化卷；文件作业仓库提供逐条 SHA-256 的版本化备份、全量预检恢复和就绪探针。`backend/database/postgresql/` 已冻结 PostgreSQL v1 迁移、租户/归属键、事件表、幂等唯一约束与 RLS 策略，但本阶段未启用 PostgreSQL 运行时驱动，误配为 `postgresql` 会在启动时明确终止。
 - **可观测性**：C# 输出单行 JSON 请求日志，包含稳定路由模板、状态码、耗时与 trace ID；`/metrics` 提供有界标签的 Prometheus 文本指标，不把具体作业 ID 放入标签。
-- **分析迁移**：Stage 4-E 已把 CSV 归一、Wilson 区间、Fisher 精确检验、Pearson 相关、组内中心化偏相关、Mann–Kendall 趋势、带样本量守卫的失败率排名和 KPI 汇总迁入零 NuGet 的 `ForgeX.Analytics`，并完成机台故障、材料对比、层高相关、成本趋势、失败归因和未识别问题概览六条确定性规则报告的 C# 等价实现；新增的 `POST /api/v1/analytics/reports` 只接受归一化且带来源证据的最多 5000 行 JSON，并由 Node 同源白名单代理。React 默认继续显示 JS 报告；`VITE_ANALYTICS_AUTHORITY=shadow` 才并行请求 C# 并展示字段级差异，不改变主结果、不写入服务端数据，也不构成权威切换。
+- **分析迁移**：Stage 4-F 已把 CSV 归一、统计核、KPI 和六类确定性规则报告迁入零 NuGet 的 `ForgeX.Analytics`。`POST /api/v1/analytics/reports` 只接受归一化且带来源证据的最多 5000 行 JSON，并由 Node 同源白名单代理。线上默认 `dotnet`：React 先保留浏览器即时结果，C# 回包通过逐字段一致性门禁后才成为报告与导出的权威来源；差异、超时或错误会显式降级到 JS。`shadow` 继续只比对不切换，`browser` 在一个发布周期内保留为零请求回退，离线模式始终使用浏览器结果。
 
 ### React Stage 2 当前范围
 
-| 切片             | 已落地行为                                                                                            | 回滚/边界                                                                 |
-| ---------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| 共享壳与身份     | Header 显示运行模式、当前身份和 AI 能力范围；离线模式不发起身份请求                                   | 身份优先级为 SSO、允许分发的浏览器 API 凭据、匿名；旧工作台仍保留         |
-| 浏览器即时仿真   | 在 `#/simulator` 编辑核心工艺参数，通过 Worker 运行即时预览并展示阶段进度、摘要和事件时间线           | 明确标记为“浏览器即时预览（非权威）”；独立开关关闭时只回退该路由          |
-| Profile + G-code | 选择内置机器/材料 Profile，可导入受限 JSON；Worker 解析 G-code 并显示逐层 3D 路径                     | Profile、G-code 和日志分别由独立开关回退；旧 DOM 流程未在此路由中重复绑定 |
-| 真机日志对账     | 仅当声明的 G-code SHA-256 通过强摘要校验时生成对比；不匹配时保留证据但不输出差异指标                  | 更换 G-code 会清除旧日志绑定                                              |
-| 数据分析         | 导入本地 CSV，显式标记真实/合成来源，同步生成 KPI、本地统计规则、SVG 图表、可访问表格与 JSON/CSV 导出 | 当前是本地确定性分析，不把 AI 叙述当作统计结果                            |
-| 校准治理         | 读取公开校准目录、展示审核边界并查询已有分享                                                          | 浏览器固定只读；审核仅由配置 `CALIBRATION_REVIEW_KEYS` 的受信后台执行     |
+| 切片             | 已落地行为                                                                                    | 回滚/边界                                                                 |
+| ---------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 共享壳与身份     | Header 显示运行模式、当前身份和 AI 能力范围；离线模式不发起身份请求                           | 身份优先级为 SSO、允许分发的浏览器 API 凭据、匿名；旧工作台仍保留         |
+| 浏览器即时仿真   | 在 `#/simulator` 编辑核心工艺参数，通过 Worker 运行即时预览并展示阶段进度、摘要和事件时间线   | 明确标记为“浏览器即时预览（非权威）”；独立开关关闭时只回退该路由          |
+| Profile + G-code | 选择内置机器/材料 Profile，可导入受限 JSON；Worker 解析 G-code 并显示逐层 3D 路径             | Profile、G-code 和日志分别由独立开关回退；旧 DOM 流程未在此路由中重复绑定 |
+| 真机日志对账     | 仅当声明的 G-code SHA-256 通过强摘要校验时生成对比；不匹配时保留证据但不输出差异指标          | 更换 G-code 会清除旧日志绑定                                              |
+| 数据分析         | 导入本地 CSV，显式标记真实/合成来源，生成 KPI、规则报告、SVG 图表、可访问表格与 JSON/CSV 导出 | 线上报告默认经 C# 一致性门禁；JS 作为即时结果和一版发布周期回退           |
+| 校准治理         | 读取公开校准目录、展示审核边界并查询已有分享                                                  | 浏览器固定只读；审核仅由配置 `CALIBRATION_REVIEW_KEYS` 的受信后台执行     |
 
 `#/simulator` 迁入的是可复现的浏览器即时预览子集；模型导入、完整高级参数和其他旧页面仍以 `/` 作为可回滚基线。该页面不把浏览器估算表述为 C# 权威分析或真机实测。
 
@@ -228,7 +228,7 @@ Node.js service :8787
 
 `VITE_GCODE_AUTHORITY` 不是页面开关，而是 G-code 分析模式：`browser` 为默认浏览器结果，`shadow` 与 C# 双跑但不切换主结果，`dotnet` 才使用 C# 返回作为该路由结果。`dotnet` 默认通过异步作业运行：创建请求携带稳定幂等键，SSE 使用事件序号续传，连接失败后轮询同一作业，页面取消会同步取消服务端作业。`VITE_GCODE_JOB_API=0` 可把 React 独立回退到既有同步 `/api/v1/gcode/analyze`；服务端 `GCODE_ASYNC_JOBS_ENABLED=0` 可关闭异步路由。`VITE_API_BASE=offline` 可强制离线演示；`VITE_NODE_API_KEY` 与 `VITE_NODE_BEARER` 会进入浏览器产物，只能放置允许分发的客户端凭据，校准审核密钥只允许配置在服务端 `CALIBRATION_REVIEW_KEYS`。
 
-Analytics 另有独立的 `VITE_ANALYTICS_AUTHORITY=browser|shadow`：默认 `browser` 完全本地计算且零分析 API 请求；`shadow` 把当前归一化数据发送到 Node 的 `/api/v1/analytics/reports`，仅比较 C# 回包与浏览器报告。服务端可用 `ANALYTICS_AUTHORITY_ENABLED=0` 独立关闭该路由，5 MiB 请求上限和 5000 行上限不可由部署配置放大。
+Analytics 另有独立的 `VITE_ANALYTICS_AUTHORITY=dotnet|shadow|browser`：未配置时默认 `dotnet`，只有字段级门禁完全一致的 C# 报告会进入页面与导出；`shadow` 只显示差异；`browser` 完全本地计算且零分析 API 请求，是一个发布周期内的即时回滚开关。`VITE_API_BASE=offline` 在任何模式下都强制浏览器结果。服务端可用 `ANALYTICS_AUTHORITY_ENABLED=0` 独立关闭该路由，5 MiB 请求上限和 5000 行上限不可由部署配置放大。
 
 ## 验证
 

@@ -87,13 +87,68 @@ describe("analytics authority boundary", () => {
     });
     await waitFor(() => expect(result.current.state.status).toBe("matched"));
     expect(result.current.state).toEqual(
-      expect.objectContaining({ status: "matched", engineVersion: "1.3.0", differences: [] })
+      expect.objectContaining({ status: "matched", engineVersion: "1.3.0", differences: [], report: browserReport })
     );
+  });
+
+  it("returns the verified C# report for dotnet authority mode", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          schemaVersion: "1.0",
+          engine: { name: "forgex-analytics-csharp", version: "1.3.0" },
+          report: { ...browserReport, authorityOnly: "must-not-leak" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+    const { result } = renderHook(() => useAnalyticsAuthority("dotnet", "", env));
+    await act(async () => {
+      await result.current.run(question, dataset, browserReport);
+    });
+    await waitFor(() => expect(result.current.state.status).toBe("matched"));
+    expect(result.current.state).toEqual(
+      expect.objectContaining({
+        status: "matched",
+        detail: expect.stringContaining("C# 权威报告已启用"),
+        report: browserReport,
+      })
+    );
+    expect(result.current.state).not.toHaveProperty("report.authorityOnly");
+  });
+
+  it("does not expose a mismatched C# report for authority cutover", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          schemaVersion: "1.0",
+          engine: { name: "forgex-analytics-csharp", version: "1.3.0" },
+          report: { ...browserReport, verdict: "drifted" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+    const { result } = renderHook(() => useAnalyticsAuthority("dotnet", "", env));
+    await act(async () => {
+      await result.current.run(question, dataset, browserReport);
+    });
+    await waitFor(() => expect(result.current.state.status).toBe("mismatch"));
+    expect(result.current.state).not.toHaveProperty("report");
   });
 
   it("keeps offline shadow mode at zero requests", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     const { result } = renderHook(() => useAnalyticsAuthority("shadow", null, env));
+    await act(async () => {
+      await result.current.run(question, dataset, browserReport);
+    });
+    expect(result.current.state.status).toBe("offline");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps offline dotnet mode on the browser fallback with zero requests", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const { result } = renderHook(() => useAnalyticsAuthority("dotnet", null, env));
     await act(async () => {
       await result.current.run(question, dataset, browserReport);
     });

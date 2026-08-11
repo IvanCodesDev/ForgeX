@@ -1,4 +1,4 @@
-import { type ChangeEvent, useMemo, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import { type AnalyticsAuthorityMode, useAnalyticsAuthority } from "./analytics-authority";
 import { AccessibleAnalyticsChart } from "./AccessibleAnalyticsChart";
 import {
@@ -40,12 +40,22 @@ function triggerDownload(artifact: AnalyticsExportArtifact): void {
   URL.revokeObjectURL(url);
 }
 
-function ReportView({ report }: { readonly report: AnalyticsReport }) {
+function ReportView({
+  report,
+  source,
+  authorityVersion,
+}: {
+  readonly report: AnalyticsReport;
+  readonly source: "browser" | "dotnet";
+  readonly authorityVersion: string | undefined;
+}) {
   return (
     <section className="panel analytics-report" aria-labelledby="analytics-report-heading">
       <div className="panel-heading analytics-report-heading">
         <div>
-          <p className="eyebrow">LOCAL RULES + STATISTICS / AUDITABLE</p>
+          <p className="eyebrow">
+            {source === "dotnet" ? "C# AUTHORITY + STATISTICS / AUDITABLE" : "LOCAL RULES + STATISTICS / FALLBACK"}
+          </p>
           <h2 id="analytics-report-heading">{report.title}</h2>
         </div>
         <span className={`analytics-confidence analytics-confidence-${report.confidence}`}>
@@ -53,7 +63,11 @@ function ReportView({ report }: { readonly report: AnalyticsReport }) {
         </span>
       </div>
       <p className="analytics-engine-note">
-        计算引擎：<strong>本地规则引擎（非 AI）</strong> · {report.rowCount} 行 · 意图 {report.intent}
+        计算引擎：
+        <strong>
+          {source === "dotnet" ? `C# 权威规则引擎 v${authorityVersion ?? "unknown"}` : "浏览器 JS 规则引擎（非 AI）"}
+        </strong>{" "}
+        · {report.rowCount} 行 · 意图 {report.intent}
       </p>
       <div className="analytics-verdict" role="status" aria-live="polite">
         <strong>结论</strong>
@@ -117,37 +131,51 @@ export interface AnalyticsPageProps {
   readonly apiBase?: string | null;
 }
 
+interface AnalyticsExecution {
+  readonly question: string;
+  readonly dataset: AnalyticsDataset;
+  readonly report: AnalyticsReport;
+}
+
 export function AnalyticsPage({ authorityMode = "browser", apiBase = null }: AnalyticsPageProps = {}) {
   const builtIns = useMemo(listBuiltInAnalyticsDatasets, []);
   const initialDataset = builtIns[0]!;
   const [uploads, setUploads] = useState<readonly AnalyticsDataset[]>([]);
   const [dataset, setDataset] = useState<AnalyticsDataset>(initialDataset);
   const [question, setQuestion] = useState<string>(ANALYTICS_QUESTIONS[0]);
-  const [report, setReport] = useState<AnalyticsReport>(() =>
-    runAnalyticsQuestion(ANALYTICS_QUESTIONS[0], initialDataset)
-  );
+  const [analysis, setAnalysis] = useState<AnalyticsExecution>(() => ({
+    question: ANALYTICS_QUESTIONS[0],
+    dataset: initialDataset,
+    report: runAnalyticsQuestion(ANALYTICS_QUESTIONS[0], initialDataset),
+  }));
   const [formError, setFormError] = useState("");
   const [importMessage, setImportMessage] = useState("");
   const [importing, setImporting] = useState(false);
   const authority = useAnalyticsAuthority(authorityMode, apiBase);
+  const report = analysis.report;
+  const authorityReport = authority.state.status === "matched" ? authority.state.report : undefined;
+  const displayedReport = authorityMode === "dotnet" && authorityReport ? authorityReport : report;
+  const reportSource = authorityMode === "dotnet" && authorityReport ? "dotnet" : "browser";
   const datasets = useMemo(() => [...builtIns, ...uploads], [builtIns, uploads]);
   const kpis = useMemo(() => analyticsKpis(dataset), [dataset]);
+
+  useEffect(() => {
+    void authority.run(analysis.question, analysis.dataset, analysis.report);
+  }, [analysis, authority.run]);
 
   const selectDataset = (id: string) => {
     const next = datasets.find((candidate) => candidate.id === id);
     if (!next) return;
     setDataset(next);
     const nextReport = runAnalyticsQuestion(question, next);
-    setReport(nextReport);
-    void authority.run(question, next, nextReport);
+    setAnalysis({ question, dataset: next, report: nextReport });
     setFormError("");
   };
 
   const run = () => {
     try {
       const nextReport = runAnalyticsQuestion(question, dataset);
-      setReport(nextReport);
-      void authority.run(question, dataset, nextReport);
+      setAnalysis({ question, dataset, report: nextReport });
       setFormError("");
     } catch (reason) {
       setFormError(reason instanceof Error ? reason.message : "分析失败");
@@ -165,13 +193,12 @@ export function AnalyticsPage({ authorityMode = "browser", apiBase = null }: Ana
       setUploads((current) => [...current.filter((item) => item.id !== imported.id), imported]);
       setDataset(imported);
       const nextReport = runAnalyticsQuestion(question, imported);
-      setReport(nextReport);
-      void authority.run(question, imported, nextReport);
+      setAnalysis({ question, dataset: imported, report: nextReport });
       setImportMessage(
         imported.warnings.length
           ? `已导入 ${imported.rows.length} 行；${imported.warnings.join("；")}`
-          : authorityMode === "shadow"
-            ? `已导入 ${imported.rows.length} 行；已发送归一化数据行用于 C# 影子比对`
+          : authorityMode === "shadow" || authorityMode === "dotnet"
+            ? `已导入 ${imported.rows.length} 行；已发送归一化数据行用于 C# ${authorityMode === "dotnet" ? "权威分析" : "影子比对"}`
             : `已导入 ${imported.rows.length} 行；文件内容仅在本地处理`
       );
     } catch (reason) {
@@ -184,8 +211,8 @@ export function AnalyticsPage({ authorityMode = "browser", apiBase = null }: Ana
 
   const exportReport = (format: AnalyticsExportFormat) => {
     triggerDownload(
-      createAnalyticsReportExport(report, format, {
-        basename: `forgex-${report.intent}-${dataset.id}`,
+      createAnalyticsReportExport(displayedReport, format, {
+        basename: `forgex-${displayedReport.intent}-${dataset.id}`,
       })
     );
   };
@@ -193,13 +220,15 @@ export function AnalyticsPage({ authorityMode = "browser", apiBase = null }: Ana
   return (
     <div className="page-stack analytics-page">
       <section className="hero-panel">
-        <p className="eyebrow">ANALYTICS / STAGE 2 VERTICAL SLICE</p>
+        <p className="eyebrow">ANALYTICS / STAGE 4-F AUTHORITY CUTOVER</p>
         <h1>数据来源、规则判断与统计证据保持在同一份可审计报告中。</h1>
         <p className="hero-copy">
           内置数据与本地 CSV 始终先由既有规则引擎计算并显示；
           {authorityMode === "shadow"
             ? "当前显式启用了 C# 影子比对，运行分析时会经 Node 发送归一化数据行，但不会用影子结果替换页面报告。"
-            : "当前为 browser 模式，不发送 Analytics 网络请求。"}
+            : authorityMode === "dotnet"
+              ? "当前以 C# 为权威来源；只有逐字段一致性门禁通过才替换浏览器回退报告。"
+              : "当前为 browser 回退模式，不发送 Analytics 网络请求。"}
           本页面不把规则引擎描述为 AI。
         </p>
       </section>
@@ -207,7 +236,9 @@ export function AnalyticsPage({ authorityMode = "browser", apiBase = null }: Ana
       <section className="panel analytics-controls" aria-labelledby="analytics-data-heading">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">DATASET / LOCAL ONLY</p>
+            <p className="eyebrow">
+              DATASET / {authorityMode === "browser" ? "LOCAL ONLY" : "NORMALIZED AUTHORITY INPUT"}
+            </p>
             <h2 id="analytics-data-heading">选择数据与问题</h2>
           </div>
           <span className="analytics-row-count">{dataset.rows.length} 行</span>
@@ -324,7 +355,7 @@ export function AnalyticsPage({ authorityMode = "browser", apiBase = null }: Ana
         <div className="panel-heading">
           <div>
             <p className="eyebrow">AUTHORITY / {authorityMode.toUpperCase()}</p>
-            <h2>C# 字段级影子比对</h2>
+            <h2>{authorityMode === "dotnet" ? "C# 权威结果门禁" : "C# 字段级影子比对"}</h2>
           </div>
           <strong>{authority.state.status}</strong>
         </div>
@@ -336,7 +367,7 @@ export function AnalyticsPage({ authorityMode = "browser", apiBase = null }: Ana
         ) : null}
         {authority.state.status === "mismatch" ? (
           <div className="analytics-table-scroll">
-            <table aria-label="C# Analytics 影子差异">
+            <table aria-label="C# Analytics 字段差异">
               <thead>
                 <tr>
                   <th scope="col">字段</th>
@@ -358,7 +389,11 @@ export function AnalyticsPage({ authorityMode = "browser", apiBase = null }: Ana
         ) : null}
       </section>
 
-      <ReportView report={report} />
+      <ReportView
+        report={displayedReport}
+        source={reportSource}
+        authorityVersion={authority.state.status === "matched" ? authority.state.engineVersion : undefined}
+      />
     </div>
   );
 }

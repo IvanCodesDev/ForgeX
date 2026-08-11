@@ -19,6 +19,7 @@ const rootDir = path.resolve(__dirname, "../..");
  */
 function buildReactFixture() {
   const authorityMode = process.env.E2E_GCODE_AUTHORITY === "dotnet" ? "dotnet" : "browser";
+  const analyticsAuthorityMode = process.env.E2E_ANALYTICS_AUTHORITY === "dotnet" ? "dotnet" : "browser";
   const npmCli = process.env.npm_execpath;
   const command = npmCli ? process.execPath : process.platform === "win32" ? "npm.cmd" : "npm";
   const args = npmCli ? [npmCli, "run", "frontend:build"] : ["run", "frontend:build"];
@@ -37,7 +38,7 @@ function buildReactFixture() {
       VITE_REACT_PROFILE_SELECTOR_ENABLED: "1",
       VITE_REACT_MACHINE_LOG_ENABLED: "1",
       VITE_REACT_ANALYTICS_ENABLED: "1",
-      VITE_ANALYTICS_AUTHORITY: "browser",
+      VITE_ANALYTICS_AUTHORITY: analyticsAuthorityMode,
       VITE_REACT_GOVERNANCE_ENABLED: "1",
     },
   });
@@ -51,6 +52,7 @@ function buildReactFixture() {
 buildReactFixture();
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "forgex-e2e-"));
+const sidecarEnabled = process.env.E2E_GCODE_AUTHORITY === "dotnet" || process.env.E2E_ANALYTICS_AUTHORITY === "dotnet";
 
 const app = createApp({
   host: "127.0.0.1",
@@ -66,8 +68,8 @@ const app = createApp({
   requireAuth: false,
   infiniPartnerClientId: "",
   infiniPartnerClientSecret: "",
-  gcodeAuthorityUrl: "",
-  analyticsAuthorityEnabled: false,
+  gcodeAuthorityUrl: sidecarEnabled ? "http://127.0.0.1:8788" : "",
+  analyticsAuthorityEnabled: process.env.E2E_ANALYTICS_AUTHORITY === "dotnet",
 });
 
 app.server.listen(8899, "127.0.0.1", () => {

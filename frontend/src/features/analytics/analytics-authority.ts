@@ -3,7 +3,7 @@ import { createNodeRequestInit } from "../../app/api/api-adapter";
 import { forgeXApiOperations, type AnalyticsReportRequest } from "../../generated/forgex-api";
 import type { AnalyticsDataset, AnalyticsReport, AnalyticsRow } from "./analytics-types";
 
-export type AnalyticsAuthorityMode = "browser" | "shadow";
+export type AnalyticsAuthorityMode = "browser" | "shadow" | "dotnet";
 
 export interface AnalyticsAuthorityDifference {
   readonly field: string;
@@ -21,6 +21,7 @@ export type AnalyticsAuthorityState =
       readonly engineVersion: string;
       readonly comparedFields: number;
       readonly differences: readonly AnalyticsAuthorityDifference[];
+      readonly report?: AnalyticsReport;
     }
   | { readonly status: "error"; readonly detail: string };
 
@@ -147,6 +148,24 @@ export function compareAnalyticsReports(
   return { comparedFields: counter.value, differences };
 }
 
+function selectComparedShape(expected: unknown, actual: unknown): unknown {
+  if (Array.isArray(expected) && Array.isArray(actual)) {
+    return expected.map((item, index) => selectComparedShape(item, actual[index]));
+  }
+  if (isRecord(expected) && isRecord(actual)) {
+    return Object.fromEntries(
+      Object.entries(expected).map(([key, value]) => [key, selectComparedShape(value, actual[key])])
+    );
+  }
+  return actual;
+}
+
+function verifiedAuthorityReport(browserReport: AnalyticsReport, authorityReport: unknown): AnalyticsReport {
+  // compareAnalyticsReports has already verified every browser-owned field and type.
+  // Rebuilding that exact shape prevents authority-only fields from reaching exports.
+  return selectComparedShape(browserReport, authorityReport) as AnalyticsReport;
+}
+
 export async function requestAnalyticsAuthority(
   apiBase: string,
   question: string,
@@ -159,7 +178,7 @@ export async function requestAnalyticsAuthority(
   if (signal.aborted) onAbort();
   else signal.addEventListener("abort", onAbort, { once: true });
   const timeout = globalThis.setTimeout(
-    () => controller.abort(new Error("C# Analytics 影子比对超时")),
+    () => controller.abort(new Error("C# Analytics 请求超时")),
     AUTHORITY_TIMEOUT_MS
   );
   try {
@@ -180,12 +199,12 @@ export async function requestAnalyticsAuthority(
       } catch {
         // Preserve the HTTP status when a gateway returns non-JSON text.
       }
-      throw new Error(`C# Analytics 影子比对失败（${detail}）`);
+      throw new Error(`C# Analytics 请求失败（${detail}）`);
     }
     return parseAuthorityEnvelope(await response.json());
   } catch (error) {
     if (controller.signal.aborted && !signal.aborted) {
-      throw new Error("C# Analytics 影子比对超时", { cause: error });
+      throw new Error("C# Analytics 请求超时", { cause: error });
     }
     throw error;
   } finally {
@@ -204,7 +223,10 @@ export function useAnalyticsAuthority(
       ? { status: "browser", detail: "仅运行浏览器 JS 报告；未发送影子请求。" }
       : apiBase === null
         ? { status: "offline", detail: "离线模式保持浏览器报告，不发送网络请求。" }
-        : { status: "browser", detail: "等待下一次规则分析后启动 C# 影子比对。" }
+        : {
+            status: "browser",
+            detail: mode === "dotnet" ? "等待规则分析后运行 C# 权威结果门禁。" : "等待规则分析后启动 C# 影子比对。",
+          }
   );
   const requestId = useRef(0);
   const controller = useRef<AbortController | null>(null);
@@ -218,13 +240,16 @@ export function useAnalyticsAuthority(
         ? { status: "browser", detail: "仅运行浏览器 JS 报告；未发送影子请求。" }
         : apiBase === null
           ? { status: "offline", detail: "离线模式保持浏览器报告，不发送网络请求。" }
-          : { status: "browser", detail: "等待下一次规则分析后启动 C# 影子比对。" }
+          : {
+              status: "browser",
+              detail: mode === "dotnet" ? "等待规则分析后运行 C# 权威结果门禁。" : "等待规则分析后启动 C# 影子比对。",
+            }
     );
   }, [apiBase, mode]);
 
   const run = useCallback(
     async (question: string, dataset: AnalyticsDataset, browserReport: AnalyticsReport) => {
-      if (mode !== "shadow" || apiBase === null) {
+      if (mode === "browser" || apiBase === null) {
         reset();
         return;
       }
@@ -233,7 +258,13 @@ export function useAnalyticsAuthority(
       controller.current?.abort();
       const active = new AbortController();
       controller.current = active;
-      setState({ status: "running", detail: "浏览器结果已显示；正在与 C# 权威核心逐字段比对…" });
+      setState({
+        status: "running",
+        detail:
+          mode === "dotnet"
+            ? "浏览器回退结果已就绪；正在校验 C# 权威报告…"
+            : "浏览器结果已显示；正在与 C# 权威核心逐字段比对…",
+      });
       try {
         const authority = await requestAnalyticsAuthority(apiBase, question, dataset, active.signal, env);
         if (currentId !== requestId.current) return;
@@ -242,14 +273,18 @@ export function useAnalyticsAuthority(
           comparison.differences.length === 0
             ? {
                 status: "matched",
-                detail: `字段级比对一致：${comparison.comparedFields} 个字段通过。`,
+                detail:
+                  mode === "dotnet"
+                    ? `C# 权威报告已启用：${comparison.comparedFields} 个字段通过一致性门禁。`
+                    : `字段级比对一致：${comparison.comparedFields} 个字段通过。`,
                 engineVersion: authority.engineVersion,
                 comparedFields: comparison.comparedFields,
                 differences: [],
+                report: verifiedAuthorityReport(browserReport, authority.report),
               }
             : {
                 status: "mismatch",
-                detail: `发现 ${comparison.differences.length} 项差异；页面继续显示浏览器结果。`,
+                detail: `发现 ${comparison.differences.length} 项差异；页面保留浏览器 JS 回退结果。`,
                 engineVersion: authority.engineVersion,
                 comparedFields: comparison.comparedFields,
                 differences: comparison.differences,
@@ -257,7 +292,7 @@ export function useAnalyticsAuthority(
         );
       } catch (error) {
         if (currentId !== requestId.current || active.signal.aborted) return;
-        setState({ status: "error", detail: error instanceof Error ? error.message : "C# Analytics 影子比对失败" });
+        setState({ status: "error", detail: error instanceof Error ? error.message : "C# Analytics 请求失败" });
       } finally {
         if (currentId === requestId.current) controller.current = null;
       }

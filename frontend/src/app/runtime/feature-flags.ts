@@ -4,7 +4,7 @@ export interface FeatureFlags {
   readonly machineLogReact: boolean;
   readonly profileSelectorReact: boolean;
   readonly analyticsReact: boolean;
-  readonly analyticsAuthority: "browser" | "shadow";
+  readonly analyticsAuthority: "browser" | "shadow" | "dotnet";
   readonly governanceReact: boolean;
 }
 
@@ -15,7 +15,10 @@ export function readFeatureFlags(env: ImportMetaEnv): FeatureFlags {
     machineLogReact: env.VITE_REACT_MACHINE_LOG_ENABLED !== "0",
     profileSelectorReact: env.VITE_REACT_PROFILE_SELECTOR_ENABLED !== "0",
     analyticsReact: env.VITE_REACT_ANALYTICS_ENABLED !== "0",
-    analyticsAuthority: env.VITE_ANALYTICS_AUTHORITY === "shadow" ? "shadow" : "browser",
+    analyticsAuthority:
+      env.VITE_ANALYTICS_AUTHORITY === "browser" || env.VITE_ANALYTICS_AUTHORITY === "shadow"
+        ? env.VITE_ANALYTICS_AUTHORITY
+        : "dotnet",
     governanceReact: env.VITE_REACT_GOVERNANCE_ENABLED !== "0",
   };
 }

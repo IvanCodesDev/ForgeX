@@ -9,7 +9,7 @@ This directory is the sidecar authority introduced by the optimization manual. I
 - Production projects: no external `PackageReference`
 - Package sources: cleared by `backend/NuGet.Config`
 - Default API binding: loopback only, `http://127.0.0.1:8788`
-- Migration modes: `browser` (current default), `shadow`, then `dotnet`
+- Migration modes: G-code defaults to `browser`; Analytics defaults to `dotnet` with `shadow` and `browser` rollback modes
 
 The local SDK is discovered by `tools/run-dotnet.js`. CI may use a system SDK with the exact same version.
 
@@ -74,11 +74,13 @@ Stage 4-E adds a stateless `POST /api/v1/analytics/reports` boundary. It accepts
 at most 5 MiB and 5000 normalized rows, validates provenance row counts, and returns the same
 deterministic report DTO with engine evidence. Node exposes only this fixed same-origin path after
 its existing identity and rate-limit guards, streams the body without re-encoding, and strips all
-browser credentials before calling the loopback sidecar. React remains on the existing JS report
-path in the default `browser` mode; `VITE_ANALYTICS_AUTHORITY=shadow` runs C# in parallel and shows
-field-level differences without changing the displayed report or persisting inputs. Offline builds
-perform no request. Set `ANALYTICS_AUTHORITY_ENABLED=0` to close the proxy independently. Rollback
-restores the Stage 4-D source and keeps the frozen golden and all stored user data unchanged.
+browser credentials before calling the loopback sidecar. Stage 4-F makes `dotnet` the online default:
+React computes a temporary JS fallback, compares every browser-owned field, strips authority-only
+fields, and uses the C# object for display and export only after an exact match. Mismatch, timeout,
+or transport failure leaves the JS report visible with a degraded status. `shadow` remains a
+comparison-only mode; `browser` remains the one-release rollback and offline path with zero requests.
+Set `ANALYTICS_AUTHORITY_ENABLED=0` to close the proxy independently. Rollback restores Stage 4-E
+without changing the frozen golden or stored user data.
 
 Async job endpoints are tenant/owner scoped. In production, configure the same secret as Node's
 `GCODE_AUTHORITY_INTERNAL_SECRET` through `InternalAuth__SharedSecret`. Node resolves the browser

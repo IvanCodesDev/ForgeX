@@ -8,7 +8,7 @@ function env(
   analytics?: "0" | "1",
   governance?: "0" | "1",
   simulator?: "0" | "1",
-  analyticsAuthority?: "browser" | "shadow"
+  analyticsAuthority?: "browser" | "shadow" | "dotnet"
 ): ImportMetaEnv {
   return {
     BASE_URL: "/",
@@ -33,7 +33,7 @@ describe("readFeatureFlags", () => {
     expect(readFeatureFlags(env()).machineLogReact).toBe(true);
     expect(readFeatureFlags(env()).profileSelectorReact).toBe(true);
     expect(readFeatureFlags(env()).analyticsReact).toBe(true);
-    expect(readFeatureFlags(env()).analyticsAuthority).toBe("browser");
+    expect(readFeatureFlags(env()).analyticsAuthority).toBe("dotnet");
     expect(readFeatureFlags(env()).governanceReact).toBe(true);
   });
 
@@ -75,5 +75,9 @@ describe("readFeatureFlags", () => {
 
   it("enables analytics shadow authority only when explicitly selected", () => {
     expect(readFeatureFlags(env("1", "1", "1", "1", "1", "1", "shadow")).analyticsAuthority).toBe("shadow");
+  });
+
+  it("keeps browser as an explicit one-release rollback mode", () => {
+    expect(readFeatureFlags(env("1", "1", "1", "1", "1", "1", "browser")).analyticsAuthority).toBe("browser");
   });
 });

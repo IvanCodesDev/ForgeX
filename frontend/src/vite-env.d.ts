@@ -9,7 +9,7 @@ interface ImportMetaEnv {
   readonly VITE_REACT_MACHINE_LOG_ENABLED?: "0" | "1";
   readonly VITE_REACT_PROFILE_SELECTOR_ENABLED?: "0" | "1";
   readonly VITE_REACT_ANALYTICS_ENABLED?: "0" | "1";
-  readonly VITE_ANALYTICS_AUTHORITY?: "browser" | "shadow";
+  readonly VITE_ANALYTICS_AUTHORITY?: "browser" | "shadow" | "dotnet";
   readonly VITE_REACT_GOVERNANCE_ENABLED?: "0" | "1";
   readonly VITE_GCODE_AUTHORITY?: "browser" | "shadow" | "dotnet";
   readonly VITE_GCODE_JOB_API?: "0" | "1";
