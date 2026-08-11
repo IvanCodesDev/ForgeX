@@ -130,6 +130,9 @@ jobs:
       - name: 文件仓库备份、校验与恢复演练
         run: node tools/run-dotnet.js run --project backend/tests/ForgeX.PersistenceGate/ForgeX.PersistenceGate.csproj --configuration Release --no-build
 
+      - name: JS/C# 分析统计与 CSV 双跑门禁
+        run: node tools/run-dotnet.js run --project backend/tests/ForgeX.AnalyticsGate/ForgeX.AnalyticsGate.csproj --configuration Release --no-build
+
       - uses: actions/upload-artifact@v4
         with:
           name: gcode-golden-diff-dotnet-10.0.302
@@ -150,6 +153,13 @@ jobs:
           path: |
             backend/artifacts/persistence-recovery-gate.json
             backend/artifacts/persistence-recovery-gate.fxbackup
+          if-no-files-found: error
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: analytics-golden-diff-dotnet-10.0.302
+          path: backend/artifacts/analytics-golden-diff.json
           if-no-files-found: error
           retention-days: 14
 

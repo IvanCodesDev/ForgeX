@@ -1,0 +1,385 @@
+{
+  "baselineVersion": "0.19.0-stage4-a",
+  "csvCases": [
+    {
+      "expected": {
+        "errors": [
+          "第 3 行：duration_min 不是有效数值（bad）"
+        ],
+        "rows": [
+          {
+            "cost_fen": 123,
+            "duration_min": 12.5,
+            "fail_reason": "",
+            "machine_id": "M-1",
+            "status": "success"
+          }
+        ]
+      },
+      "id": "english-alias-invalid-number",
+      "input": "machine,status,duration,cost_cny,fail_reason\n\"M-1\",completed,12.5,1.23,\"\"\n\"M-2\",failed,bad,2.00,\"堵,料\"\n"
+    },
+    {
+      "expected": {
+        "errors": [],
+        "rows": [
+          {
+            "cost_fen": 105,
+            "fail_reason": "",
+            "layer_height_mm": 0.2,
+            "machine_id": "FX-01",
+            "material": "PLA",
+            "status": "success"
+          },
+          {
+            "cost_fen": 250,
+            "fail_reason": "翘边",
+            "layer_height_mm": 0.28,
+            "machine_id": "FX-02",
+            "material": "ABS",
+            "status": "fail"
+          }
+        ]
+      },
+      "id": "chinese-bom-and-status",
+      "input": "﻿机台,材料,状态,层高,成本元,故障类型\r\nFX-01,PLA,成功,0.2,1.05,\r\nFX-02,ABS,故障,0.28,2.5,翘边\r\n"
+    },
+    {
+      "expected": {
+        "errors": [
+          "machine_id（机台）与 material（材料）至少需其一"
+        ],
+        "rows": []
+      },
+      "id": "missing-dimension",
+      "input": "status,duration_min\nsuccess,10\n"
+    },
+    {
+      "expected": {
+        "errors": [
+          "第 2 行：duration_min 超出有限数值范围（1e999）"
+        ],
+        "rows": [
+          {
+            "cost_fen": 0,
+            "duration_min": 10,
+            "fail_reason": "",
+            "machine_id": "M-2",
+            "status": "success"
+          }
+        ]
+      },
+      "id": "overflow-and-js-rounding",
+      "input": "machine,status,duration,cost_cny\nM-1,success,1e999,-0.005\nM-2,success,10,-0.005\n"
+    }
+  ],
+  "csvLimitCase": {
+    "expected": {
+      "errors": [
+        "数据超过 5000 行，已截取前 5000 行"
+      ],
+      "rowCount": 5000
+    },
+    "input": {
+      "rowCount": 5001
+    }
+  },
+  "dataset": {
+    "expected": {
+      "errors": [],
+      "kpis": {
+        "avgCostFen": 127,
+        "dateRange": {
+          "days": 21,
+          "from": "2026-06-29",
+          "label": "2026-06-29 → 2026-07-19（21 天）",
+          "to": "2026-07-19"
+        },
+        "energyKwh": 52.68999999999994,
+        "filamentKg": 3.9683000000000015,
+        "rankedMachines": 8,
+        "topReason": {
+          "n": 23,
+          "name": "堵料"
+        },
+        "total": 400,
+        "worstMachine": {
+          "ci": {
+            "hi": 0.44527893558910636,
+            "k": 15,
+            "lo": 0.19515491268006566,
+            "n": 49,
+            "p": 0.30612244897959184,
+            "width": 0.2501240229090407
+          },
+          "failRate": 0.30612244897959184,
+          "id": "FX-256-01",
+          "n": 49,
+          "pValue": 0.015166901397336792,
+          "significant": true
+        },
+        "yield": 0.825
+      },
+      "rowCount": 400
+    },
+    "path": "datasets/print_farm_400.csv",
+    "sha256": "85f09e4594b10a4dac914c05c3b2ece227b5b181617e17c13d4d9203179888fd"
+  },
+  "engine": {
+    "name": "legacy-js-statistics",
+    "sourcePaths": [
+      "js/stats-kernel.js",
+      "js/insight-data.js",
+      "js/insight-engine.js"
+    ],
+    "sourceSha256": "4d7d4d872327c45b6db124293bfe584c1c012662309049fe87dd180f5003675c"
+  },
+  "fisherCases": [
+    {
+      "expected": {
+        "a": 3,
+        "b": 1,
+        "c": 1,
+        "d": 3,
+        "n": 8,
+        "oddsRatio": 9,
+        "pValue": 0.4857142857142811
+      },
+      "input": {
+        "a": 3,
+        "b": 1,
+        "c": 1,
+        "d": 3
+      }
+    },
+    {
+      "expected": {
+        "a": 0,
+        "b": 5,
+        "c": 5,
+        "d": 0,
+        "n": 10,
+        "oddsRatio": 0.008264462809917356,
+        "pValue": 0.00793650793650797
+      },
+      "input": {
+        "a": 0,
+        "b": 5,
+        "c": 5,
+        "d": 0
+      }
+    },
+    {
+      "expected": {
+        "a": 10,
+        "b": 20,
+        "c": 5,
+        "d": 25,
+        "n": 60,
+        "oddsRatio": 2.5,
+        "pValue": 0.23259847039384013
+      },
+      "input": {
+        "a": 10,
+        "b": 20,
+        "c": 5,
+        "d": 25
+      }
+    },
+    {
+      "expected": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0,
+        "n": 0,
+        "oddsRatio": null,
+        "pValue": 1
+      },
+      "input": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      }
+    }
+  ],
+  "format": "forgex-stage4-analytics-golden",
+  "rankCase": {
+    "expected": {
+      "alpha": 0.05,
+      "fleet": {
+        "k": 29,
+        "n": 96,
+        "rate": 0.3020833333333333
+      },
+      "minSample": 5,
+      "ranked": [
+        {
+          "ci": {
+            "hi": 0.44527893558910636,
+            "k": 15,
+            "lo": 0.19515491268006566,
+            "n": 49,
+            "p": 0.30612244897959184,
+            "width": 0.2501240229090407
+          },
+          "k": 15,
+          "key": "A",
+          "n": 49,
+          "oddsRatio": 1.0399159663865547,
+          "pValue": 1,
+          "rate": 0.30612244897959184,
+          "significant": false,
+          "vsRest": {
+            "k": 14,
+            "n": 47,
+            "rate": 0.2978723404255319
+          }
+        },
+        {
+          "ci": {
+            "hi": 0.4336854057476158,
+            "k": 13,
+            "lo": 0.17730082482849266,
+            "n": 45,
+            "p": 0.28888888888888886,
+            "width": 0.2563845809191232
+          },
+          "k": 13,
+          "key": "B",
+          "n": 45,
+          "oddsRatio": 0.888671875,
+          "pValue": 0.8269748673423764,
+          "rate": 0.28888888888888886,
+          "significant": false,
+          "vsRest": {
+            "k": 16,
+            "n": 51,
+            "rate": 0.3137254901960784
+          }
+        }
+      ],
+      "skipped": [
+        {
+          "ci": {
+            "hi": 0.9054687942657693,
+            "k": 1,
+            "lo": 0.09453120573423074,
+            "n": 2,
+            "p": 0.5,
+            "width": 0.8109375885315386
+          },
+          "k": 1,
+          "key": "tiny",
+          "n": 2,
+          "reason": "样本量 2 < 5"
+        }
+      ],
+      "worst": null
+    },
+    "input": {
+      "alpha": 0.05,
+      "groups": [
+        {
+          "k": 15,
+          "key": "A",
+          "n": 49
+        },
+        {
+          "k": 13,
+          "key": "B",
+          "n": 45
+        },
+        {
+          "k": 1,
+          "key": "tiny",
+          "n": 2
+        }
+      ],
+      "minSample": 5
+    }
+  },
+  "schemaVersion": 1,
+  "tolerance": {
+    "numericAbs": 1e-9,
+    "numericRel": 1e-9
+  },
+  "wilsonCases": [
+    {
+      "expected": {
+        "hi": 1,
+        "k": 0,
+        "lo": 0,
+        "n": 0,
+        "p": 0,
+        "width": 1
+      },
+      "input": {
+        "confidence": 0.95,
+        "k": 0,
+        "n": 0
+      }
+    },
+    {
+      "expected": {
+        "hi": 0.2775327998628892,
+        "k": 0,
+        "lo": 0,
+        "n": 10,
+        "p": 0,
+        "width": 0.2775327998628892
+      },
+      "input": {
+        "confidence": 0.95,
+        "k": 0,
+        "n": 10
+      }
+    },
+    {
+      "expected": {
+        "hi": 0.5189728183535235,
+        "k": 6,
+        "lo": 0.1454772448676043,
+        "n": 20,
+        "p": 0.3,
+        "width": 0.3734955734859192
+      },
+      "input": {
+        "confidence": 0.95,
+        "k": 6,
+        "n": 20
+      }
+    },
+    {
+      "expected": {
+        "hi": 0.9999999999999999,
+        "k": 10,
+        "lo": 0.7224672001371107,
+        "n": 10,
+        "p": 1,
+        "width": 0.27753279986288915
+      },
+      "input": {
+        "confidence": 0.95,
+        "k": 10,
+        "n": 10
+      }
+    },
+    {
+      "expected": {
+        "hi": 0.4377907331392853,
+        "k": 31,
+        "lo": 0.20585312819272739,
+        "n": 100,
+        "p": 0.31,
+        "width": 0.2319376049465579
+      },
+      "input": {
+        "confidence": 0.99,
+        "k": 31,
+        "n": 100
+      }
+    }
+  ]
+}

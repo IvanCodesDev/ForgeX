@@ -198,6 +198,7 @@ Node.js service :8787
 - **契约边界**：`backend/src/ForgeX.Api/openapi/v1.json` 是 API 单一来源，构建前生成 TypeScript DTO、操作路径和路径参数函数；CI 通过源文件 SHA 与生成器复跑阻止前后端契约漂移；
 - **存储**：默认 `Persistence:Provider=file` 写入 `data/`，容器部署可挂载持久化卷；文件作业仓库提供逐条 SHA-256 的版本化备份、全量预检恢复和就绪探针。`backend/database/postgresql/` 已冻结 PostgreSQL v1 迁移、租户/归属键、事件表、幂等唯一约束与 RLS 策略，但本阶段未启用 PostgreSQL 运行时驱动，误配为 `postgresql` 会在启动时明确终止。
 - **可观测性**：C# 输出单行 JSON 请求日志，包含稳定路由模板、状态码、耗时与 trace ID；`/metrics` 提供有界标签的 Prometheus 文本指标，不把具体作业 ID 放入标签。
+- **分析迁移**：Stage 4-A 已把 CSV 归一、Wilson 区间、Fisher 精确检验、带样本量守卫的失败率排名和 KPI 汇总迁入零 NuGet 的 `ForgeX.Analytics`；同一份冻结输入仍由 JS 计算，C# 通过字段级差异报告证明口径一致。React 当前继续显示 JS 报告，尚未提前切换默认权威来源。
 
 ### React Stage 2 当前范围
 
@@ -237,6 +238,7 @@ npm run dotnet:golden         # 构建 .NET 10 G-code 核心并执行 JS/C# 字�
 npm run dotnet:jobs           # 验证内容寻址存储、文件作业仓库、幂等冲突与有界队列
 npm run postgres:migrations:check # 验证 PostgreSQL 迁移顺序、SHA、RLS 与非破坏性 DDL
 npm run dotnet:persistence    # 创建、校验、篡改检测并恢复文件作业仓库备份
+npm run dotnet:analytics      # 双跑 JS/C# CSV、统计核、排名和 400 行 KPI，生成字段级差异
 npm run containers:check      # 静态验证镜像固定版本、非 root、只读文件系统和卷边界
 npm run test:e2e              # Chromium 全量 + Firefox/WebKit 关键流程
 npm run demo:check            # 演示素材与真实导入链校验
@@ -252,6 +254,8 @@ npm run test:e2e:chromium -- tests/e2e/react-stage3-simulator.spec.js
 ```
 
 测试覆盖切片、导出、G-code、真机日志、时间校准、Profile、调平、仿真状态机、统计核、生产洞察、Partner SSO、服务端接口，以及 React 身份 Header、即时仿真零 API 请求与参数响应、Delta + PETG G-code/日志对账、分析来源、校准治理边界和移动端溢出检查。
+
+Stage 4 分析 Golden 位于 [`tests/golden/stage4-analytics-golden.json`](./tests/golden/stage4-analytics-golden.json)。默认验证命令只读；只有人工审阅差异后才能运行 `npm run analytics:golden:update` 更新基线。C# 差异报告写入 `backend/artifacts/analytics-golden-diff.json`，CI 将其作为独立 artifact 保存。
 
 ## 部署
 

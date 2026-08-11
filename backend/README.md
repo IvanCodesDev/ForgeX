@@ -20,6 +20,7 @@ npm run dotnet:build
 npm run dotnet:golden
 npm run dotnet:jobs
 npm run dotnet:persistence
+npm run dotnet:analytics
 npm run dotnet:api
 ```
 
@@ -41,6 +42,29 @@ trace ID. `/metrics` emits Prometheus text with bounded method/route/status labe
 histograms, uptime, build identity, and the latest file repository readiness/count. Concrete job IDs
 are never used as metric labels. This uses only the ASP.NET shared framework; no telemetry package is
 added in this slice.
+
+## Stage 4 analytics dual-run
+
+`ForgeX.Analytics` is the first analysis migration slice. It has no external package reference and
+ports the existing browser contract for CSV aliases/status normalization, Wilson intervals, Fisher
+exact tests, sample-size guarded failure-rate ranking, and dashboard KPIs. It does not yet replace
+the React report engine.
+
+`tests/golden/stage4-analytics-golden.json` freezes four malformed/aliased CSV cases, five Wilson
+vectors, four Fisher vectors, one ranking matrix, and the existing 400-row physical-farm dataset.
+The JS validator must reproduce the JSON byte-for-byte at the semantic level; `ForgeX.AnalyticsGate`
+then reads the same inputs and emits `backend/artifacts/analytics-golden-diff.json` with per-field
+absolute/relative deltas. Updating this baseline is an explicit reviewed operation:
+
+```text
+node tools/validate-stage4-analytics-golden.js
+npm run dotnet:analytics
+npm run analytics:golden:update   # only after reviewing and approving an intentional change
+```
+
+Rollback for Stage 4-A removes the Analytics project/gate and its solution entries, then removes the
+two Stage 4 scripts from the main test chain. No API route, browser default, database, or stored user
+data changes in this slice.
 
 Async job endpoints are tenant/owner scoped. In production, configure the same secret as Node's
 `GCODE_AUTHORITY_INTERNAL_SECRET` through `InternalAuth__SharedSecret`. Node resolves the browser
