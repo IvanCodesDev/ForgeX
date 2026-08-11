@@ -1,0 +1,50 @@
+groups:
+  - name: forgex-production
+    rules:
+      - alert: ForgeXApiUnavailable
+        expr: up{job="forgex-api"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: ForgeX authority API is unavailable
+          runbook: deploy/RUNBOOK.md#forgexapiunavailable
+
+      - alert: ForgeXHttp5xxBudgetBurn
+        expr: sum(rate(forgex_http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(forgex_http_requests_total[5m])), 0.001) > 0.05
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: HTTP 5xx ratio exceeds 5 percent
+          runbook: deploy/RUNBOOK.md#forgexhttp5xxbudgetburn
+
+      - alert: ForgeXHttpLatencyHigh
+        expr: histogram_quantile(0.95, sum by (le) (rate(forgex_http_request_duration_ms_bucket[10m]))) > 2000
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: HTTP p95 latency exceeds two seconds
+          runbook: deploy/RUNBOOK.md#forgexhttplatencyhigh
+
+      - alert: ForgeXGCodeQueueSaturated
+        expr: forgex_gcode_job_queue_depth / clamp_min(forgex_gcode_job_queue_capacity, 1) > 0.8
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: G-code queue remains above 80 percent
+          runbook: deploy/RUNBOOK.md#forgexgcodequeuesaturated
+
+      - alert: ForgeXGCodeDeadLetters
+        expr: increase(forgex_gcode_job_dead_letters_total[10m]) > 0
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: A G-code job entered the dead-letter terminal state
+          runbook: deploy/RUNBOOK.md#forgexgcodedeadletters
+
+      - alert: ForgeXGCodeFailureRatioHigh
+        expr: sum(forgex_gcode_jobs{status=~"failed|dead-letter"}) / clamp_min(sum(forgex_gcode_jobs), 1) > 0.01
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: Durable failed job ratio exceeds one percent
+          runbook: deploy/RUNBOOK.md#forgexgcodefailureratiohigh

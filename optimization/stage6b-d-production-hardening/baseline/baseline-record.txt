@@ -1,0 +1,6 @@
+schemaVersion=1.0
+stage=6-B-through-6-D
+baselineCommit=c3fc829e2afe5684ec17c53c89e3dce316f9a1a9
+productFiles=34
+baselineFiles=21
+newFiles=13

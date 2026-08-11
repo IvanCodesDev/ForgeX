@@ -369,6 +369,9 @@
           "409": {
             "$ref": "#/components/responses/Problem"
           },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
           "413": {
             "$ref": "#/components/responses/Problem"
           },

@@ -16,16 +16,17 @@ internal static class CallerContextBoundary
         path.StartsWithSegments("/api/v1/gcode/analyses", StringComparison.Ordinal) ||
         path.StartsWithSegments("/api/v1/jobs", StringComparison.Ordinal);
 
-    public static IResult? Resolve(HttpContext context, string sharedSecret)
+    public static IResult? Resolve(HttpContext context, string sharedSecret, string previousSharedSecret)
     {
-        if (string.IsNullOrEmpty(sharedSecret))
+        if (string.IsNullOrEmpty(sharedSecret) && string.IsNullOrEmpty(previousSharedSecret))
         {
             context.Items[ContextItemKey] = new ForgeXCallerContext("tn_local", "ow_local", false);
             return null;
         }
 
         if (!TryReadSingle(context, InternalTokenHeader, out var suppliedToken) ||
-            !FixedTimeEquals(suppliedToken, sharedSecret))
+            (!FixedTimeEquals(suppliedToken, sharedSecret) &&
+             !FixedTimeEquals(suppliedToken, previousSharedSecret)))
         {
             return ApiProblemResults.Create(
                 context,
@@ -70,6 +71,7 @@ internal static class CallerContextBoundary
 
     private static bool FixedTimeEquals(string supplied, string expected)
     {
+        if (string.IsNullOrEmpty(expected)) return false;
         var suppliedHash = SHA256.HashData(Encoding.UTF8.GetBytes(supplied));
         var expectedHash = SHA256.HashData(Encoding.UTF8.GetBytes(expected));
         return CryptographicOperations.FixedTimeEquals(suppliedHash, expectedHash);

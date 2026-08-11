@@ -96,6 +96,42 @@ try
         reopenedRetry.NextAttemptAtUtc == retrying.NextAttemptAtUtc,
         reopenedRetry);
 
+    var quotaRepository = new FileGCodeJobRepository(Path.Combine(root, "quota-jobs"));
+    var quota = new GCodeJobAdmissionOptions(1, 2).Validate();
+    var quotaOwnerA = job with { Id = Guid.NewGuid().ToString("N"), IdempotencyKey = "quota-owner-a" };
+    var quotaFirst = await quotaRepository.CreateOrGetAsync(quotaOwnerA, CancellationToken.None, quota);
+    Check("owner-quota-first-admitted", quotaFirst.Created && quotaFirst.RejectionCode is null, quotaFirst);
+    var quotaReplay = await quotaRepository.CreateOrGetAsync(
+        quotaOwnerA with { Id = Guid.NewGuid().ToString("N") }, CancellationToken.None, quota);
+    Check("quota-idempotent-replay-bypasses-limit", !quotaReplay.Created && quotaReplay.Job.Id == quotaOwnerA.Id, quotaReplay);
+    var ownerRejected = await quotaRepository.CreateOrGetAsync(
+        quotaOwnerA with { Id = Guid.NewGuid().ToString("N"), IdempotencyKey = "quota-owner-a-2" }, CancellationToken.None, quota);
+    Check("owner-active-quota-rejected", ownerRejected.RejectionCode == "gcode_owner_active_quota_exceeded", ownerRejected);
+    var quotaOwnerB = quotaOwnerA with
+    {
+        Id = Guid.NewGuid().ToString("N"),
+        IdempotencyKey = "quota-owner-b",
+        OwnerId = ownerB,
+    };
+    var tenantSecond = await quotaRepository.CreateOrGetAsync(quotaOwnerB, CancellationToken.None, quota);
+    Check("tenant-second-owner-admitted", tenantSecond.Created && tenantSecond.RejectionCode is null, tenantSecond);
+    var tenantRejected = await quotaRepository.CreateOrGetAsync(quotaOwnerB with
+    {
+        Id = Guid.NewGuid().ToString("N"),
+        IdempotencyKey = "quota-owner-c",
+        OwnerId = "ow_33333333333333333333333333333333",
+    }, CancellationToken.None, quota);
+    Check("tenant-active-quota-rejected", tenantRejected.RejectionCode == "gcode_tenant_active_quota_exceeded", tenantRejected);
+    await quotaRepository.SaveAsync(quotaOwnerA with
+    {
+        Status = GCodeJobStatus.Cancelled,
+        Phase = "cancelled",
+        FinishedAtUtc = now,
+    }, CancellationToken.None);
+    var quotaAfterTerminal = await quotaRepository.CreateOrGetAsync(
+        quotaOwnerA with { Id = Guid.NewGuid().ToString("N"), IdempotencyKey = "quota-owner-a-3" }, CancellationToken.None, quota);
+    Check("terminal-job-releases-owner-quota", quotaAfterTerminal.Created && quotaAfterTerminal.RejectionCode is null, quotaAfterTerminal);
+
     var legacyRoot = Path.Combine(root, "legacy-jobs");
     var legacyRepository = new FileGCodeJobRepository(legacyRoot);
     var legacyJob = job with

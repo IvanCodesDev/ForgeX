@@ -19,7 +19,9 @@ internal static class GCodeJobEndpoints
         IContentObjectStore objects,
         IGCodeJobRepository repository,
         IGCodeJobQueue queue,
-        GCodeJobRetryOptions retryOptions)
+        GCodeJobRetryOptions retryOptions,
+        GCodeJobAdmissionOptions admissionOptions,
+        ForgeXMetrics metrics)
     {
         var caller = CallerContextBoundary.GetRequired(context);
         var mediaType = context.Request.ContentType?.Split(';', 2)[0].Trim();
@@ -82,14 +84,26 @@ internal static class GCodeJobEndpoints
             caller.TenantId,
             caller.OwnerId,
             MaxAttempts: retryOptions.MaxAttempts);
-        var result = await repository.CreateOrGetAsync(candidate, context.RequestAborted);
+        var result = await repository.CreateOrGetAsync(candidate, context.RequestAborted, admissionOptions);
         if (result.Conflict)
         {
             return ApiProblemResults.Create(context, 409, "idempotency_conflict", "Idempotency-Key is already bound to different input or parameters");
         }
+        if (result.RejectionCode is { } rejectionCode)
+        {
+            metrics.RecordJobQuotaRejection(rejectionCode);
+            context.Response.Headers["Retry-After"] = "5";
+            return ApiProblemResults.Create(
+                context,
+                StatusCodes.Status429TooManyRequests,
+                rejectionCode,
+                "Active G-code job quota exceeded",
+                "Wait for an active job to finish or cancel it before submitting another job.");
+        }
 
         if (result.Created)
         {
+            metrics.RecordJobSubmission();
             await queue.EnqueueAsync(result.Job.Id, context.RequestAborted);
         }
 

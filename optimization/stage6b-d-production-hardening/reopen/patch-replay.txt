@@ -1,0 +1,5 @@
+PATCH_REPLAY pass=true files=34
+normalizedLineEndings=true
+normalizedPatchWhitespace=true
+patch=E:\Projects\3dprint\optimization\stage6b-d-production-hardening\stage6b-d-production-hardening.patch
+EXIT_STATUS=0

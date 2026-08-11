@@ -1,0 +1,12 @@
+﻿schemaVersion=1.0
+role.modified.reopened=True
+role.modified.entries=34
+role.patch.executed=True
+role.patch.files=34
+role.verification.reopened=True
+role.rollback.executed=True
+role.rollback.result=APPLIED verified=21 removed=13
+role.rollback.dryRun=DRY_RUN restore=21 remove=13 target=reopen/patch-sandbox
+allRolesPass=True
+currentModifiedHashes=True
+currentModifiedFiles=34

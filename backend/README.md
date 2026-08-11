@@ -141,8 +141,20 @@ reports queue depth/capacity; `/metrics` exports `forgex_gcode_job_queue_depth`,
 job ID labels. The additive OpenAPI snapshot `retry` object lets operations and clients inspect the
 durable state without changing outer schema version `1.0`.
 
-Stage 6-B will use measured queue/service-time evidence to set tenant quotas and capacity targets;
-it will not guess those values from the in-process capacity alone.
+## Stage 6-B through 6-D production hardening
+
+Job admission is evaluated atomically with idempotency replay under the repository lock. Defaults
+permit four active jobs per owner and sixteen per tenant; exceeding them returns 429 with
+`gcode_owner_active_quota_exceeded` or `gcode_tenant_active_quota_exceeded` and `Retry-After: 5`.
+Configure `GCodeJobs__Admission__MaxActivePerOwner` and `MaxActivePerTenant` only from measured
+capacity, with tenant greater than or equal to owner. `/metrics` now exports bounded status gauges,
+quota rejection counters, and a durable job-duration histogram.
+
+`InternalAuth:PreviousSharedSecret` may hold exactly one previous secret during a rotation overlap.
+Both values must be at least 32 bytes and different. Start with the authority, switch the gateway,
+verify, then clear the previous value. The full procedure and alert response are in
+`deploy/RUNBOOK.md`; capacity assumptions and SLOs are in `deploy/capacity-plan.md` and
+`deploy/SLO.md`.
 
 ## Stage 4 analytics dual-run
 

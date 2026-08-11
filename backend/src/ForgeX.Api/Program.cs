@@ -20,10 +20,20 @@ builder.Logging.AddJsonConsole(options =>
     options.UseUtcTimestamp = true;
 });
 var internalSharedSecret = builder.Configuration["InternalAuth:SharedSecret"] ?? string.Empty;
+var previousInternalSharedSecret = builder.Configuration["InternalAuth:PreviousSharedSecret"] ?? string.Empty;
 var persistenceProvider = builder.Configuration["Persistence:Provider"] ?? "file";
 if (!string.IsNullOrEmpty(internalSharedSecret) && Encoding.UTF8.GetByteCount(internalSharedSecret) < 32)
 {
     throw new InvalidOperationException("InternalAuth:SharedSecret must contain at least 32 UTF-8 bytes.");
+}
+if (!string.IsNullOrEmpty(previousInternalSharedSecret) && Encoding.UTF8.GetByteCount(previousInternalSharedSecret) < 32)
+{
+    throw new InvalidOperationException("InternalAuth:PreviousSharedSecret must contain at least 32 UTF-8 bytes.");
+}
+if (!string.IsNullOrEmpty(internalSharedSecret) &&
+    string.Equals(internalSharedSecret, previousInternalSharedSecret, StringComparison.Ordinal))
+{
+    throw new InvalidOperationException("InternalAuth current and previous secrets must be different.");
 }
 if (!string.Equals(persistenceProvider, "file", StringComparison.OrdinalIgnoreCase))
 {
@@ -69,6 +79,10 @@ var retryOptions = new GCodeJobRetryOptions(
     ReadInt(builder.Configuration, "GCodeJobs:Retry:BaseDelayMilliseconds", 250),
     ReadInt(builder.Configuration, "GCodeJobs:Retry:MaxDelayMilliseconds", 10_000)).Validate();
 builder.Services.AddSingleton(retryOptions);
+var admissionOptions = new GCodeJobAdmissionOptions(
+    ReadInt(builder.Configuration, "GCodeJobs:Admission:MaxActivePerOwner", 4),
+    ReadInt(builder.Configuration, "GCodeJobs:Admission:MaxActivePerTenant", 16)).Validate();
+builder.Services.AddSingleton(admissionOptions);
 var storageRoot = Path.GetFullPath(builder.Configuration["Storage:Root"] ?? "data/dotnet-preview", builder.Environment.ContentRootPath);
 builder.Services.AddSingleton<IContentObjectStore>(_ => new ContentAddressedObjectStore(Path.Combine(storageRoot, "objects")));
 builder.Services.AddSingleton(_ => new FileGCodeJobRepository(Path.Combine(storageRoot, "jobs")));
@@ -136,7 +150,7 @@ app.Use(async (context, next) =>
         return;
     }
 
-    var problem = CallerContextBoundary.Resolve(context, internalSharedSecret);
+    var problem = CallerContextBoundary.Resolve(context, internalSharedSecret, previousInternalSharedSecret);
     if (problem is not null)
     {
         await problem.ExecuteAsync(context);
@@ -180,7 +194,7 @@ app.MapGet("/health/live", () => Results.Ok(new HealthResponse(
     .WithName("GetLiveness")
     .Produces<HealthResponse>();
 
-app.MapGet("/health/ready", async (IGCodeAnalyzer analyzer, IContentObjectStore objects, IGCodeJobRepositoryMaintenance jobs, IGCodeJobQueue queue, GCodeJobWorker worker, CancellationToken ct) =>
+app.MapGet("/health/ready", async (IGCodeAnalyzer analyzer, IContentObjectStore objects, IGCodeJobRepositoryMaintenance jobs, IGCodeJobQueue queue, GCodeJobWorker worker, GCodeJobAdmissionOptions admission, CancellationToken ct) =>
     {
         var writable = await objects.ProbeWritableAsync(ct);
         var repository = await jobs.ProbeAsync(ct);
@@ -201,8 +215,12 @@ app.MapGet("/health/ready", async (IGCodeAnalyzer analyzer, IContentObjectStore 
                 ["jobQueue"] = queue.IsAccepting ? "accepting" : "closed",
                 ["jobQueueDepth"] = queue.Depth.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["jobQueueCapacity"] = queue.Capacity.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["jobMaxActivePerOwner"] = admission.MaxActivePerOwner.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["jobMaxActivePerTenant"] = admission.MaxActivePerTenant.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["jobWorker"] = worker.Started ? "started" : "starting",
-                ["callerContext"] = string.IsNullOrEmpty(internalSharedSecret) ? "local-development" : "trusted-node",
+                ["callerContext"] = string.IsNullOrEmpty(internalSharedSecret) && string.IsNullOrEmpty(previousInternalSharedSecret)
+                    ? "local-development"
+                    : string.IsNullOrEmpty(previousInternalSharedSecret) ? "trusted-node" : "trusted-node-rotation-overlap",
             });
         return Results.Json(response, statusCode: ready ? 200 : 503);
     })
@@ -219,8 +237,8 @@ app.MapGet("/healthz", () => Results.Ok(new LegacyHealthResponse(
     .WithName("GetLegacyHealth")
     .Produces<LegacyHealthResponse>();
 
-app.MapGet("/metrics", (IGCodeJobQueue queue) => Results.Text(
-        metrics.Render(serviceVersion, queue),
+app.MapGet("/metrics", async (IGCodeJobQueue queue, IGCodeJobRepository repository, CancellationToken ct) => Results.Text(
+        metrics.Render(serviceVersion, queue, await repository.ListAsync(ct)),
         "text/plain; version=0.0.4; charset=utf-8"))
     .WithName("GetMetrics")
     .ExcludeFromDescription();
@@ -258,7 +276,8 @@ app.MapPost("/api/v1/gcode/analyses", GCodeJobEndpoints.CreateAsync)
     .Produces<GCodeJobAcceptedResponse>(StatusCodes.Status202Accepted)
     .Produces<ApiProblem>(StatusCodes.Status400BadRequest, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
-    .Produces<ApiProblem>(StatusCodes.Status409Conflict, "application/problem+json");
+    .Produces<ApiProblem>(StatusCodes.Status409Conflict, "application/problem+json")
+    .Produces<ApiProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json");
 
 app.MapGet("/api/v1/jobs/{id}", GCodeJobEndpoints.GetAsync)
     .WithName("GetGCodeAnalysisJob")

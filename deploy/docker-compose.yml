@@ -5,7 +5,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.api
-    image: forgex-authority:local
+    image: "${FORGEX_API_IMAGE:-forgex-authority:local}"
     restart: unless-stopped
     user: "1654:1654"
     expose:
@@ -17,6 +17,10 @@ services:
       Storage__Root: "/app/data"
       Persistence__Provider: "file"
       InternalAuth__SharedSecret: "${GCODE_AUTHORITY_INTERNAL_SECRET:?Set a random secret of at least 32 bytes}"
+      InternalAuth__PreviousSharedSecret: "${GCODE_AUTHORITY_INTERNAL_SECRET_PREVIOUS:-}"
+      GCodeJobs__QueueCapacity: "${GCODE_JOB_QUEUE_CAPACITY:-64}"
+      GCodeJobs__Admission__MaxActivePerOwner: "${GCODE_JOB_MAX_ACTIVE_PER_OWNER:-4}"
+      GCodeJobs__Admission__MaxActivePerTenant: "${GCODE_JOB_MAX_ACTIVE_PER_TENANT:-16}"
       Logging__LogLevel__Default: "Information"
       Logging__LogLevel__Microsoft.AspNetCore: "Warning"
     healthcheck:
@@ -50,7 +54,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    image: forgex-insight:local
+    image: "${FORGEX_NODE_IMAGE:-forgex-insight:local}"
     restart: unless-stopped
     user: "1000:1000"
     depends_on:

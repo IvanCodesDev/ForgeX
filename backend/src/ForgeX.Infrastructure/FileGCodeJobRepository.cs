@@ -25,29 +25,53 @@ public sealed partial class FileGCodeJobRepository : IGCodeJobRepository, IGCode
 
     public async Task<CreateJobResult> CreateOrGetAsync(
         GCodeJobRecord candidate,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        GCodeJobAdmissionOptions? admission = null)
     {
+        admission ??= GCodeJobAdmissionOptions.Unbounded;
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             Directory.CreateDirectory(_root);
-            if (!string.IsNullOrWhiteSpace(candidate.IdempotencyKey))
+            GCodeJobRecord? idempotent = null;
+            var activeForOwner = 0;
+            var activeForTenant = 0;
+            foreach (var path in Directory.EnumerateFiles(_root, "*.json"))
             {
-                foreach (var path in Directory.EnumerateFiles(_root, "*.json"))
+                var existing = await ReadAsync(path, cancellationToken).ConfigureAwait(false);
+                if (string.Equals(existing.TenantId, candidate.TenantId, StringComparison.Ordinal) &&
+                    existing.Status is GCodeJobStatus.Queued or GCodeJobStatus.Running)
                 {
-                    var existing = await ReadAsync(path, cancellationToken).ConfigureAwait(false);
-                    if (!string.Equals(existing.TenantId, candidate.TenantId, StringComparison.Ordinal) ||
-                        !string.Equals(existing.OwnerId, candidate.OwnerId, StringComparison.Ordinal) ||
-                        !string.Equals(existing.IdempotencyKey, candidate.IdempotencyKey, StringComparison.Ordinal))
+                    activeForTenant++;
+                    if (string.Equals(existing.OwnerId, candidate.OwnerId, StringComparison.Ordinal))
                     {
-                        continue;
+                        activeForOwner++;
                     }
-
-                    return new CreateJobResult(
-                        existing,
-                        false,
-                        !string.Equals(existing.Fingerprint, candidate.Fingerprint, StringComparison.Ordinal));
                 }
+
+                if (!string.IsNullOrWhiteSpace(candidate.IdempotencyKey) &&
+                    string.Equals(existing.TenantId, candidate.TenantId, StringComparison.Ordinal) &&
+                    string.Equals(existing.OwnerId, candidate.OwnerId, StringComparison.Ordinal) &&
+                    string.Equals(existing.IdempotencyKey, candidate.IdempotencyKey, StringComparison.Ordinal))
+                {
+                    idempotent = existing;
+                }
+            }
+
+            if (idempotent is not null)
+            {
+                return new CreateJobResult(
+                    idempotent,
+                    false,
+                    !string.Equals(idempotent.Fingerprint, candidate.Fingerprint, StringComparison.Ordinal));
+            }
+            if (activeForOwner >= admission.MaxActivePerOwner)
+            {
+                return new CreateJobResult(candidate, false, false, "gcode_owner_active_quota_exceeded");
+            }
+            if (activeForTenant >= admission.MaxActivePerTenant)
+            {
+                return new CreateJobResult(candidate, false, false, "gcode_tenant_active_quota_exceeded");
             }
 
             await WriteAsync(candidate, cancellationToken).ConfigureAwait(false);

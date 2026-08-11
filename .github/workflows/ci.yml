@@ -124,11 +124,17 @@ jobs:
       - name: 异步作业存储、幂等与队列门禁
         run: node tools/run-dotnet.js run --project backend/tests/ForgeX.JobGate/ForgeX.JobGate.csproj --configuration Release --no-build
 
+      - name: 重启恢复、有限重试与死信门禁
+        run: node tools/verify-gcode-job-resilience.js
+
+      - name: 配额与并发容量门禁
+        run: node tools/verify-gcode-capacity.js
+
       - name: PostgreSQL 迁移契约门禁
         run: npm run postgres:migrations:check
 
       - name: 文件仓库备份、校验与恢复演练
-        run: node tools/run-dotnet.js run --project backend/tests/ForgeX.PersistenceGate/ForgeX.PersistenceGate.csproj --configuration Release --no-build
+        run: node tools/run-recovery-drill.js
 
       - name: JS/C# 分析统计与 CSV 双跑门禁
         run: node tools/run-dotnet.js run --project backend/tests/ForgeX.AnalyticsGate/ForgeX.AnalyticsGate.csproj --configuration Release --no-build
@@ -143,7 +149,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: gcode-job-gate-dotnet-10.0.302
-          path: backend/artifacts/gcode-job-gate.json
+          path: |
+            backend/artifacts/gcode-job-gate.json
+            backend/artifacts/gcode-job-resilience-gate.json
+            backend/artifacts/gcode-capacity-gate.json
           if-no-files-found: error
           retention-days: 14
 
@@ -153,6 +162,7 @@ jobs:
           path: |
             backend/artifacts/persistence-recovery-gate.json
             backend/artifacts/persistence-recovery-gate.fxbackup
+            backend/artifacts/recovery-drill.json
           if-no-files-found: error
           retention-days: 14
 
@@ -209,6 +219,22 @@ jobs:
             echo "::error::疑似 API key 硬编码在代码中"
             exit 1
           fi
+
+      - name: 依赖、安装脚本、镜像与密钥策略审计
+        run: npm run security:audit
+
+      - name: SLO、告警、轮换与回滚运行手册门禁
+        run: npm run ops:check && npm run rollback:rehearse
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-readiness-audit
+          path: |
+            backend/artifacts/security-audit.json
+            backend/artifacts/operations-validation.json
+            backend/artifacts/release-rollback-drill.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: 规则引擎不得自称 AI
         run: |

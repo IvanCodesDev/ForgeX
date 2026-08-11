@@ -9,7 +9,9 @@ network.
 1. Copy `deploy/.env.example` to `deploy/.env`.
 2. Generate a unique random secret of at least 32 bytes and set
    `GCODE_AUTHORITY_INTERNAL_SECRET`. Never reuse the example text from CI or documentation.
-3. Build and start both services:
+   Leave `GCODE_AUTHORITY_INTERNAL_SECRET_PREVIOUS` empty outside a documented rotation window.
+3. Set `FORGEX_NODE_IMAGE` and `FORGEX_API_IMAGE` to immutable release tags for reversible deploys.
+4. Build and start both services:
 
 ```sh
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml build --pull
@@ -39,11 +41,11 @@ The C# service logs one JSON object per request. Metric route labels use templat
 shipping and Prometheus scraper according to the platform. The bundled `json-file` rotation is a
 single-host default, not a centralized audit store.
 
-Stage 6-A adds `forgex_gcode_job_queue_depth`, `forgex_gcode_job_queue_capacity`,
+Stage 6 adds `forgex_gcode_job_queue_depth`, `forgex_gcode_job_queue_capacity`,
 `forgex_gcode_job_retries_total`, `forgex_gcode_job_recoveries_total`, and
 `forgex_gcode_job_dead_letters_total`. During the measurement window, alert on a positive increase
 of dead letters and sustained queue-depth/capacity ratio rather than a single queue sample. Final
-thresholds and tenant quotas are capacity-plan outputs in Stage 6-B. Override retry settings only
+thresholds and tenant quotas are documented in [`capacity-plan.md`](./capacity-plan.md). Override retry settings only
 with bounded Compose environment values such as `GCodeJobs__Retry__MaxAttempts`; invalid values stop
 the authority at startup instead of silently changing behavior.
 
@@ -67,3 +69,8 @@ authority metrics, and restart readiness.
 The current PostgreSQL files are a frozen migration contract only. This Compose deployment keeps
 `Persistence__Provider=file`; selecting `postgresql` remains a fail-fast configuration until the
 pinned runtime driver and PostgreSQL integration gate are delivered.
+
+Production objectives and alert response are defined in [`SLO.md`](./SLO.md),
+[`alerts/forgex.rules.yml`](./alerts/forgex.rules.yml), and [`RUNBOOK.md`](./RUNBOOK.md). Before each
+release run `npm run dotnet:capacity`, `npm run dotnet:recovery-drill`, `npm run security:audit`,
+`npm run ops:check`, and `npm run rollback:rehearse`, then archive the emitted JSON evidence.

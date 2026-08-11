@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using ForgeX.Application;
+using ForgeX.Domain;
 
 namespace ForgeX.Api;
 
@@ -17,6 +18,9 @@ internal sealed class ForgeXMetrics
     private long _jobRetries;
     private long _jobDeadLetters;
     private long _jobRecoveries;
+    private long _jobSubmissions;
+    private long _ownerQuotaRejections;
+    private long _tenantQuotaRejections;
 
     public void ObserveHttp(string method, PathString path, int statusCode, TimeSpan elapsed)
     {
@@ -36,8 +40,14 @@ internal sealed class ForgeXMetrics
     public void RecordJobRetry() => Interlocked.Increment(ref _jobRetries);
     public void RecordJobDeadLetter() => Interlocked.Increment(ref _jobDeadLetters);
     public void RecordJobRecovery() => Interlocked.Increment(ref _jobRecoveries);
+    public void RecordJobSubmission() => Interlocked.Increment(ref _jobSubmissions);
+    public void RecordJobQuotaRejection(string code)
+    {
+        if (code == "gcode_owner_active_quota_exceeded") Interlocked.Increment(ref _ownerQuotaRejections);
+        else if (code == "gcode_tenant_active_quota_exceeded") Interlocked.Increment(ref _tenantQuotaRejections);
+    }
 
-    public string Render(string serviceVersion, IGCodeJobQueue queue)
+    public string Render(string serviceVersion, IGCodeJobQueue queue, IReadOnlyList<GCodeJobRecord> jobs)
     {
         var output = new StringBuilder(8 * 1024);
         output.AppendLine("# HELP forgex_build_info Build and service identity.");
@@ -75,6 +85,27 @@ internal sealed class ForgeXMetrics
         output.AppendLine("# HELP forgex_gcode_job_recoveries_total Running G-code jobs durably requeued after worker restart.");
         output.AppendLine("# TYPE forgex_gcode_job_recoveries_total counter");
         output.Append("forgex_gcode_job_recoveries_total ").Append(Interlocked.Read(ref _jobRecoveries).ToString(CultureInfo.InvariantCulture)).AppendLine();
+        output.AppendLine("# HELP forgex_gcode_job_submissions_total Newly persisted G-code analysis jobs.");
+        output.AppendLine("# TYPE forgex_gcode_job_submissions_total counter");
+        output.Append("forgex_gcode_job_submissions_total ").Append(Interlocked.Read(ref _jobSubmissions).ToString(CultureInfo.InvariantCulture)).AppendLine();
+        output.AppendLine("# HELP forgex_gcode_job_owner_quota_rejections_total Owner active-job admission rejections.");
+        output.AppendLine("# TYPE forgex_gcode_job_owner_quota_rejections_total counter");
+        output.Append("forgex_gcode_job_owner_quota_rejections_total ").Append(Interlocked.Read(ref _ownerQuotaRejections).ToString(CultureInfo.InvariantCulture)).AppendLine();
+        output.AppendLine("# HELP forgex_gcode_job_tenant_quota_rejections_total Tenant active-job admission rejections.");
+        output.AppendLine("# TYPE forgex_gcode_job_tenant_quota_rejections_total counter");
+        output.Append("forgex_gcode_job_tenant_quota_rejections_total ").Append(Interlocked.Read(ref _tenantQuotaRejections).ToString(CultureInfo.InvariantCulture)).AppendLine();
+        output.AppendLine("# HELP forgex_gcode_jobs Durable G-code jobs by bounded status.");
+        output.AppendLine("# TYPE forgex_gcode_jobs gauge");
+        foreach (var status in Enum.GetValues<GCodeJobStatus>())
+        {
+            var count = jobs.Count(job => job.Status == status);
+            output.Append("forgex_gcode_jobs{status=\"")
+                .Append(status.ToString().ToLowerInvariant())
+                .Append("\"} ")
+                .Append(count.ToString(CultureInfo.InvariantCulture))
+                .AppendLine();
+        }
+        AppendJobDurationHistogram(output, jobs);
         output.AppendLine("# HELP forgex_http_requests_total Completed HTTP requests by bounded route label.");
         output.AppendLine("# TYPE forgex_http_requests_total counter");
         foreach (var item in _httpRequests.OrderBy(static item => item.Key.Method, StringComparer.Ordinal)
@@ -112,6 +143,28 @@ internal sealed class ForgeXMetrics
             .Append("\",route=\"").Append(key.Route)
             .Append("\",le=\"").Append(upperBound)
             .Append("\"} ").Append(count.ToString(CultureInfo.InvariantCulture)).AppendLine();
+
+    private static void AppendJobDurationHistogram(StringBuilder output, IReadOnlyList<GCodeJobRecord> jobs)
+    {
+        var durations = jobs
+            .Where(static job => job.FinishedAtUtc is not null)
+            .Select(static job => Math.Max(0, (job.FinishedAtUtc!.Value - job.CreatedAtUtc).TotalSeconds))
+            .ToArray();
+        output.AppendLine("# HELP forgex_gcode_job_duration_seconds Durable G-code job wall-clock duration from creation to terminal state.");
+        output.AppendLine("# TYPE forgex_gcode_job_duration_seconds histogram");
+        foreach (var upperBound in DurationBuckets)
+        {
+            var count = durations.LongCount(duration => duration <= upperBound);
+            output.Append("forgex_gcode_job_duration_seconds_bucket{le=\"")
+                .Append(upperBound.ToString("0.###", CultureInfo.InvariantCulture))
+                .Append("\"} ")
+                .Append(count.ToString(CultureInfo.InvariantCulture))
+                .AppendLine();
+        }
+        output.Append("forgex_gcode_job_duration_seconds_bucket{le=\"+Inf\"} ").Append(durations.Length.ToString(CultureInfo.InvariantCulture)).AppendLine();
+        output.Append("forgex_gcode_job_duration_seconds_sum ").Append(durations.Sum().ToString("0.000000", CultureInfo.InvariantCulture)).AppendLine();
+        output.Append("forgex_gcode_job_duration_seconds_count ").Append(durations.Length.ToString(CultureInfo.InvariantCulture)).AppendLine();
+    }
 
     private static string NormalizeMethod(string method) => method.ToUpperInvariant() switch
     {

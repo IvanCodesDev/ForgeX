@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0",
+  "allowedNpmRegistries": ["registry.npmmirror.com"],
+  "allowedInstallScripts": {
+    "node_modules/fsevents": "2.3.2",
+    "node_modules/vite/node_modules/fsevents": "2.3.3"
+  },
+  "allowedSecretFixtures": [{ "file": "tests/server.test.js", "kind": "credential-url" }],
+  "requiredDockerfiles": ["deploy/Dockerfile", "deploy/Dockerfile.api"]
+}

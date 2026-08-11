@@ -1,0 +1,13 @@
+.github/dependabot.yml
+backend/src/ForgeX.Application/GCodeJobAdmission.cs
+config/dependency-policy.json
+deploy/RUNBOOK.md
+deploy/SLO.md
+deploy/alerts/forgex.rules.yml
+deploy/capacity-plan.md
+deploy/drills/rehearse-version-rollback.ps1
+tools/rehearse-release-rollback.js
+tools/run-recovery-drill.js
+tools/security-audit.js
+tools/validate-operations.js
+tools/verify-gcode-capacity.js

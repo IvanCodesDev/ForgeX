@@ -4,7 +4,11 @@ namespace ForgeX.Application;
 
 public sealed record StoredContentObject(string Sha256, long Bytes);
 
-public sealed record CreateJobResult(GCodeJobRecord Job, bool Created, bool Conflict);
+public sealed record CreateJobResult(
+    GCodeJobRecord Job,
+    bool Created,
+    bool Conflict,
+    string? RejectionCode = null);
 
 public sealed record JobRepositoryHealth(
     string Provider,
@@ -30,7 +34,10 @@ public interface IContentObjectStore
 
 public interface IGCodeJobRepository
 {
-    Task<CreateJobResult> CreateOrGetAsync(GCodeJobRecord candidate, CancellationToken cancellationToken);
+    Task<CreateJobResult> CreateOrGetAsync(
+        GCodeJobRecord candidate,
+        CancellationToken cancellationToken,
+        GCodeJobAdmissionOptions? admission = null);
     Task<GCodeJobRecord?> GetAsync(string id, CancellationToken cancellationToken);
     Task<GCodeJobRecord?> GetOwnedAsync(string tenantId, string ownerId, string id, CancellationToken cancellationToken);
     Task<IReadOnlyList<GCodeJobRecord>> ListAsync(CancellationToken cancellationToken);

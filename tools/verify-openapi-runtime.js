@@ -170,6 +170,7 @@ async function main() {
   const stdout = [];
   const stderr = [];
   const internalSecret = "openapi-runtime-internal-secret-32-bytes";
+  const previousInternalSecret = "openapi-runtime-previous-secret-32-bytes";
   const callerA = {
     "X-ForgeX-Internal-Token": internalSecret,
     "X-ForgeX-Tenant-Id": "tn_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -179,6 +180,10 @@ async function main() {
     "X-ForgeX-Internal-Token": internalSecret,
     "X-ForgeX-Tenant-Id": "tn_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "X-ForgeX-Owner-Id": "ow_22222222222222222222222222222222",
+  };
+  const previousCallerA = {
+    ...callerA,
+    "X-ForgeX-Internal-Token": previousInternalSecret,
   };
   let child;
 
@@ -192,6 +197,7 @@ async function main() {
         Kestrel__Endpoints__Http__Url: baseUrl,
         Storage__Root: path.join(runtimeRoot, "data"),
         InternalAuth__SharedSecret: internalSecret,
+        InternalAuth__PreviousSharedSecret: previousInternalSecret,
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -275,6 +281,10 @@ async function main() {
     if (createResponse.status !== 202)
       throw new Error(`async create returned ${createResponse.status}: ${await createResponse.text()}`);
     const accepted = await createResponse.json();
+    const previousSecretStatus = await request(baseUrl + accepted.links.status, { headers: previousCallerA });
+    if (previousSecretStatus.status !== 200) {
+      throw new Error(`previous rotation secret returned ${previousSecretStatus.status}`);
+    }
     const crossTenantStatus = await request(baseUrl + accepted.links.status, { headers: callerB });
     if (crossTenantStatus.status !== 404) throw new Error(`cross-tenant status returned ${crossTenantStatus.status}`);
     const crossTenantEvents = await request(baseUrl + accepted.links.events, { headers: callerB });
