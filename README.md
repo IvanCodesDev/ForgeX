@@ -192,7 +192,8 @@ Node.js service :8787
 
 - **前端**：旧页面继续可用；React 已落地共享身份头、Profile 选择、G-code/日志对账、数据分析与校准治理等垂直切片，G-code 在 Worker 中解析；
 - **业务后端**：Node.js 原生 `http`，零运行时依赖，并只对白名单路由提供 C# 同源代理；
-- **G-code 计算边界**：.NET 10 sidecar 保留同步摘要接口，并新增 `POST /api/v1/gcode/analyses`、作业快照、SSE 事件与幂等取消接口；React 的 `dotnet` 模式使用异步作业、断线续传与轮询兜底，`browser / shadow` 路径保持原行为；
+- **G-code 计算边界**：.NET 10 sidecar 保留同步摘要接口，并新增 `POST /api/v1/gcode/analyses`、作业快照、SSE 事件与幂等取消接口；React 的 `dotnet` 模式使用异步作业、断线续传与轮询兜底，`browser / shadow` 路径保持原行为；Node 会把已核验身份匿名化为稳定 `tenant/owner`，再通过独立内部密钥交给 C#，任务查询、SSE 与取消均按该边界过滤；
+- **契约边界**：`backend/src/ForgeX.Api/openapi/v1.json` 是 API 单一来源，构建前生成 TypeScript DTO、操作路径和路径参数函数；CI 通过源文件 SHA 与生成器复跑阻止前后端契约漂移；
 - **存储**：默认写入 `data/`，容器部署可挂载持久化卷。
 
 ### React Stage 2 当前范围
@@ -267,7 +268,7 @@ node server/index.js
 npm run dotnet:api
 ```
 
-常用配置见 [`server/.env.example`](./server/.env.example) 与 [`frontend/.env.example`](./frontend/.env.example)。Node 会先执行统一的 Partner SSO/API Key 身份守卫，再把同步分析或开启的异步作业白名单路由流式代理到 `GCODE_AUTHORITY_URL`；浏览器 Cookie、API Key 与 Authorization 均不会转发给 C# sidecar。`GCODE_ASYNC_JOBS_ENABLED=0` 可独立关闭异步路由而保留同步分析。React 默认使用同源 HttpOnly Cookie；只有在凭据允许随浏览器产物分发时，才使用 `VITE_NODE_API_KEY` 或 `VITE_NODE_BEARER`。部署完成后可访问 `/healthz` 与 C# `/health/ready` 检查分析器、对象存储、队列和 Worker 状态，访问 `/metrics` 获取 Node 指标。迁移期间 `/` 保持旧工作台，`/react/` 提供新工作台。
+常用配置见 [`server/.env.example`](./server/.env.example) 与 [`frontend/.env.example`](./frontend/.env.example)。Node 会先执行统一的 Partner SSO/API Key 身份守卫，再把同步分析或开启的异步作业白名单路由流式代理到 `GCODE_AUTHORITY_URL`；浏览器 Cookie、API Key 与 Authorization 均不会转发给 C# sidecar。生产环境应同时配置同一个至少 32 字节的 `GCODE_AUTHORITY_INTERNAL_SECRET` 与 C# `InternalAuth__SharedSecret`：Node 仅转发匿名化的 `tn_/ow_` 标识，C# 不接受浏览器自报租户。`GCODE_ASYNC_JOBS_ENABLED=0` 可独立关闭异步路由而保留同步分析。React 默认使用同源 HttpOnly Cookie；只有在凭据允许随浏览器产物分发时，才使用 `VITE_NODE_API_KEY` 或 `VITE_NODE_BEARER`。部署完成后可访问 `/healthz` 与 C# `/health/ready` 检查分析器、对象存储、队列、Worker 与 CallerContext 状态，访问 `/metrics` 获取 Node 指标。迁移期间 `/` 保持旧工作台，`/react/` 提供新工作台。
 
 ## 项目结构
 

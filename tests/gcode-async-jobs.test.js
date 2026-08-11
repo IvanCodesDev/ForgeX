@@ -26,6 +26,7 @@ function close(server) {
 async function main() {
   const observed = [];
   const jobId = "0123456789abcdef0123456789abcdef";
+  const internalSecret = "stage3d-internal-secret-32-bytes-minimum";
   const authority = http.createServer((req, res) => {
     const chunks = [];
     req.on("data", (chunk) => chunks.push(chunk));
@@ -53,9 +54,10 @@ async function main() {
     rateLimitMs: 0,
     dataDir,
     requireAuth: true,
-    apiKeys: "node-key",
+    apiKeys: "node-key,other-key",
     gcodeAuthorityUrl: `http://127.0.0.1:${authorityPort}`,
     gcodeAsyncJobsEnabled: true,
+    gcodeAuthorityInternalSecret: internalSecret,
   });
   const port = await listen(app.server);
   const base = `http://127.0.0.1:${port}`;
@@ -63,7 +65,14 @@ async function main() {
 
   const created = await fetch(base + "/api/v1/gcode/analyses?bedSizeMm=220", {
     method: "POST",
-    headers: { ...auth, "Content-Type": "application/x-gcode", "Idempotency-Key": "stage3a-1" },
+    headers: {
+      ...auth,
+      "Content-Type": "application/x-gcode",
+      "Idempotency-Key": "stage3a-1",
+      "X-ForgeX-Internal-Token": "browser-forged-token",
+      "X-ForgeX-Tenant-Id": "tn_ffffffffffffffffffffffffffffffff",
+      "X-ForgeX-Owner-Id": "ow_ffffffffffffffffffffffffffffffff",
+    },
     body: "G28\nG1 X1 Y1 E1\n",
   });
   check("异步创建经同源代理返回 202", created.status === 202, String(created.status));
@@ -71,6 +80,18 @@ async function main() {
   const createSeen = observed[0];
   check("创建请求保留 query 与原始字节", createSeen.url.endsWith("?bedSizeMm=220") && createSeen.body.includes("G28"));
   check("Idempotency-Key 透传", createSeen.headers["idempotency-key"] === "stage3a-1");
+  check("Node 使用内部密钥建立 sidecar 信任", createSeen.headers["x-forgex-internal-token"] === internalSecret);
+  check(
+    "Node 注入匿名化 tenant/owner 上下文",
+    /^tn_[a-f0-9]{32}$/.test(createSeen.headers["x-forgex-tenant-id"] || "") &&
+      /^ow_[a-f0-9]{32}$/.test(createSeen.headers["x-forgex-owner-id"] || "")
+  );
+  check(
+    "浏览器伪造的内部上下文被覆盖",
+    createSeen.headers["x-forgex-internal-token"] !== "browser-forged-token" &&
+      createSeen.headers["x-forgex-tenant-id"] !== "tn_ffffffffffffffffffffffffffffffff" &&
+      createSeen.headers["x-forgex-owner-id"] !== "ow_ffffffffffffffffffffffffffffffff"
+  );
   check(
     "浏览器凭据不泄露给 sidecar",
     !createSeen.headers.cookie && !createSeen.headers.authorization && !createSeen.headers["x-api-key"]
@@ -78,6 +99,20 @@ async function main() {
 
   const status = await fetch(base + `/api/v1/jobs/${jobId}`, { headers: auth });
   check("作业快照固定路径可读取", status.status === 200 && (await status.json()).status === "succeeded");
+  const sameCallerSeen = observed.find((item) => item.method === "GET" && item.url === `/api/v1/jobs/${jobId}`);
+  check(
+    "同一调用方的 tenant/owner 在创建与读取间稳定",
+    sameCallerSeen.headers["x-forgex-tenant-id"] === createSeen.headers["x-forgex-tenant-id"] &&
+      sameCallerSeen.headers["x-forgex-owner-id"] === createSeen.headers["x-forgex-owner-id"]
+  );
+  const otherCaller = await fetch(base + `/api/v1/jobs/${jobId}`, { headers: { "X-API-Key": "other-key" } });
+  await otherCaller.text();
+  const otherCallerSeen = observed.filter((item) => item.method === "GET" && item.url === `/api/v1/jobs/${jobId}`).at(-1);
+  check(
+    "不同调用方获得不同的匿名化 owner/tenant",
+    otherCallerSeen.headers["x-forgex-tenant-id"] !== createSeen.headers["x-forgex-tenant-id"] &&
+      otherCallerSeen.headers["x-forgex-owner-id"] !== createSeen.headers["x-forgex-owner-id"]
+  );
   const events = await fetch(base + `/api/v1/jobs/${jobId}/events`, {
     headers: { ...auth, "Last-Event-ID": "1" },
   });
@@ -123,6 +158,13 @@ async function main() {
   await timeoutApp.close();
   await close(hanging);
   await close(authority);
+  let shortSecretRejected = false;
+  try {
+    createApp({ gcodeAuthorityInternalSecret: "too-short" });
+  } catch (error) {
+    shortSecretRejected = /至少需要 32/.test(error.message);
+  }
+  check("过短的 Node→C# 内部密钥在启动时拒绝", shortSecretRejected);
   fs.rmSync(dataDir, { recursive: true, force: true });
   console.log(`\n═══ 结果：${passed} 通过 / ${failed} 失败 ═══`);
   process.exitCode = failed ? 1 : 0;

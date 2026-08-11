@@ -74,6 +74,9 @@ jobs:
       - name: TypeScript 严格类型检查
         run: npm run frontend:typecheck
 
+      - name: OpenAPI 生成客户端无漂移
+        run: npm run openapi:check
+
       - name: 前端单元测试
         run: npm run test --workspace @forgex/frontend
 
@@ -111,6 +114,9 @@ jobs:
 
       - name: Build（Release / no restore）
         run: node tools/run-dotnet.js build backend/ForgeX.sln --configuration Release --no-restore
+
+      - name: OpenAPI 运行时路由与生成契约门禁
+        run: npm run dotnet:openapi-runtime
 
       - name: JS/C# GoldenDiff
         run: node tools/run-dotnet.js run --project backend/tests/ForgeX.GoldenDiff/ForgeX.GoldenDiff.csproj --configuration Release --no-build

@@ -1,34 +1,12 @@
 import { detectRuntimeMode } from "../../app/runtime/runtime-mode";
 import { createNodeRequestInit, resolveNodeApiBase } from "../../app/api/api-adapter";
+import { forgeXApiOperations, type GCodeAnalysisResponse } from "../../generated/forgex-api";
 import type { GcodeParseOptions, GcodePreviewResult } from "./gcode-types";
 
 export type GcodeAuthorityMode = "browser" | "shadow" | "dotnet";
 export type GcodeAuthorityStatus = "idle" | "running" | "done" | "error";
 
-export interface AuthorityAnalysisResponse {
-  readonly schemaVersion: string;
-  readonly engine: { readonly version: string; readonly source: string };
-  readonly input: { readonly sha256: string; readonly bytesRead: number; readonly linesRead: number };
-  readonly parameters: {
-    readonly bedSizeMm: number;
-    readonly coordinateOrigin: string;
-    readonly filamentDensityGPerCm3: number;
-  };
-  readonly summary: {
-    readonly totalLayers: number;
-    readonly heightMm: number;
-    readonly extrusionLengthMm: number;
-    readonly travelLengthMm: number;
-    readonly estimatedTimeSeconds: number;
-    readonly volumeCm3: number;
-    readonly filamentLengthM: number;
-    readonly filamentMassG: number;
-  };
-  readonly bounds: { readonly minX: number; readonly maxX: number; readonly minY: number; readonly maxY: number };
-  readonly claims: Readonly<Record<string, string>>;
-  readonly pathTypeCounts: Readonly<Record<string, number>>;
-  readonly warnings: readonly { readonly code: string; readonly message: string }[];
-}
+export type AuthorityAnalysisResponse = GCodeAnalysisResponse;
 
 export interface AuthorityDiffField {
   readonly field: string;
@@ -144,8 +122,14 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
   const claims = requireRecord(root.claims, "claims");
   const pathTypeCounts = requireRecord(root.pathTypeCounts, "pathTypeCounts");
   const warnings = Array.isArray(root.warnings) ? root.warnings : [];
+  const schemaVersion = requireString(root, "schemaVersion");
+  if (schemaVersion !== "1.0") throw new Error(`C# 权威结果契约不一致：schemaVersion=${schemaVersion}`);
+  const coordinateOrigin = requireString(parameters, "coordinateOrigin");
+  if (coordinateOrigin !== "corner" && coordinateOrigin !== "center") {
+    throw new Error(`C# 权威结果契约不一致：coordinateOrigin=${coordinateOrigin}`);
+  }
   return {
-    schemaVersion: requireString(root, "schemaVersion"),
+    schemaVersion,
     engine: { version: requireString(engine, "version"), source: requireString(engine, "source") },
     input: {
       sha256: requireString(input, "sha256"),
@@ -154,7 +138,7 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
     },
     parameters: {
       bedSizeMm: requireFinite(parameters, "bedSizeMm"),
-      coordinateOrigin: requireString(parameters, "coordinateOrigin"),
+      coordinateOrigin,
       filamentDensityGPerCm3: requireFinite(parameters, "filamentDensityGPerCm3"),
     },
     summary: {
@@ -226,7 +210,7 @@ export async function requestAuthorityAnalysis(
     filamentDensityGPerCm3: String(options.densityG),
   });
   const response = await fetch(
-    `${base}/api/v1/gcode/analyze?${query}`,
+    `${base}${forgeXApiOperations.analyzeGCode.path}?${query}`,
     createNodeRequestInit(env, {
       method: "POST",
       headers: { "Content-Type": "application/x-gcode" },

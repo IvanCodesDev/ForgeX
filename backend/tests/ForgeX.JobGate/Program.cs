@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using ForgeX.Domain;
 using ForgeX.Infrastructure;
 
@@ -32,20 +33,60 @@ try
     var repository = new FileGCodeJobRepository(Path.Combine(root, "jobs"));
     var now = DateTimeOffset.UtcNow;
     var options = new GCodeAnalysisOptions();
+    const string tenantA = "tn_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const string ownerA = "ow_11111111111111111111111111111111";
+    const string tenantB = "tn_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const string ownerB = "ow_22222222222222222222222222222222";
     var event1 = new GCodeJobEvent(1, "progress", now, GCodeJobStatus.Queued, 0, "queued");
     var job = new GCodeJobRecord(
         Guid.NewGuid().ToString("N"), "gate-key", "fingerprint-a", stored.Sha256, stored.Bytes, options,
-        GCodeJobStatus.Queued, 0, "queued", now, null, null, null, null, null, null, null, [event1]);
+        GCodeJobStatus.Queued, 0, "queued", now, null, null, null, null, null, null, null, [event1], tenantA, ownerA);
     var created = await repository.CreateOrGetAsync(job, CancellationToken.None);
     Check("job-created", created.Created && !created.Conflict, created);
     var replay = await repository.CreateOrGetAsync(job with { Id = Guid.NewGuid().ToString("N") }, CancellationToken.None);
     Check("idempotent-replay", !replay.Created && !replay.Conflict && replay.Job.Id == job.Id, replay.Job.Id);
     var conflict = await repository.CreateOrGetAsync(job with { Id = Guid.NewGuid().ToString("N"), Fingerprint = "fingerprint-b" }, CancellationToken.None);
     Check("idempotency-conflict", !conflict.Created && conflict.Conflict, conflict);
+    var otherTenant = await repository.CreateOrGetAsync(job with
+    {
+        Id = Guid.NewGuid().ToString("N"),
+        TenantId = tenantB,
+        OwnerId = ownerB,
+    }, CancellationToken.None);
+    Check("idempotency-is-tenant-owner-scoped", otherTenant.Created && !otherTenant.Conflict, otherTenant);
+    var owned = await repository.GetOwnedAsync(tenantA, ownerA, job.Id, CancellationToken.None);
+    Check("owner-can-read-job", owned?.Id == job.Id, owned?.Id);
+    var crossTenant = await repository.GetOwnedAsync(tenantB, ownerB, job.Id, CancellationToken.None);
+    Check("cross-tenant-read-hidden", crossTenant is null, crossTenant?.Id);
+    var crossOwner = await repository.GetOwnedAsync(tenantA, ownerB, job.Id, CancellationToken.None);
+    Check("cross-owner-read-hidden", crossOwner is null, crossOwner?.Id);
     var completed = job with { Status = GCodeJobStatus.Cancelled, Phase = "cancelled", FinishedAtUtc = now.AddSeconds(1) };
     await repository.SaveAsync(completed, CancellationToken.None);
     var reopenedJob = await repository.GetAsync(job.Id, CancellationToken.None);
-    Check("atomic-job-save-reopen", reopenedJob?.Status == GCodeJobStatus.Cancelled, reopenedJob?.Status);
+    Check(
+        "atomic-job-save-reopen",
+        reopenedJob?.Status == GCodeJobStatus.Cancelled && reopenedJob.TenantId == tenantA && reopenedJob.OwnerId == ownerA,
+        reopenedJob?.Status);
+
+    var legacyRoot = Path.Combine(root, "legacy-jobs");
+    var legacyRepository = new FileGCodeJobRepository(legacyRoot);
+    var legacyJob = job with
+    {
+        Id = Guid.NewGuid().ToString("N"),
+        IdempotencyKey = null,
+        TenantId = "tn_local",
+        OwnerId = "ow_local",
+    };
+    await legacyRepository.SaveAsync(legacyJob, CancellationToken.None);
+    var legacyPath = Path.Combine(legacyRoot, legacyJob.Id + ".json");
+    var legacyJson = JsonNode.Parse(await File.ReadAllTextAsync(legacyPath))!.AsObject();
+    legacyJson.Remove("tenantId");
+    legacyJson.Remove("ownerId");
+    await File.WriteAllTextAsync(legacyPath, legacyJson.ToJsonString());
+    var migratedLegacy = await legacyRepository.GetOwnedAsync("tn_local", "ow_local", legacyJob.Id, CancellationToken.None);
+    Check("legacy-job-is-confined-to-local-scope", migratedLegacy?.Id == legacyJob.Id, migratedLegacy?.TenantId);
+    var legacyFromTrustedTenant = await legacyRepository.GetOwnedAsync(tenantA, ownerA, legacyJob.Id, CancellationToken.None);
+    Check("legacy-job-is-hidden-from-trusted-tenants", legacyFromTrustedTenant is null, legacyFromTrustedTenant?.Id);
 
     var queue = new GCodeJobQueue(2);
     await queue.EnqueueAsync("first", CancellationToken.None);

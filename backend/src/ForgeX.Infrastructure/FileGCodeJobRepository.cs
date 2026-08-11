@@ -36,7 +36,9 @@ public sealed class FileGCodeJobRepository : IGCodeJobRepository
                 foreach (var path in Directory.EnumerateFiles(_root, "*.json"))
                 {
                     var existing = await ReadAsync(path, cancellationToken).ConfigureAwait(false);
-                    if (!string.Equals(existing.IdempotencyKey, candidate.IdempotencyKey, StringComparison.Ordinal))
+                    if (!string.Equals(existing.TenantId, candidate.TenantId, StringComparison.Ordinal) ||
+                        !string.Equals(existing.OwnerId, candidate.OwnerId, StringComparison.Ordinal) ||
+                        !string.Equals(existing.IdempotencyKey, candidate.IdempotencyKey, StringComparison.Ordinal))
                     {
                         continue;
                     }
@@ -64,6 +66,21 @@ public sealed class FileGCodeJobRepository : IGCodeJobRepository
         var path = Path.Combine(_root, id + ".json");
         if (!File.Exists(path)) return null;
         return await ReadAsync(path, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<GCodeJobRecord?> GetOwnedAsync(
+        string tenantId,
+        string ownerId,
+        string id,
+        CancellationToken cancellationToken)
+    {
+        ValidateCallerContext(tenantId, ownerId);
+        var job = await GetAsync(id, cancellationToken).ConfigureAwait(false);
+        return job is not null &&
+               string.Equals(job.TenantId, tenantId, StringComparison.Ordinal) &&
+               string.Equals(job.OwnerId, ownerId, StringComparison.Ordinal)
+            ? job
+            : null;
     }
 
     public async Task<IReadOnlyList<GCodeJobRecord>> ListAsync(CancellationToken cancellationToken)
@@ -96,13 +113,21 @@ public sealed class FileGCodeJobRepository : IGCodeJobRepository
     private static async Task<GCodeJobRecord> ReadAsync(string path, CancellationToken cancellationToken)
     {
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, true);
-        return await JsonSerializer.DeserializeAsync<GCodeJobRecord>(stream, JsonOptions, cancellationToken)
+        var job = await JsonSerializer.DeserializeAsync<GCodeJobRecord>(stream, JsonOptions, cancellationToken)
             .ConfigureAwait(false) ?? throw new InvalidDataException($"Job record is empty: {Path.GetFileName(path)}");
+        // Stage 3-B records did not yet contain tenant/owner fields. They remain readable only
+        // inside the explicit local-development scope instead of becoming globally visible.
+        return job with
+        {
+            TenantId = string.IsNullOrWhiteSpace(job.TenantId) ? "tn_local" : job.TenantId,
+            OwnerId = string.IsNullOrWhiteSpace(job.OwnerId) ? "ow_local" : job.OwnerId,
+        };
     }
 
     private async Task WriteAsync(GCodeJobRecord job, CancellationToken cancellationToken)
     {
         ValidateId(job.Id);
+        ValidateCallerContext(job.TenantId, job.OwnerId);
         var finalPath = Path.Combine(_root, job.Id + ".json");
         var temporary = finalPath + $".{Guid.NewGuid():N}.partial";
         try
@@ -127,5 +152,21 @@ public sealed class FileGCodeJobRepository : IGCodeJobRepository
         {
             throw new ArgumentException("Job id must contain exactly 32 hexadecimal characters.", nameof(id));
         }
+    }
+
+    private static void ValidateCallerContext(string tenantId, string ownerId)
+    {
+        if (!IsContextId(tenantId, "tn_") || !IsContextId(ownerId, "ow_"))
+        {
+            throw new ArgumentException("Tenant and owner ids must use canonical opaque context ids.");
+        }
+    }
+
+    private static bool IsContextId(string value, string prefix)
+    {
+        if (value is "tn_local" or "ow_local") return value.StartsWith(prefix, StringComparison.Ordinal);
+        return value.Length == prefix.Length + 32 &&
+               value.StartsWith(prefix, StringComparison.Ordinal) &&
+               value[prefix.Length..].All(static character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
     }
 }

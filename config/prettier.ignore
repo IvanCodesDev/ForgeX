@@ -26,3 +26,4 @@ doc/
 optimization/
 _tmp_render*/
 _tmp_render2/
+../frontend/src/generated/**

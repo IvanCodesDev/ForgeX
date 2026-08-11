@@ -131,6 +131,9 @@ function getConfig(overrides) {
       gcodeAuthorityTimeoutMs: num(env.GCODE_AUTHORITY_TIMEOUT_MS, 120000),
       gcodeAuthorityMaxBytes: GCODE_AUTHORITY_HARD_MAX_BYTES,
       gcodeAsyncJobsEnabled: env.GCODE_ASYNC_JOBS_ENABLED !== "0",
+      // Node 与 C# sidecar 的进程间信任边界。浏览器永远不接触该值；
+      // 配置后，Node 才会向 C# 注入经过身份解析的匿名化 tenant/owner 上下文。
+      gcodeAuthorityInternalSecret: env.GCODE_AUTHORITY_INTERNAL_SECRET || "",
 
       // 启动时探活 provider，失败自动降级为规则引擎（取代人工 INFINI_VERIFIED 门禁的下一步）
       probeProvider: env.PROBE_PROVIDER !== "0",
@@ -142,6 +145,10 @@ function getConfig(overrides) {
   cfg.gcodeAuthorityUrl = normalizeAuthorityOrigin(cfg.gcodeAuthorityUrl, cfg.gcodeAuthorityAllowRemote);
   cfg.gcodeAuthorityTimeoutMs = Math.max(1, num(cfg.gcodeAuthorityTimeoutMs, 120000));
   cfg.gcodeAsyncJobsEnabled = cfg.gcodeAsyncJobsEnabled !== false && cfg.gcodeAsyncJobsEnabled !== "0";
+  cfg.gcodeAuthorityInternalSecret = String(cfg.gcodeAuthorityInternalSecret || "");
+  if (cfg.gcodeAuthorityInternalSecret && Buffer.byteLength(cfg.gcodeAuthorityInternalSecret, "utf8") < 32) {
+    throw new Error("GCODE_AUTHORITY_INTERNAL_SECRET 至少需要 32 个 UTF-8 字节");
+  }
   // 生产硬上限恒为 64 MiB；测试可通过 override 缩小，任何配置都不能放大。
   cfg.gcodeAuthorityMaxBytes = Math.min(
     GCODE_AUTHORITY_HARD_MAX_BYTES,

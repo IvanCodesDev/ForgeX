@@ -98,12 +98,12 @@ describe("G-code authority adapter", () => {
   });
 
   it("fails comparison when the contract, byte count, or submitted parameters drift", () => {
-    const changed: AuthorityAnalysisResponse = {
+    const changed = {
       ...AUTHORITY,
       schemaVersion: "2.0",
       input: { ...AUTHORITY.input, bytesRead: PREVIEW.byteLength + 1 },
       parameters: { ...AUTHORITY.parameters, bedSizeMm: 300 },
-    };
+    } as unknown as AuthorityAnalysisResponse;
 
     expect(compareAuthority(PREVIEW, changed, { bedSize: 256, densityG: 1.24, origin: "corner" })).toMatchObject({
       pass: false,

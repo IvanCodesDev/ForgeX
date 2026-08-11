@@ -33,6 +33,13 @@ POST /api/v1/gcode/analyze
 
 The G-code endpoint accepts the raw `application/x-gcode` body. The first slice returns an authoritative summary only; the React Worker remains responsible for immediate 3D preview geometry.
 
+Async job endpoints are tenant/owner scoped. In production, configure the same secret as Node's
+`GCODE_AUTHORITY_INTERNAL_SECRET` through `InternalAuth__SharedSecret`. Node resolves the browser
+session or API key first, derives opaque `tn_` / `ow_` identifiers, and sends those values over the
+loopback sidecar boundary. Missing or invalid internal authentication is rejected before job storage;
+cross-tenant status, SSE, and cancellation requests return the same not-found response. An empty
+secret keeps the explicit `tn_local` / `ow_local` development scope for direct local smoke tests.
+
 ## Rollback boundary
 
 The old page remains at `/`, the React page remains at `/react/`, and the default G-code authority remains the browser. Rollback therefore builds React with `VITE_REACT_GCODE_ENABLED=0` and `VITE_GCODE_AUTHORITY=browser`, clears `GCODE_AUTHORITY_URL`, and stops the .NET process. The gateway route may remain deployed: while unconfigured it returns a structured `503` and receives no requests from the rolled-back UI. No Node data migration is required for this slice.

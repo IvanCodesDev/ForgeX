@@ -20,6 +20,7 @@ internal static class GCodeJobEndpoints
         IGCodeJobRepository repository,
         IGCodeJobQueue queue)
     {
+        var caller = CallerContextBoundary.GetRequired(context);
         var mediaType = context.Request.ContentType?.Split(';', 2)[0].Trim();
         if (!string.Equals(mediaType, "application/x-gcode", StringComparison.OrdinalIgnoreCase))
         {
@@ -76,7 +77,9 @@ internal static class GCodeJobEndpoints
             null,
             null,
             null,
-            [initialEvent]);
+            [initialEvent],
+            caller.TenantId,
+            caller.OwnerId);
         var result = await repository.CreateOrGetAsync(candidate, context.RequestAborted);
         if (result.Conflict)
         {
@@ -154,7 +157,8 @@ internal static class GCodeJobEndpoints
 
         while (!context.RequestAborted.IsCancellationRequested)
         {
-            job = await repository.GetAsync(id, context.RequestAborted);
+            var caller = CallerContextBoundary.GetRequired(context);
+            job = await repository.GetOwnedAsync(caller.TenantId, caller.OwnerId, id, context.RequestAborted);
             if (job is null) return;
             foreach (var item in job.Events.Where(item => item.Sequence > lastSequence))
             {
@@ -209,7 +213,8 @@ internal static class GCodeJobEndpoints
     private static async Task<GCodeJobRecord?> FindAsync(HttpContext context, string id, IGCodeJobRepository repository)
     {
         if (id.Length != 32 || id.Any(static character => !char.IsAsciiHexDigit(character))) return null;
-        return await repository.GetAsync(id.ToLowerInvariant(), context.RequestAborted);
+        var caller = CallerContextBoundary.GetRequired(context);
+        return await repository.GetOwnedAsync(caller.TenantId, caller.OwnerId, id.ToLowerInvariant(), context.RequestAborted);
     }
 
     private static IResult NotFound(HttpContext context) =>

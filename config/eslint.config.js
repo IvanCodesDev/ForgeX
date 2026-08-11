@@ -128,6 +128,7 @@ module.exports = [
       ".nuget-packages/**",
       "backend/**/bin/**",
       "backend/**/obj/**",
+      "frontend/src/generated/**",
       "coverage/**",
       "test-results/**",
       "playwright-report/**",

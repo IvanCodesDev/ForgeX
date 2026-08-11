@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ForgeX.Api;
@@ -10,6 +11,11 @@ using ForgeX.Simulation;
 const long MaxGCodeBytes = 64L * 1024 * 1024;
 
 var builder = WebApplication.CreateBuilder(args);
+var internalSharedSecret = builder.Configuration["InternalAuth:SharedSecret"] ?? string.Empty;
+if (!string.IsNullOrEmpty(internalSharedSecret) && Encoding.UTF8.GetByteCount(internalSharedSecret) < 32)
+{
+    throw new InvalidOperationException("InternalAuth:SharedSecret must contain at least 32 UTF-8 bytes.");
+}
 
 builder.WebHost.ConfigureKestrel(options =>
 {
@@ -77,6 +83,24 @@ app.Use(async (context, next) =>
     }
 });
 
+app.Use(async (context, next) =>
+{
+    if (!CallerContextBoundary.AppliesTo(context.Request.Path))
+    {
+        await next(context);
+        return;
+    }
+
+    var problem = CallerContextBoundary.Resolve(context, internalSharedSecret);
+    if (problem is not null)
+    {
+        await problem.ExecuteAsync(context);
+        return;
+    }
+
+    await next(context);
+});
+
 if (allowedOrigins.Length > 0)
 {
     app.UseCors("ConfiguredFrontend");
@@ -126,6 +150,7 @@ app.MapGet("/health/ready", async (IGCodeAnalyzer analyzer, IContentObjectStore 
                 ["objectStore"] = writable ? "writable" : "unavailable",
                 ["jobQueue"] = queue.IsAccepting ? "accepting" : "closed",
                 ["jobWorker"] = worker.Started ? "started" : "starting",
+                ["callerContext"] = string.IsNullOrEmpty(internalSharedSecret) ? "local-development" : "trusted-node",
             });
         return Results.Json(response, statusCode: ready ? 200 : 503);
     })
@@ -162,21 +187,26 @@ app.MapPost("/api/v1/gcode/analyses", GCodeJobEndpoints.CreateAsync)
     .WithName("CreateGCodeAnalysisJob")
     .Accepts<Stream>("application/x-gcode")
     .Produces<GCodeJobAcceptedResponse>(StatusCodes.Status202Accepted)
+    .Produces<ApiProblem>(StatusCodes.Status400BadRequest, "application/problem+json")
+    .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status409Conflict, "application/problem+json");
 
 app.MapGet("/api/v1/jobs/{id}", GCodeJobEndpoints.GetAsync)
     .WithName("GetGCodeAnalysisJob")
     .Produces<GCodeJobSnapshotResponse>()
+    .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
 
 app.MapGet("/api/v1/jobs/{id}/events", GCodeJobEndpoints.EventsAsync)
     .WithName("StreamGCodeAnalysisJobEvents")
     .Produces(StatusCodes.Status200OK, contentType: "text/event-stream")
+    .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
 
 app.MapPost("/api/v1/jobs/{id}/cancel", GCodeJobEndpoints.CancelAsync)
     .WithName("CancelGCodeAnalysisJob")
     .Produces<GCodeJobSnapshotResponse>()
+    .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
 
 app.Run();

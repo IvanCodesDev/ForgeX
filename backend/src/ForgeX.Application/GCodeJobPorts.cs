@@ -18,6 +18,7 @@ public interface IGCodeJobRepository
 {
     Task<CreateJobResult> CreateOrGetAsync(GCodeJobRecord candidate, CancellationToken cancellationToken);
     Task<GCodeJobRecord?> GetAsync(string id, CancellationToken cancellationToken);
+    Task<GCodeJobRecord?> GetOwnedAsync(string tenantId, string ownerId, string id, CancellationToken cancellationToken);
     Task<IReadOnlyList<GCodeJobRecord>> ListAsync(CancellationToken cancellationToken);
     Task<GCodeJobRecord> SaveAsync(GCodeJobRecord job, CancellationToken cancellationToken);
 }

@@ -1,8 +1,14 @@
 import { createNodeRequestInit, resolveNodeApiBase } from "../../app/api/api-adapter";
+import {
+  forgeXApiOperations,
+  forgeXApiPath,
+  type GCodeJobAcceptedResponse,
+  type GCodeJobSnapshotResponse,
+} from "../../generated/forgex-api";
 import { assertAuthorityContract, parseAuthorityResponse, type AuthorityAnalysisResponse } from "./gcode-authority";
 import type { GcodeParseOptions } from "./gcode-types";
 
-export type AuthorityJobStatus = "queued" | "running" | "succeeded" | "degraded" | "failed" | "cancelled";
+export type AuthorityJobStatus = GCodeJobAcceptedResponse["status"];
 export type AuthorityJobTransport = "sse" | "poll";
 
 export interface AuthorityJobProgress {
@@ -25,23 +31,11 @@ export interface AuthorityJobClientOptions {
   readonly creationRetryDelayMs?: number;
 }
 
-interface AcceptedJob {
-  readonly jobId: string;
-  readonly status: AuthorityJobStatus;
-  readonly statusPath: string;
-  readonly eventsPath: string;
-  readonly cancelPath: string;
-}
+type AcceptedJob = GCodeJobAcceptedResponse;
 
-interface JobSnapshot {
-  readonly id: string;
-  readonly status: AuthorityJobStatus;
-  readonly progress: number;
-  readonly phase: string;
-  readonly sequence: number;
+type JobSnapshot = Pick<GCodeJobSnapshotResponse, "id" | "status" | "progress" | "phase" | "sequence" | "error"> & {
   readonly result: unknown;
-  readonly error: { readonly code: string; readonly message: string } | null;
-}
+};
 
 const TERMINAL = new Set<AuthorityJobStatus>(["succeeded", "degraded", "failed", "cancelled"]);
 const STATUS = new Set<AuthorityJobStatus>(["queued", "running", "succeeded", "degraded", "failed", "cancelled"]);
@@ -90,20 +84,30 @@ function parseAccepted(value: unknown): AcceptedJob {
   const root = record(value, "accepted");
   const jobId = string(root, "jobId");
   if (!/^[a-f0-9]{32}$/.test(jobId)) throw new Error("C# 异步作业 jobId 无效");
-  if (string(root, "schemaVersion") !== "1.0") throw new Error("C# 异步作业 schemaVersion 不受支持");
+  const schemaVersion = string(root, "schemaVersion");
+  if (schemaVersion !== "1.0") throw new Error("C# 异步作业 schemaVersion 不受支持");
+  const input = record(root.input, "input");
   const links = record(root.links, "links");
-  const accepted = {
+  const accepted: AcceptedJob = {
+    schemaVersion,
     jobId,
     status: status(root),
-    statusPath: path(links, "status"),
-    eventsPath: path(links, "events"),
-    cancelPath: path(links, "cancel"),
+    input: {
+      sha256: string(input, "sha256"),
+      bytesRead: finite(input, "bytesRead"),
+      linesRead: finite(input, "linesRead"),
+    },
+    links: {
+      status: path(links, "status"),
+      events: path(links, "events"),
+      cancel: path(links, "cancel"),
+    },
   };
-  const expectedBase = `/api/v1/jobs/${jobId}`;
+  const expectedBase = forgeXApiPath("getGCodeAnalysisJob", { id: jobId });
   if (
-    accepted.statusPath !== expectedBase ||
-    accepted.eventsPath !== `${expectedBase}/events` ||
-    accepted.cancelPath !== `${expectedBase}/cancel`
+    accepted.links.status !== expectedBase ||
+    accepted.links.events !== forgeXApiPath("streamGCodeAnalysisJobEvents", { id: jobId }) ||
+    accepted.links.cancel !== forgeXApiPath("cancelGCodeAnalysisJob", { id: jobId })
   ) {
     throw new Error("C# 异步作业链接与 jobId 不一致");
   }
@@ -183,7 +187,7 @@ async function createJob(
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const response = await fetch(
-        `${base}/api/v1/gcode/analyses?${query}`,
+        `${base}${forgeXApiOperations.createGCodeAnalysisJob.path}?${query}`,
         createNodeRequestInit(env, {
           method: "POST",
           headers: { "Content-Type": "application/x-gcode", "Idempotency-Key": key },
@@ -209,7 +213,7 @@ async function getSnapshot(
   signal: AbortSignal
 ): Promise<JobSnapshot> {
   const response = await fetch(
-    base + accepted.statusPath,
+    base + accepted.links.status,
     createNodeRequestInit(env, { headers: { Accept: "application/json" }, signal })
   );
   if (!response.ok) throw await problem(response, "C# 异步作业查询失败");
@@ -240,7 +244,7 @@ async function consumeEvents(
 ): Promise<{ readonly terminal: boolean; readonly lastSequence: number }> {
   const headers = new Headers({ Accept: "text/event-stream" });
   if (lastSequence > 0) headers.set("Last-Event-ID", String(lastSequence));
-  const response = await fetch(base + accepted.eventsPath, createNodeRequestInit(env, { headers, signal }));
+  const response = await fetch(base + accepted.links.events, createNodeRequestInit(env, { headers, signal }));
   if (!response.ok) throw await problem(response, "C# SSE 订阅失败");
   if (!response.body) throw new Error("C# SSE 响应不支持流式读取");
 
@@ -349,7 +353,7 @@ export async function cancelAuthorityJob(jobId: string, env: ImportMetaEnv): Pro
   if (!/^[a-f0-9]{32}$/.test(jobId)) return;
   const base = resolveNodeApiBase(env);
   const response = await fetch(
-    `${base}/api/v1/jobs/${jobId}/cancel`,
+    `${base}${forgeXApiPath("cancelGCodeAnalysisJob", { id: jobId })}`,
     createNodeRequestInit(env, { method: "POST", headers: { Accept: "application/json" } })
   );
   if (!response.ok && response.status !== 404) throw await problem(response, "C# 异步作业取消失败");

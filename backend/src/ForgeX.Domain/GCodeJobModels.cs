@@ -37,4 +37,6 @@ public sealed record GCodeJobRecord(
     string? ErrorCode,
     string? ErrorMessage,
     string? TraceId,
-    IReadOnlyList<GCodeJobEvent> Events);
+    IReadOnlyList<GCodeJobEvent> Events,
+    string TenantId = "tn_local",
+    string OwnerId = "ow_local");

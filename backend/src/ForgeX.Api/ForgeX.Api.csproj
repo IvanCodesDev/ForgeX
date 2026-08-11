@@ -8,6 +8,10 @@
     <ProjectReference Include="..\ForgeX.Infrastructure\ForgeX.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="openapi\v1.json" LogicalName="ForgeX.Api.openapi.v1.json" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>

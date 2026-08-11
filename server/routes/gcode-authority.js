@@ -4,6 +4,7 @@
 "use strict";
 const http = require("http");
 const https = require("https");
+const crypto = require("crypto");
 const { resolveIdentity } = require("../lib/identity");
 
 const ANALYZE_PATH = "/api/v1/gcode/analyze";
@@ -47,7 +48,11 @@ function contentLength(req) {
   return Number.isSafeInteger(value) ? value : NaN;
 }
 
-function upstreamHeaders(req, length, reqId) {
+function opaqueContextId(prefix, value) {
+  return prefix + crypto.createHash("sha256").update(String(value)).digest("hex").slice(0, 32);
+}
+
+function upstreamHeaders(req, length, reqId, identity, cfg) {
   const headers = { "x-request-id": reqId };
   if (typeof req.headers.accept === "string") headers.accept = req.headers.accept;
   if (typeof req.headers["content-type"] === "string") {
@@ -59,6 +64,11 @@ function upstreamHeaders(req, length, reqId) {
   }
   if (typeof req.headers["last-event-id"] === "string") {
     headers["last-event-id"] = req.headers["last-event-id"];
+  }
+  if (cfg.gcodeAuthorityInternalSecret && identity) {
+    headers["x-forgex-internal-token"] = cfg.gcodeAuthorityInternalSecret;
+    headers["x-forgex-tenant-id"] = opaqueContextId("tn_", identity.tenantId);
+    headers["x-forgex-owner-id"] = opaqueContextId("ow_", identity.caller);
   }
   return headers;
 }
@@ -77,7 +87,7 @@ function proxyAnalyze(req, res, rc, ctx, targetPath) {
   const { cfg, log } = ctx;
   // 与其他写接口共用同一身份优先级和同一 IP 冷却窗口；守卫与限流都在
   // 创建 sidecar 连接前执行，拒绝的请求不会向权威计算进程泄漏任何字节。
-  resolveIdentity(req, rc, ctx);
+  const identity = resolveIdentity(req, rc, ctx);
   ctx.rateLimit(rc.ip);
 
   if (!cfg.gcodeAuthorityUrl) {
@@ -168,7 +178,7 @@ function proxyAnalyze(req, res, rc, ctx, targetPath) {
     try {
       upstreamReq = transport.request(target, {
         method: "POST",
-        headers: upstreamHeaders(req, declaredLength, rc.reqId),
+        headers: upstreamHeaders(req, declaredLength, rc.reqId, identity, cfg),
       });
     } catch (error) {
       fail(502, "authority_unavailable", "C# G-code 权威计算服务不可用", error);
@@ -232,7 +242,7 @@ function proxyAnalyze(req, res, rc, ctx, targetPath) {
 
 function proxyJobControl(req, res, rc, ctx, targetPath, rateLimited) {
   const { cfg, log } = ctx;
-  resolveIdentity(req, rc, ctx);
+  const identity = resolveIdentity(req, rc, ctx);
   if (rateLimited) ctx.rateLimit(rc.ip);
   if (!cfg.gcodeAsyncJobsEnabled) {
     sendProblem(res, 503, "async_jobs_disabled", "异步 G-code 作业已关闭", rc.reqId);
@@ -262,7 +272,7 @@ function proxyJobControl(req, res, rc, ctx, targetPath, rateLimited) {
     try {
       upstreamReq = transport.request(target, {
         method: req.method,
-        headers: upstreamHeaders(req, 0, rc.reqId),
+        headers: upstreamHeaders(req, 0, rc.reqId, identity, cfg),
       });
     } catch (error) {
       log.warn("gcode job proxy failed", { reqId: rc.reqId, error: error.message });

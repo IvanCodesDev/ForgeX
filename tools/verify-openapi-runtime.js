@@ -1,0 +1,251 @@
+"use strict";
+
+const crypto = require("crypto");
+const fs = require("fs");
+const net = require("net");
+const os = require("os");
+const path = require("path");
+const { spawn } = require("child_process");
+
+const root = path.resolve(__dirname, "..");
+const canonicalPath = path.join(root, "backend", "src", "ForgeX.Api", "openapi", "v1.json");
+const apiDll = path.join(root, "backend", "src", "ForgeX.Api", "bin", "Release", "net10.0", "ForgeX.Api.dll");
+
+function dotnetExecutable() {
+  const local = path.join(root, ".dotnet", process.platform === "win32" ? "dotnet.exe" : "dotnet");
+  return fs.existsSync(local) ? local : "dotnet";
+}
+
+function getFreePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      server.close((error) => (error ? reject(error) : resolve(port)));
+    });
+  });
+}
+
+function sha256(bytes) {
+  return crypto.createHash("sha256").update(bytes).digest("hex");
+}
+
+async function request(url, init = {}, timeoutMs = 10_000) {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+}
+
+async function waitForReady(baseUrl, child, stderr) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (child.exitCode !== null) throw new Error(`ForgeX.Api exited ${child.exitCode}: ${stderr.join("")}`);
+    try {
+      const response = await request(`${baseUrl}/health/ready`, {}, 1_000);
+      if (response.ok) return;
+    } catch {
+      // Startup race: retry until the bounded deadline.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 125));
+  }
+  throw new Error(`ForgeX.Api readiness timed out: ${stderr.join("")}`);
+}
+
+async function waitForTerminal(baseUrl, statusPath, headers) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const response = await request(baseUrl + statusPath, { headers });
+    if (!response.ok) throw new Error(`job snapshot returned ${response.status}`);
+    const snapshot = await response.json();
+    if (["succeeded", "degraded", "failed", "cancelled"].includes(snapshot.status)) return snapshot;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("async job did not reach a terminal state");
+}
+
+async function readTerminalSse(url, headers) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error("SSE terminal replay timed out")), 10_000);
+  let reader;
+  try {
+    const response = await fetch(url, {
+      headers: { ...headers, Accept: "text/event-stream" },
+      signal: controller.signal,
+    });
+    if (response.status !== 200 || !response.body) throw new Error(`SSE replay returned ${response.status}`);
+    reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+    while (text.length <= 1_048_576) {
+      const chunk = await reader.read();
+      text += decoder.decode(chunk.value, { stream: !chunk.done });
+      if (text.includes("event: terminal") && text.includes("id:")) return text;
+      if (chunk.done) break;
+    }
+    throw new Error("SSE terminal replay contract mismatch");
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
+    if (reader) await reader.cancel().catch(() => undefined);
+  }
+}
+
+function safeCleanup(directory) {
+  const resolved = path.resolve(directory);
+  if (
+    path.dirname(resolved) !== path.resolve(os.tmpdir()) ||
+    !path.basename(resolved).startsWith("forgex-openapi-runtime-")
+  ) {
+    throw new Error(`refusing cleanup outside the dedicated runtime directory: ${resolved}`);
+  }
+  fs.rmSync(resolved, { recursive: true, force: true });
+}
+
+async function main() {
+  if (!fs.existsSync(apiDll)) throw new Error(`Release API build missing: ${apiDll}`);
+  const canonical = fs.readFileSync(canonicalPath);
+  const document = JSON.parse(canonical.toString("utf8"));
+  const operationPaths = new Map();
+  for (const [route, pathItem] of Object.entries(document.paths)) {
+    for (const method of ["get", "post", "put", "patch", "delete"]) {
+      if (pathItem[method]?.operationId) operationPaths.set(pathItem[method].operationId, route);
+    }
+  }
+  const port = await getFreePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "forgex-openapi-runtime-"));
+  const stderr = [];
+  const internalSecret = "openapi-runtime-internal-secret-32-bytes";
+  const callerA = {
+    "X-ForgeX-Internal-Token": internalSecret,
+    "X-ForgeX-Tenant-Id": "tn_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "X-ForgeX-Owner-Id": "ow_11111111111111111111111111111111",
+  };
+  const callerB = {
+    "X-ForgeX-Internal-Token": internalSecret,
+    "X-ForgeX-Tenant-Id": "tn_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "X-ForgeX-Owner-Id": "ow_22222222222222222222222222222222",
+  };
+  let child;
+
+  try {
+    child = spawn(dotnetExecutable(), [apiDll], {
+      cwd: root,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        ASPNETCORE_ENVIRONMENT: "Production",
+        Kestrel__Endpoints__Http__Url: baseUrl,
+        Storage__Root: path.join(runtimeRoot, "data"),
+        InternalAuth__SharedSecret: internalSecret,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    child.stderr.on("data", (chunk) => stderr.push(chunk.toString("utf8")));
+    await waitForReady(baseUrl, child, stderr);
+
+    const openApiResponse = await request(`${baseUrl}/openapi/v1.json`);
+    const served = Buffer.from(await openApiResponse.arrayBuffer());
+    if (openApiResponse.status !== 200) throw new Error(`OpenAPI returned ${openApiResponse.status}`);
+    if (sha256(served) !== sha256(canonical)) throw new Error("served OpenAPI differs from canonical bytes");
+
+    for (const route of ["/health/live", "/health/ready", "/healthz"]) {
+      const response = await request(baseUrl + route);
+      if (response.status !== 200) throw new Error(`${route} returned ${response.status}`);
+    }
+
+    const gcode = Buffer.from("G90\nM82\nG28\nG1 X0 Y0 Z0.2 F1200\nG1 X10 Y0 E1 F600\n", "utf8");
+    const query = "bedSizeMm=256&coordinateOrigin=corner&filamentDensityGPerCm3=1.24";
+    const syncResponse = await request(`${baseUrl}${operationPaths.get("analyzeGCode")}?${query}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-gcode" },
+      body: gcode,
+    });
+    if (syncResponse.status !== 200)
+      throw new Error(`sync analysis returned ${syncResponse.status}: ${await syncResponse.text()}`);
+    const syncResult = await syncResponse.json();
+    if (syncResult.input.sha256 !== sha256(gcode)) throw new Error("sync analysis raw-byte SHA mismatch");
+
+    const createUrl = `${baseUrl}${operationPaths.get("createGCodeAnalysisJob")}?${query}`;
+    const untrustedCreate = await request(createUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-gcode" },
+      body: gcode,
+    });
+    if (untrustedCreate.status !== 401) throw new Error(`untrusted create returned ${untrustedCreate.status}`);
+
+    const wrongTokenCreate = await request(createUrl, {
+      method: "POST",
+      headers: {
+        ...callerA,
+        "X-ForgeX-Internal-Token": "wrong-internal-token-that-is-long-enough",
+        "Content-Type": "application/x-gcode",
+      },
+      body: gcode,
+    });
+    if (wrongTokenCreate.status !== 401) throw new Error(`wrong internal token returned ${wrongTokenCreate.status}`);
+
+    const invalidContextCreate = await request(createUrl, {
+      method: "POST",
+      headers: {
+        ...callerA,
+        "X-ForgeX-Tenant-Id": "browser-controlled",
+        "Content-Type": "application/x-gcode",
+      },
+      body: gcode,
+    });
+    if (invalidContextCreate.status !== 400)
+      throw new Error(`invalid caller context returned ${invalidContextCreate.status}`);
+
+    const createResponse = await request(createUrl, {
+      method: "POST",
+      headers: { ...callerA, "Content-Type": "application/x-gcode", "Idempotency-Key": "openapi-runtime-gate" },
+      body: gcode,
+    });
+    if (createResponse.status !== 202)
+      throw new Error(`async create returned ${createResponse.status}: ${await createResponse.text()}`);
+    const accepted = await createResponse.json();
+    const crossTenantStatus = await request(baseUrl + accepted.links.status, { headers: callerB });
+    if (crossTenantStatus.status !== 404) throw new Error(`cross-tenant status returned ${crossTenantStatus.status}`);
+    const crossTenantEvents = await request(baseUrl + accepted.links.events, { headers: callerB });
+    if (crossTenantEvents.status !== 404) throw new Error(`cross-tenant events returned ${crossTenantEvents.status}`);
+    const crossTenantCancel = await request(baseUrl + accepted.links.cancel, { method: "POST", headers: callerB });
+    if (crossTenantCancel.status !== 404) throw new Error(`cross-tenant cancel returned ${crossTenantCancel.status}`);
+
+    const tenantBCreate = await request(createUrl, {
+      method: "POST",
+      headers: { ...callerB, "Content-Type": "application/x-gcode", "Idempotency-Key": "openapi-runtime-gate" },
+      body: gcode,
+    });
+    if (tenantBCreate.status !== 202) throw new Error(`tenant B create returned ${tenantBCreate.status}`);
+    const acceptedB = await tenantBCreate.json();
+    if (acceptedB.jobId === accepted.jobId) throw new Error("idempotency key crossed the tenant boundary");
+
+    const snapshot = await waitForTerminal(baseUrl, accepted.links.status, callerA);
+    if (snapshot.status !== "succeeded" || snapshot.result?.input?.sha256 !== sha256(gcode)) {
+      throw new Error(`async terminal contract mismatch: ${JSON.stringify(snapshot.error || snapshot.status)}`);
+    }
+
+    await waitForTerminal(baseUrl, acceptedB.links.status, callerB);
+    await readTerminalSse(baseUrl + accepted.links.events, callerA);
+    const cancelResponse = await request(baseUrl + accepted.links.cancel, { method: "POST", headers: callerA });
+    if (cancelResponse.status !== 200) throw new Error(`terminal cancel returned ${cancelResponse.status}`);
+
+    console.log(`OpenAPI runtime gate PASS: ${Object.keys(document.paths).length} paths`);
+    console.log(`canonicalSha256=${sha256(canonical)}`);
+    console.log(`jobId=${accepted.jobId} status=${snapshot.status} sse=terminal tenantIsolation=pass`);
+  } finally {
+    if (child) {
+      if (child.exitCode === null) child.kill();
+      await new Promise((resolve) => {
+        if (child.exitCode !== null) return resolve();
+        child.once("exit", resolve);
+        setTimeout(resolve, 2_000);
+      });
+    }
+    safeCleanup(runtimeRoot);
+  }
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.stack : error);
+  process.exitCode = 1;
+});
