@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -280,6 +281,12 @@ internal static class GoldenDiffProgram
                 "layer-plan-invariants",
                 () => Task.FromResult(CheckLayerPlanInvariants(baseline))),
             await RunProbeAsync(
+                "toolpath-visualization-invariants",
+                () => Task.FromResult(CheckToolpathVisualizationInvariants(baseline))),
+            await RunProbeAsync(
+                "toolpath-visualization-budget",
+                () => CheckToolpathVisualizationBudgetAsync(analyzer, cancellationToken)),
+            await RunProbeAsync(
                 "layer-limit",
                 () => CheckLayerLimitAsync(analyzer, cancellationToken)),
         };
@@ -470,6 +477,73 @@ internal static class GoldenDiffProgram
             "layer-plan-invariants",
             pass,
             $"sequential={sequential}; sorted={sorted}; pathCounts={pathCountsMatch}; extrusion={extrusionMatches}; types={typesMatch}; countHeight={countAndHeightMatch}",
+            StreamingGCodeAnalyzer.EngineVersion);
+    }
+
+    private static ContractCheck CheckToolpathVisualizationInvariants(GCodeAnalysisResult result)
+    {
+        var visualization = result.Visualization;
+        if (visualization is null)
+        {
+            return ContractFailure("toolpath-visualization-invariants", "Visualization is missing.");
+        }
+
+        var layerAligned = visualization.Layers.Count == result.Layers.Count &&
+            visualization.Layers.Select(static layer => layer.Index).SequenceEqual(Enumerable.Range(0, result.Layers.Count));
+        var contiguous = visualization.Layers
+            .Select((layer, index) => layer.SegmentOffset == visualization.Layers.Take(index).Sum(static item => item.SegmentCount))
+            .All(static value => value);
+        var countsMatch = visualization.Layers.Sum(static layer => layer.SegmentCount) == visualization.SegmentCount &&
+            visualization.Layers.Sum(static layer => layer.SourceSegmentCount) == visualization.SourceSegmentCount;
+        var payloadMatches = visualization.Encoding == "forgex-toolpath-f32le-v1" &&
+            visualization.RecordStrideBytes == 20 &&
+            visualization.Data.Length == visualization.SegmentCount * visualization.RecordStrideBytes;
+        var recordsValid = true;
+        for (var index = 0; index < visualization.SegmentCount; index++)
+        {
+            var record = visualization.Data.AsSpan(index * visualization.RecordStrideBytes, visualization.RecordStrideBytes);
+            recordsValid &= float.IsFinite(BinaryPrimitives.ReadSingleLittleEndian(record));
+            recordsValid &= float.IsFinite(BinaryPrimitives.ReadSingleLittleEndian(record[4..]));
+            recordsValid &= float.IsFinite(BinaryPrimitives.ReadSingleLittleEndian(record[8..]));
+            recordsValid &= float.IsFinite(BinaryPrimitives.ReadSingleLittleEndian(record[12..]));
+            var typeIndex = BinaryPrimitives.ReadInt32LittleEndian(record[16..]);
+            recordsValid &= typeIndex >= 0 && typeIndex < visualization.PathTypes.Count;
+        }
+
+        var pass = layerAligned && contiguous && countsMatch && payloadMatches && recordsValid;
+        return new ContractCheck(
+            "toolpath-visualization-invariants",
+            pass,
+            $"layerAligned={layerAligned}; contiguous={contiguous}; counts={countsMatch}; payload={payloadMatches}; records={recordsValid}; segments={visualization.SegmentCount}/{visualization.SourceSegmentCount}",
+            StreamingGCodeAnalyzer.EngineVersion);
+    }
+
+    private static async Task<ContractCheck> CheckToolpathVisualizationBudgetAsync(
+        StreamingGCodeAnalyzer analyzer,
+        CancellationToken cancellationToken)
+    {
+        var builder = new StringBuilder("G90\nM83\nG1 X0 Y0 Z0.2 F1200\n");
+        for (var index = 1; index <= 10; index++)
+        {
+            builder.AppendLine(FormattableString.Invariant($"G1 X{index} Y{index} E0.1 F900"));
+        }
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(builder.ToString()), writable: false);
+        var result = await analyzer.AnalyzeAsync(
+            stream,
+            new GCodeAnalysisOptions(MaxLayers: 2, MaxVisualizationSegments: 4),
+            cancellationToken);
+        var visualization = result.Visualization!;
+        var pass = visualization.SourceSegmentCount == 10 &&
+            visualization.SegmentCount is > 0 and <= 4 &&
+            visualization.Truncated &&
+            visualization.SamplingStride > 1 &&
+            visualization.Layers.Count == 1 &&
+            visualization.Layers[0].SourceSegmentCount == 10 &&
+            visualization.Data.Length <= 4 * 20;
+        return new ContractCheck(
+            "toolpath-visualization-budget",
+            pass,
+            $"segments={visualization.SegmentCount}/{visualization.SourceSegmentCount}; stride={visualization.SamplingStride}; bytes={visualization.Data.Length}",
             StreamingGCodeAnalyzer.EngineVersion);
     }
 

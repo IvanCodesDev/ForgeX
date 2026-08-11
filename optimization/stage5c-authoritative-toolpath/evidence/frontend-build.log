@@ -1,0 +1,38 @@
+
+> forgex-insight@0.19.0 frontend:build
+> npm run build --workspace @forgex/frontend
+
+
+> @forgex/frontend@0.1.0 build
+> tsc -b && vite build
+
+[36mvite v8.1.5 [32mbuilding client environment for production...[36m[39m
+[2Ktransforming...✓ 82 modules transformed.
+rendering chunks...
+computing gzip size...
+../dist/react/index.html                                       0.47 kB │ gzip:   0.32 kB
+../dist/react/assets/CalibrationGovernancePage-D1gxLK7c.css    3.44 kB │ gzip:   1.02 kB
+../dist/react/assets/AnalyticsPage-BEpXKdCY.css                5.25 kB │ gzip:   1.51 kB
+../dist/react/assets/SimulatorPage-DmeYl5fJ.css                6.45 kB │ gzip:   1.65 kB
+../dist/react/assets/index-DaV9IBj-.css                       16.51 kB │ gzip:   4.53 kB
+../dist/react/assets/forgex-api-BMxAbnBM.js                    0.75 kB │ gzip:   0.36 kB
+../dist/react/assets/ArchitecturePage-hwMU52Bn.js              0.81 kB │ gzip:   0.58 kB
+../dist/react/assets/useProfileSelection-r7xzKv93.js          15.96 kB │ gzip:   5.59 kB
+../dist/react/assets/CalibrationGovernancePage-BX1vOxy9.js    16.73 kB │ gzip:   5.80 kB
+../dist/react/assets/GcodePage-BB-lpuJF.js                    69.96 kB │ gzip:  23.39 kB
+../dist/react/assets/AnalyticsPage-ld1Uw3SR.js                96.85 kB │ gzip:  30.73 kB
+../dist/react/assets/SimulatorPage-DsnVOm_c.js                98.42 kB │ gzip:  33.04 kB
+../dist/react/assets/index-YrtLqI35.js                       254.53 kB │ gzip:  81.84 kB
+../dist/react/assets/GcodeViewer-BFAlXmzO.js                 544.37 kB │ gzip: 136.13 kB
+
+[32m✓ built in 195ms[39m
+[33m[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+npm notice
+npm notice New minor version of npm available! 11.6.2 -> 11.19.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.19.0
+npm notice To update run: npm install -g npm@11.19.0
+npm notice

@@ -1,13 +1,14 @@
 import { useEffect, useRef } from "react";
 import { ViewerEngine } from "../../engine/ViewerEngine";
-import type { GcodeBounds, PreviewLayer } from "./gcode-types";
+import type { AuthorityToolpathLayerView, GcodeBounds, PreviewLayer } from "./gcode-types";
 
 interface GcodeViewerProps {
   readonly layer: PreviewLayer | null;
+  readonly authorityLayer?: AuthorityToolpathLayerView | null;
   readonly bounds: GcodeBounds | null;
 }
 
-export function GcodeViewer({ layer, bounds }: GcodeViewerProps) {
+export function GcodeViewer({ layer, authorityLayer = null, bounds }: GcodeViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const engineRef = useRef<ViewerEngine | null>(null);
 
@@ -22,12 +23,15 @@ export function GcodeViewer({ layer, bounds }: GcodeViewerProps) {
     };
   }, []);
 
-  useEffect(() => engineRef.current?.setLayer(layer, bounds), [layer, bounds]);
+  useEffect(() => {
+    if (authorityLayer) engineRef.current?.setAuthorityLayer(authorityLayer, bounds);
+    else engineRef.current?.setLayer(layer, bounds);
+  }, [authorityLayer, layer, bounds]);
 
   return (
     <div className="gcode-viewer">
       <canvas ref={canvasRef} aria-label="当前 G-code 层的三维路径预览" />
-      {!layer ? <p>导入 G-code 后显示逐层路径</p> : null}
+      {!layer && !authorityLayer ? <p>导入 G-code 后显示逐层路径</p> : null}
     </div>
   );
 }

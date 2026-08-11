@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { GcodePreviewResult } from "./gcode-types";
+import { decodeAuthorityToolpathLayer } from "./authority-toolpath";
 import {
   compareAuthority,
   requestAuthorityAnalysis,
@@ -68,6 +69,24 @@ const PREVIEW: GcodePreviewResult = {
   previewTruncated: false,
 };
 
+function packedToolpathBase64(): string {
+  const bytes = new Uint8Array(40);
+  const view = new DataView(bytes.buffer);
+  const records = [
+    [0, 1, 5, 6, 0],
+    [5, 6, 10, 11, 2],
+  ] as const;
+  records.forEach((record, index) => {
+    const offset = index * 20;
+    view.setFloat32(offset, record[0], true);
+    view.setFloat32(offset + 4, record[1], true);
+    view.setFloat32(offset + 8, record[2], true);
+    view.setFloat32(offset + 12, record[3], true);
+    view.setInt32(offset + 16, record[4], true);
+  });
+  return btoa(String.fromCharCode(...bytes));
+}
+
 const AUTHORITY: AuthorityAnalysisResponse = {
   schemaVersion: "1.0",
   engine: { version: "forgex-gcode-csharp/1", source: "gcode-import" },
@@ -93,12 +112,39 @@ const AUTHORITY: AuthorityAnalysisResponse = {
   },
   bounds: PREVIEW.bounds,
   layers: PREVIEW.layerSummaries,
+  visualization: {
+    encoding: "forgex-toolpath-f32le-v1",
+    recordStrideBytes: 20,
+    sourceSegmentCount: 2,
+    segmentCount: 2,
+    truncated: false,
+    samplingStride: 1,
+    pathTypes: ["perimeter", "solid", "infill", "support", "skirt"],
+    layers: [
+      { index: 0, sourceSegmentCount: 1, segmentOffset: 0, segmentCount: 1 },
+      { index: 1, sourceSegmentCount: 1, segmentOffset: 1, segmentCount: 1 },
+    ],
+    dataBase64: packedToolpathBase64(),
+  },
   claims: {},
   pathTypeCounts: { perimeter: 1, infill: 1 },
   warnings: [],
 };
 
 describe("G-code authority adapter", () => {
+  it("decodes a selected C# packed layer without expanding the full toolpath into JSON points", () => {
+    expect(decodeAuthorityToolpathLayer(AUTHORITY, 1)).toMatchObject({
+      index: 1,
+      z: 0.4,
+      sourcePathCount: 1,
+      sourceSegmentCount: 1,
+      segmentCount: 1,
+      pathTypes: ["perimeter", "solid", "infill", "support", "skirt"],
+    });
+    expect(Array.from(decodeAuthorityToolpathLayer(AUTHORITY, 1)?.coordinates ?? [])).toEqual([5, 6, 10, 11]);
+    expect(Array.from(decodeAuthorityToolpathLayer(AUTHORITY, 1)?.pathTypeIndexes ?? [])).toEqual([2]);
+  });
+
   it("defaults invalid or absent authority values to browser rollback mode", () => {
     expect(resolveAuthorityMode(env())).toBe("browser");
     expect(resolveAuthorityMode(env("unexpected"))).toBe("browser");
@@ -267,6 +313,27 @@ describe("G-code authority adapter", () => {
     ["profile values", { ...AUTHORITY, profile: { ...AUTHORITY.profile, bedSizeMm: 300 } }],
     ["profile fingerprint", { ...AUTHORITY, profile: { ...AUTHORITY.profile, fingerprint: "invalid" } }],
     ["layer index", { ...AUTHORITY, layers: [{ ...AUTHORITY.layers[0], index: 1 }, AUTHORITY.layers[1]] }],
+    ["toolpath encoding", { ...AUTHORITY, visualization: { ...AUTHORITY.visualization, encoding: "unexpected" } }],
+    [
+      "toolpath layer slice",
+      {
+        ...AUTHORITY,
+        visualization: {
+          ...AUTHORITY.visualization,
+          layers: [AUTHORITY.visualization.layers[0], { ...AUTHORITY.visualization.layers[1], segmentOffset: 9 }],
+        },
+      },
+    ],
+    [
+      "toolpath payload",
+      {
+        ...AUTHORITY,
+        visualization: {
+          ...AUTHORITY.visualization,
+          dataBase64: `!${AUTHORITY.visualization.dataBase64.slice(1)}`,
+        },
+      },
+    ],
     ["engine version", { ...AUTHORITY, engine: { ...AUTHORITY.engine, version: "" } }],
     ["engine source", { ...AUTHORITY, engine: { ...AUTHORITY.engine, source: "unexpected-route" } }],
   ])("rejects a %s contract mismatch", async (_label, responseBody) => {

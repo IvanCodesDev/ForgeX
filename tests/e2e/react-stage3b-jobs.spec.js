@@ -9,6 +9,29 @@ const GCODE_FIXTURE = path.join(ROOT, "validation", "fixtures", "cura-marlin.gco
 const JOB_ID = "3".repeat(32);
 const SHA256 = "0881cfdac2ef41f6df48f7f5e0f47fd632dcddec8238955ce3a59a6bd754cf07";
 
+function packedToolpathBase64() {
+  const records = [
+    [-108, -108, -8, -108, 0],
+    [-8, -108, -8, -8, 0],
+    [-8, -8, -108, -8, 0],
+    [-108, -8, -108, -108, 0],
+    [-98, -98, -18, -98, 2],
+    [-18, -98, -18, -18, 2],
+    [-18, -18, -98, -18, 2],
+    [-98, -18, -98, -98, 2],
+  ];
+  const payload = Buffer.alloc(records.length * 20);
+  records.forEach((record, index) => {
+    const offset = index * 20;
+    payload.writeFloatLE(record[0], offset);
+    payload.writeFloatLE(record[1], offset + 4);
+    payload.writeFloatLE(record[2], offset + 8);
+    payload.writeFloatLE(record[3], offset + 12);
+    payload.writeInt32LE(record[4], offset + 16);
+  });
+  return payload.toString("base64");
+}
+
 test.describe("React Stage 3-B async authority", () => {
   test.skip(process.env.E2E_GCODE_AUTHORITY !== "dotnet", "dedicated dotnet build is required");
 
@@ -19,7 +42,7 @@ test.describe("React Stage 3-B async authority", () => {
     const links = { status: base, events: `${base}/events`, cancel: `${base}/cancel` };
     const authority = {
       schemaVersion: "1.0",
-      engine: { version: "1.2.0", source: "gcode-import" },
+      engine: { version: "1.3.0", source: "gcode-import" },
       input: { sha256: SHA256, bytesRead: 350, linesRead: 18 },
       profile: {
         machineProfileId: "corexy",
@@ -63,6 +86,20 @@ test.describe("React Stage 3-B async authority", () => {
           pathTypeCounts: { infill: 1 },
         },
       ],
+      visualization: {
+        encoding: "forgex-toolpath-f32le-v1",
+        recordStrideBytes: 20,
+        sourceSegmentCount: 8,
+        segmentCount: 8,
+        truncated: false,
+        samplingStride: 1,
+        pathTypes: ["perimeter", "solid", "infill", "support", "skirt"],
+        layers: [
+          { index: 0, sourceSegmentCount: 4, segmentOffset: 0, segmentCount: 4 },
+          { index: 1, sourceSegmentCount: 4, segmentOffset: 4, segmentCount: 4 },
+        ],
+        dataBase64: packedToolpathBase64(),
+      },
       claims: {},
       pathTypeCounts: { perimeter: 1, infill: 1 },
       warnings: [],
@@ -133,6 +170,8 @@ test.describe("React Stage 3-B async authority", () => {
     await expect(page.getByText("C# 引擎权威口径", { exact: true })).toBeVisible();
     await expect(page.getByText("corexy / PLA", { exact: true })).toBeVisible();
     await expect(page.getByText("2 layers match", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /C# 有界工具路径 · 第 1 \/ 2 层/ })).toBeVisible();
+    await expect(page.getByText(/8 \/ 8 segments · C# complete/)).toBeVisible();
     expect(creationCount).toBe(1);
     expect(sseCount).toBe(1);
   });

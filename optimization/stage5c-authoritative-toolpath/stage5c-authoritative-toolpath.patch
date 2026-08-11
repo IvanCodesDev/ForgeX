@@ -1,0 +1,1649 @@
+diff --git a/.github/CHANGELOG.md b/.github/CHANGELOG.md
+index ddde24d..573485c 100644
+--- a/.github/CHANGELOG.md
++++ b/.github/CHANGELOG.md
+@@ -18,13 +18,18 @@
+   `shadow` / `dotnet` 模式核验 Z、路径数、挤出、空驶、时间、耗材与路径类型计数。
+ - 新增 Stage 5-B 浏览器层计划金样本；C# GoldenDiff 复用同一基线执行 392 个字段检查，
+   并覆盖逐层聚合不变量与 20,000 层稳定上限错误码。
++- G-code 权威响应新增 `forgex-toolpath-f32le-v1` 有界二进制可视化：每段以 20 字节
++  little-endian 记录传输，按层提供连续切片，并在 100,000 段硬预算内流式均匀抽样。
++- React `dotnet` 模式会在切换摘要前校验完整工具路径载荷，并把选中层直接解码为
++  Three.js BufferGeometry；`browser` 与 `shadow` 继续使用原 Worker 预览作为回滚路径。
+ 
+ ### 变更
+ 
+ - 异步 G-code 幂等指纹现在绑定完整 Profile 摘要，避免相同文件在不同机型或材料下误复用作业。
+-- G-code 引擎契约版本提升到 `1.2.0`；权威层计划与 Three.js 显示采样解耦。
++- G-code 引擎契约版本提升到 `1.3.0`；权威层计划与有界工具路径均由 C# 生成，
++  Three.js 仍只负责 GPU 显示，不参与权威计算。
+ - 异步幂等指纹提升为 `forgex-gcode-job/2`；旧的无逐层结果会以稳定降级终态读取，
+-  已存输入与责任链不丢失，也不会在快照序列化时触发服务端异常。
++  已存输入与责任链不丢失；缺少 Stage 5-C 可视化的旧结果同样按该路径降级。
+ 
+ ### 计划中
+ 
+diff --git a/README.md b/README.md
+index 437f6a3..cd39b10 100644
+--- a/README.md
++++ b/README.md
+@@ -194,7 +194,7 @@ Node.js service :8787
+ 
+ - **前端**：旧页面继续可用；React 已落地共享身份头、Profile 选择、G-code/日志对账、数据分析与校准治理等垂直切片，G-code 在 Worker 中解析；
+ - **业务后端**：Node.js 原生 `http`，零运行时依赖，并只对白名单路由提供 C# 同源代理；
+-- **G-code 计算边界**：.NET 10 sidecar 保留同步接口，并新增 `POST /api/v1/gcode/analyses`、作业快照、SSE 事件与幂等取消接口；同步与异步结果都返回机型/材料 Profile 标识、生效参数、确定性 SHA-256 Profile 指纹，以及最多 20,000 层的完整逐层计划（Z、路径数、挤出/空驶/时间/耗材和路径类型计数）。React Worker 在显示采样前生成同结构逐层摘要，`shadow / dotnet` 会逐字段核验；Three.js 压缩几何仍只负责显示。`dotnet` 模式使用异步作业、断线续传与轮询兜底，`browser / shadow` 路径保持原行为；Node 会把已核验身份匿名化为稳定 `tenant/owner`，再通过独立内部密钥交给 C#，任务查询、SSE 与取消均按该边界过滤；
++- **G-code 计算边界**：.NET 10 sidecar 保留同步接口，并新增 `POST /api/v1/gcode/analyses`、作业快照、SSE 事件与幂等取消接口；同步与异步结果都返回机型/材料 Profile 标识、生效参数、确定性 SHA-256 Profile 指纹、最多 20,000 层的完整逐层计划，以及最多 100,000 段的 C# 有界二进制工具路径。React Worker 在显示采样前生成同结构逐层摘要，`shadow / dotnet` 会逐字段核验；`dotnet` 校验并按层解码 C# 工具路径给 Three.js，`browser / shadow` 保留原 Worker 几何作为回滚。Three.js 只负责显示，不参与权威计算；异步作业继续支持断线续传与轮询兜底。Node 会把已核验身份匿名化为稳定 `tenant/owner`，再通过独立内部密钥交给 C#，任务查询、SSE 与取消均按该边界过滤；
+ - **契约边界**：`backend/src/ForgeX.Api/openapi/v1.json` 是 API 单一来源，构建前生成 TypeScript DTO、操作路径和路径参数函数；CI 通过源文件 SHA 与生成器复跑阻止前后端契约漂移；
+ - **存储**：默认 `Persistence:Provider=file` 写入 `data/`，容器部署可挂载持久化卷；文件作业仓库提供逐条 SHA-256 的版本化备份、全量预检恢复和就绪探针。`backend/database/postgresql/` 已冻结 PostgreSQL v1 迁移、租户/归属键、事件表、幂等唯一约束与 RLS 策略，但本阶段未启用 PostgreSQL 运行时驱动，误配为 `postgresql` 会在启动时明确终止。
+ - **可观测性**：C# 输出单行 JSON 请求日志，包含稳定路由模板、状态码、耗时与 trace ID；`/metrics` 提供有界标签的 Prometheus 文本指标，不把具体作业 ID 放入标签。
+@@ -263,6 +263,8 @@ Stage 4 分析 Golden 位于 [`tests/golden/stage4-analytics-golden.json`](./tes
+ 
+ Stage 5-B 逐层计划 Golden 位于 [`tests/golden/stage5-layer-plan-golden.json`](./tests/golden/stage5-layer-plan-golden.json)。默认 `npm test` 只读复算浏览器结果，`npm run dotnet:golden` 再以同一金样本核验 C# 的每层字段、20,000 层上限和聚合不变量；只有审阅有意变更后才运行更新命令。
+ 
++Stage 5-C 在同一 `dotnet:golden` 门禁增加 packed toolpath 的层切片、记录编码和硬预算探针；`dotnet:gcode-benchmark` 另用 16 MiB / 729,442 段夹具验证 100,000 段预算、结果体积、内存、首读进度和取消延迟。浏览器端会在权威切换前验证整个 payload，并只解码当前选中层。
++
+ ## 部署
+ 
+ ### Docker Compose
+diff --git a/backend/README.md b/backend/README.md
+index d6394f7..c63660b 100644
+--- a/backend/README.md
++++ b/backend/README.md
+@@ -36,9 +36,9 @@ GET  /openapi/v1.json
+ POST /api/v1/gcode/analyze
+ ```
+ 
+-The G-code endpoint accepts the raw `application/x-gcode` body. It returns an authoritative summary
+-and a bounded per-layer plan; the React Worker remains responsible for immediate, display-only 3D
+-preview geometry.
++The G-code endpoint accepts the raw `application/x-gcode` body. It returns an authoritative summary,
++a bounded per-layer plan, and packed display-only extrusion geometry. The React Worker still owns
++the immediate preview used by `browser` and `shadow` modes.
+ 
+ ## Stage 5-A G-code Profile authority
+ 
+@@ -72,12 +72,28 @@ npm run dotnet:golden
+ npm run gcode:layer-golden:update   # reviewed update only
+ ```
+ 
+-The G-code engine contract version is `1.2.0`.
++## Stage 5-C authoritative packed toolpath
++
++The `visualization` response carries at most 100,000 extrusion segments. The
++`forgex-toolpath-f32le-v1` payload is Base64 over fixed 20-byte little-endian records: four float32
++XY endpoint coordinates and one int32 path-type index. Layer descriptors provide contiguous segment
++slices plus exact pre-sampling segment counts. When the stream exceeds the budget, the analyzer
++raises a deterministic power-of-two sampling stride while retaining each layer's first segment; it
++never needs a seekable input or an unbounded point list. The 16 MiB benchmark currently verifies a
++sub-4 MiB result, sub-64 MiB private-memory delta, first-read progress, cancellation latency, and
++payload/layer-slice consistency.
++
++React validates encoding, counts, slices, Base64 length, finite coordinates, and path-type indices
++before `dotnet` mode switches. It decodes only the selected layer into typed arrays for Three.js.
++`shadow` deliberately retains browser geometry, and `VITE_GCODE_AUTHORITY=browser` remains the
++single-switch rollback.
++
++The G-code engine contract version is `1.3.0`.
+ New asynchronous idempotency fingerprints use `forgex-gcode-job/2`. A completed Stage 5-A file-job
+-record without `layers` is reopened as a stable `degraded / gcode_result_contract_outdated` terminal
+-snapshot rather than an invalid response; its input and provenance remain stored, and resubmission
+-with a new idempotency key produces a Stage 5-B result. Missing persisted `MaxLayers` values migrate
+-to 20,000 on read.
++record without `layers`, or a Stage 5-B record without `visualization`, is reopened as a stable
++`degraded / gcode_result_contract_outdated` terminal snapshot rather than an invalid response; its
++input and provenance remain stored, and resubmission with a new idempotency key produces a Stage 5-C
++result. Missing persisted limits migrate to their current defaults on read.
+ 
+ The API writes JSON console logs with a bounded route template, status, elapsed milliseconds, and
+ trace ID. `/metrics` emits Prometheus text with bounded method/route/status labels, request duration
+diff --git a/backend/src/ForgeX.Api/GCodeEndpoints.cs b/backend/src/ForgeX.Api/GCodeEndpoints.cs
+index 6b0c935..940bcdf 100644
+--- a/backend/src/ForgeX.Api/GCodeEndpoints.cs
++++ b/backend/src/ForgeX.Api/GCodeEndpoints.cs
+@@ -59,8 +59,11 @@ internal static class GCodeEndpoints
+         return Results.Ok(ToResponse(result, options));
+     }
+ 
+-    internal static GCodeAnalysisResponse ToResponse(GCodeAnalysisResult result, GCodeAnalysisOptions options) =>
+-        new(
++    internal static GCodeAnalysisResponse ToResponse(GCodeAnalysisResult result, GCodeAnalysisOptions options)
++    {
++        var visualization = result.Visualization ?? throw new InvalidOperationException(
++            "The stored G-code result predates the required visualization contract.");
++        return new(
+             "1.0",
+             new GCodeEngineDto(result.EngineVersion, result.Source),
+             new GCodeInputSummaryDto(result.Sha256, result.BytesRead, result.LinesRead),
+@@ -98,10 +101,25 @@ internal static class GCodeEndpoints
+                 layer.TimeSeconds,
+                 layer.FilamentLengthMm,
+                 layer.PathTypeCounts)).ToArray(),
++            new GCodeToolpathVisualizationDto(
++                visualization.Encoding,
++                visualization.RecordStrideBytes,
++                visualization.SourceSegmentCount,
++                visualization.SegmentCount,
++                visualization.Truncated,
++                visualization.SamplingStride,
++                visualization.PathTypes,
++                visualization.Layers.Select(static layer => new GCodeToolpathLayerDto(
++                    layer.Index,
++                    layer.SourceSegmentCount,
++                    layer.SegmentOffset,
++                    layer.SegmentCount)).ToArray(),
++                Convert.ToBase64String(visualization.Data)),
+             result.Claims,
+             result.PathTypeCounts,
+             [.. result.Warnings
+                 .Select(static warning => new GCodeWarningDto(warning.Code, warning.Message))]);
++    }
+ 
+     internal static bool TryReadOptions(
+         HttpRequest request,
+diff --git a/backend/src/ForgeX.Api/openapi/v1.json b/backend/src/ForgeX.Api/openapi/v1.json
+index 443f1e6..ed8243e 100644
+--- a/backend/src/ForgeX.Api/openapi/v1.json
++++ b/backend/src/ForgeX.Api/openapi/v1.json
+@@ -528,6 +528,7 @@
+           "summary",
+           "bounds",
+           "layers",
++          "visualization",
+           "claims",
+           "pathTypeCounts",
+           "warnings"
+@@ -685,6 +686,9 @@
+               },
+               "additionalProperties": false
+             }
++          },
++          "visualization": {
++            "$ref": "#/components/schemas/GCodeToolpathVisualization"
+           }
+         },
+         "additionalProperties": false
+@@ -1541,6 +1545,98 @@
+           }
+         },
+         "additionalProperties": false
++      },
++      "GCodeToolpathLayer": {
++        "type": "object",
++        "required": [
++          "index",
++          "sourceSegmentCount",
++          "segmentOffset",
++          "segmentCount"
++        ],
++        "properties": {
++          "index": {
++            "type": "integer",
++            "minimum": 0
++          },
++          "sourceSegmentCount": {
++            "type": "integer",
++            "format": "int64",
++            "minimum": 0
++          },
++          "segmentOffset": {
++            "type": "integer",
++            "minimum": 0
++          },
++          "segmentCount": {
++            "type": "integer",
++            "minimum": 0,
++            "maximum": 100000
++          }
++        },
++        "additionalProperties": false
++      },
++      "GCodeToolpathVisualization": {
++        "type": "object",
++        "required": [
++          "encoding",
++          "recordStrideBytes",
++          "sourceSegmentCount",
++          "segmentCount",
++          "truncated",
++          "samplingStride",
++          "pathTypes",
++          "layers",
++          "dataBase64"
++        ],
++        "properties": {
++          "encoding": {
++            "type": "string",
++            "const": "forgex-toolpath-f32le-v1"
++          },
++          "recordStrideBytes": {
++            "type": "integer",
++            "const": 20
++          },
++          "sourceSegmentCount": {
++            "type": "integer",
++            "format": "int64",
++            "minimum": 0
++          },
++          "segmentCount": {
++            "type": "integer",
++            "minimum": 0,
++            "maximum": 100000
++          },
++          "truncated": {
++            "type": "boolean"
++          },
++          "samplingStride": {
++            "type": "integer",
++            "format": "int64",
++            "minimum": 1
++          },
++          "pathTypes": {
++            "type": "array",
++            "maxItems": 16,
++            "items": {
++              "type": "string"
++            }
++          },
++          "layers": {
++            "type": "array",
++            "maxItems": 20000,
++            "items": {
++              "$ref": "#/components/schemas/GCodeToolpathLayer"
++            }
++          },
++          "dataBase64": {
++            "type": "string",
++            "contentEncoding": "base64",
++            "maxLength": 2666668
++          }
++        },
++        "additionalProperties": false
+       }
+     }
+   }
+diff --git a/backend/src/ForgeX.Contracts/GCodeAnalysisContracts.cs b/backend/src/ForgeX.Contracts/GCodeAnalysisContracts.cs
+index 68a2acd..f60892a 100644
+--- a/backend/src/ForgeX.Contracts/GCodeAnalysisContracts.cs
++++ b/backend/src/ForgeX.Contracts/GCodeAnalysisContracts.cs
+@@ -9,6 +9,7 @@ public sealed record GCodeAnalysisResponse(
+     GCodeAnalysisSummaryDto Summary,
+     GCodeBoundsDto Bounds,
+     IReadOnlyList<GCodeLayerSummaryDto> Layers,
++    GCodeToolpathVisualizationDto Visualization,
+     IReadOnlyDictionary<string, string> Claims,
+     IReadOnlyDictionary<string, long> PathTypeCounts,
+     IReadOnlyList<GCodeWarningDto> Warnings);
+@@ -52,4 +53,21 @@ public sealed record GCodeLayerSummaryDto(
+     double FilamentLengthMm,
+     IReadOnlyDictionary<string, long> PathTypeCounts);
+ 
++public sealed record GCodeToolpathVisualizationDto(
++    string Encoding,
++    int RecordStrideBytes,
++    long SourceSegmentCount,
++    int SegmentCount,
++    bool Truncated,
++    long SamplingStride,
++    IReadOnlyList<string> PathTypes,
++    IReadOnlyList<GCodeToolpathLayerDto> Layers,
++    string DataBase64);
++
++public sealed record GCodeToolpathLayerDto(
++    int Index,
++    long SourceSegmentCount,
++    int SegmentOffset,
++    int SegmentCount);
++
+ public sealed record GCodeWarningDto(string Code, string Message);
+diff --git a/backend/src/ForgeX.Domain/GCodeAnalysisModels.cs b/backend/src/ForgeX.Domain/GCodeAnalysisModels.cs
+index acb51d9..e6b78ee 100644
+--- a/backend/src/ForgeX.Domain/GCodeAnalysisModels.cs
++++ b/backend/src/ForgeX.Domain/GCodeAnalysisModels.cs
+@@ -22,7 +22,8 @@ public sealed record GCodeAnalysisOptions(
+     int MaxLineLength = 1_048_576,
+     string MachineProfileId = "unspecified-machine",
+     string MaterialProfileId = "unspecified-material",
+-    int MaxLayers = 20_000)
++    int MaxLayers = 20_000,
++    int MaxVisualizationSegments = 100_000)
+ {
+     /// <summary>Compatibility alias used by the streaming implementation.</summary>
+     public long MaxBytes => MaxInputBytes;
+@@ -91,6 +92,28 @@ public sealed record GCodeLayerSummary(
+     double FilamentLengthMm,
+     IReadOnlyDictionary<string, long> PathTypeCounts);
+ 
++/// <summary>A bounded layer slice within the packed visualization segment buffer.</summary>
++public sealed record GCodeToolpathLayer(
++    int Index,
++    long SourceSegmentCount,
++    int SegmentOffset,
++    int SegmentCount);
++
++/// <summary>
++/// Display-only extrusion geometry. Each little-endian record contains four float32 XY values
++/// followed by one int32 path-type index; summary and layer-plan fields remain authoritative.
++/// </summary>
++public sealed record GCodeToolpathVisualization(
++    string Encoding,
++    int RecordStrideBytes,
++    long SourceSegmentCount,
++    int SegmentCount,
++    bool Truncated,
++    long SamplingStride,
++    IReadOnlyList<string> PathTypes,
++    IReadOnlyList<GCodeToolpathLayer> Layers,
++    byte[] Data);
++
+ /// <summary>The deterministic, auditable result of one streamed G-code analysis.</summary>
+ public sealed record GCodeAnalysisResult(
+     string Sha256,
+@@ -107,7 +130,8 @@ public sealed record GCodeAnalysisResult(
+     IReadOnlyDictionary<string, string> Claims,
+     IReadOnlyDictionary<string, long> PathTypeCounts,
+     IReadOnlyList<GCodeLayerSummary> Layers,
+-    IReadOnlyList<GCodeWarning> Warnings);
++    IReadOnlyList<GCodeWarning> Warnings,
++    GCodeToolpathVisualization? Visualization = null);
+ 
+ /// <summary>An analysis failure with a stable code suitable for API problem details.</summary>
+ public sealed class GCodeAnalysisException : Exception
+diff --git a/backend/src/ForgeX.Infrastructure/FileGCodeJobRepository.cs b/backend/src/ForgeX.Infrastructure/FileGCodeJobRepository.cs
+index bc46e7f..435ecef 100644
+--- a/backend/src/ForgeX.Infrastructure/FileGCodeJobRepository.cs
++++ b/backend/src/ForgeX.Infrastructure/FileGCodeJobRepository.cs
+@@ -132,7 +132,7 @@ public sealed partial class FileGCodeJobRepository : IGCodeJobRepository, IGCode
+         // Stage 5-A completed results predate the required layer-plan contract. Preserve the
+         // record and its provenance, but expose a stable degraded terminal state instead of
+         // serializing an invalid Stage 5-B response or throwing from the snapshot endpoint.
+-        if (job.Result is not null && job.Result.Layers is null)
++        if (job.Result is not null && (job.Result.Layers is null || job.Result.Visualization is null))
+         {
+             const string errorCode = "gcode_result_contract_outdated";
+             var atUtc = job.FinishedAtUtc ?? job.CreatedAtUtc;
+diff --git a/backend/src/ForgeX.Simulation/StreamingGCodeAnalyzer.cs b/backend/src/ForgeX.Simulation/StreamingGCodeAnalyzer.cs
+index 4e04244..5659d67 100644
+--- a/backend/src/ForgeX.Simulation/StreamingGCodeAnalyzer.cs
++++ b/backend/src/ForgeX.Simulation/StreamingGCodeAnalyzer.cs
+@@ -1,4 +1,5 @@
+ using System.Buffers;
++using System.Buffers.Binary;
+ using System.Globalization;
+ using System.Security.Cryptography;
+ using System.Text;
+@@ -14,7 +15,7 @@ namespace ForgeX.Simulation;
+ /// </summary>
+ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
+ {
+-    public const string EngineVersion = "1.2.0";
++    public const string EngineVersion = "1.3.0";
+ 
+     private const int ReadBufferSize = 64 * 1024;
+     private static readonly Encoding StrictUtf8 = new UTF8Encoding(
+@@ -176,6 +177,12 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
+             InvalidOption(nameof(options.MaxLayers));
+         }
+ 
++        if (options.MaxVisualizationSegments is <= 0 or > 1_000_000 ||
++            options.MaxVisualizationSegments < options.MaxLayers)
++        {
++            InvalidOption(nameof(options.MaxVisualizationSegments));
++        }
++
+         if (!IsValidProfileId(options.MachineProfileId))
+         {
+             InvalidOption(nameof(options.MachineProfileId));
+@@ -204,6 +211,8 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
+         private const double EpsilonE = 1e-9;
+         private const double EpsilonDistance = 1e-6;
+         private const double FilamentArea175 = Math.PI * 0.875d * 0.875d;
++        private const int ToolpathRecordStrideBytes = 20;
++        private static readonly string[] ToolpathTypes = ["perimeter", "solid", "infill", "support", "skirt"];
+ 
+         private readonly GCodeAnalysisOptions _options;
+         private readonly double _halfBed;
+@@ -237,6 +246,9 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
+         private double _minY = double.PositiveInfinity;
+         private double _maxY = double.NegativeInfinity;
+         private long _arcCount;
++        private long _sourceToolpathSegments;
++        private int _sampledToolpathSegments;
++        private long _toolpathSamplingStride = 1;
+         private bool _lastWasCarriageReturn;
+         private bool _atStart = true;
+         private long _lineCount = 1;
+@@ -387,6 +399,8 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
+                     PathTypeCounts: GCodeReadOnly.Dictionary(layer.PathTypeCounts)));
+             }
+ 
++            var visualization = BuildVisualization(ct);
++
+             return new GCodeAnalysisResult(
+                 Sha256: sha256,
+                 EngineVersion: StreamingGCodeAnalyzer.EngineVersion,
+@@ -408,7 +422,8 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
+                 Claims: GCodeReadOnly.Dictionary(_claims),
+                 PathTypeCounts: GCodeReadOnly.Dictionary(aggregateTypes),
+                 Layers: GCodeReadOnly.List(layerResults),
+-                Warnings: GCodeReadOnly.List(_warnings));
++                Warnings: GCodeReadOnly.List(_warnings),
++                Visualization: visualization);
+         }
+ 
+         private void EmitLine()
+@@ -573,6 +588,7 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
+                 _currentLayer!.ExtrusionLengthMm += distance;
+                 _currentLayer.TimeSeconds += distance / speed;
+                 _currentLayer.FilamentLengthMm += extrusionDelta;
++                SampleToolpath(previousX, previousY, _x, _y, pathType);
+ 
+                 UpdateBounds(previousX, previousY);
+                 UpdateBounds(_x, _y);
+@@ -680,6 +696,103 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
+             _maxY = Math.Max(_maxY, y);
+         }
+ 
++        private void SampleToolpath(double x1, double y1, double x2, double y2, string pathType)
++        {
++            var layer = _currentLayer!;
++            var sequence = ++_sourceToolpathSegments;
++            var layerSequence = ++layer.SourceSegmentCount;
++            if (!ShouldKeepVisualizationSegment(sequence, layerSequence))
++            {
++                return;
++            }
++
++            while (_sampledToolpathSegments >= _options.MaxVisualizationSegments)
++            {
++                _toolpathSamplingStride = checked(_toolpathSamplingStride * 2);
++                CompactVisualizationSegments();
++                if (!ShouldKeepVisualizationSegment(sequence, layerSequence))
++                {
++                    return;
++                }
++            }
++
++            layer.ToolpathSegments.Add(new ToolpathSegment(
++                sequence,
++                layerSequence,
++                x1,
++                y1,
++                x2,
++                y2,
++                PathTypeIndex(pathType)));
++            _sampledToolpathSegments++;
++        }
++
++        private bool ShouldKeepVisualizationSegment(long sequence, long layerSequence) =>
++            layerSequence == 1 || ((sequence - 1) % _toolpathSamplingStride) == 0;
++
++        private void CompactVisualizationSegments()
++        {
++            var retained = 0;
++            foreach (var layer in _layers)
++            {
++                layer.ToolpathSegments.RemoveAll(segment =>
++                    !ShouldKeepVisualizationSegment(segment.Sequence, segment.LayerSequence));
++                retained += layer.ToolpathSegments.Count;
++            }
++
++            _sampledToolpathSegments = retained;
++        }
++
++        private GCodeToolpathVisualization BuildVisualization(CancellationToken ct)
++        {
++            var payload = new byte[checked(_sampledToolpathSegments * ToolpathRecordStrideBytes)];
++            var layers = new List<GCodeToolpathLayer>(_layers.Count);
++            var segmentOffset = 0;
++            for (var index = 0; index < _layers.Count; index++)
++            {
++                ct.ThrowIfCancellationRequested();
++                var layer = _layers[index];
++                var layerOffset = segmentOffset;
++                foreach (var segment in layer.ToolpathSegments)
++                {
++                    var record = payload.AsSpan(segmentOffset * ToolpathRecordStrideBytes, ToolpathRecordStrideBytes);
++                    BinaryPrimitives.WriteSingleLittleEndian(record, (float)(segment.X1 - _offset));
++                    BinaryPrimitives.WriteSingleLittleEndian(record[4..], (float)(segment.Y1 - _offset));
++                    BinaryPrimitives.WriteSingleLittleEndian(record[8..], (float)(segment.X2 - _offset));
++                    BinaryPrimitives.WriteSingleLittleEndian(record[12..], (float)(segment.Y2 - _offset));
++                    BinaryPrimitives.WriteInt32LittleEndian(record[16..], segment.PathTypeIndex);
++                    segmentOffset++;
++                }
++
++                layers.Add(new GCodeToolpathLayer(
++                    index,
++                    layer.SourceSegmentCount,
++                    layerOffset,
++                    layer.ToolpathSegments.Count));
++            }
++
++            return new GCodeToolpathVisualization(
++                Encoding: "forgex-toolpath-f32le-v1",
++                RecordStrideBytes: ToolpathRecordStrideBytes,
++                SourceSegmentCount: _sourceToolpathSegments,
++                SegmentCount: _sampledToolpathSegments,
++                Truncated: _sampledToolpathSegments < _sourceToolpathSegments,
++                SamplingStride: _toolpathSamplingStride,
++                PathTypes: GCodeReadOnly.List(ToolpathTypes),
++                Layers: GCodeReadOnly.List(layers),
++                Data: payload);
++        }
++
++        private static int PathTypeIndex(string pathType) => pathType switch
++        {
++            "perimeter" => 0,
++            "solid" => 1,
++            "infill" => 2,
++            "support" => 3,
++            "skirt" => 4,
++            _ => 2,
++        };
++
+         private void ReadClaims(string line)
+         {
+             Match match;
+@@ -968,7 +1081,18 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
+             public double TimeSeconds { get; set; }
+             public double FilamentLengthMm { get; set; }
+             public Dictionary<string, long> PathTypeCounts { get; } = new(StringComparer.Ordinal);
++            public long SourceSegmentCount { get; set; }
++            public List<ToolpathSegment> ToolpathSegments { get; } = [];
+         }
++
++        private readonly record struct ToolpathSegment(
++            long Sequence,
++            long LayerSequence,
++            double X1,
++            double Y1,
++            double X2,
++            double Y2,
++            int PathTypeIndex);
+     }
+ 
+     [GeneratedRegex(@"^;\s*TYPE\s*:\s*(.+)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+diff --git a/backend/tests/ForgeX.GCodeBenchmark/Program.cs b/backend/tests/ForgeX.GCodeBenchmark/Program.cs
+index 2c5939d..6cae527 100644
+--- a/backend/tests/ForgeX.GCodeBenchmark/Program.cs
++++ b/backend/tests/ForgeX.GCodeBenchmark/Program.cs
+@@ -114,7 +114,16 @@ try
+         ["first-progress-under-1000ms"] = firstProgressMs is >= 0 and < 1000,
+         ["duration-under-30s"] = stopwatch.Elapsed < TimeSpan.FromSeconds(30),
+         ["private-memory-delta-under-64MiB"] = peakPrivate - privateBefore < 64L * 1024 * 1024,
+-        ["result-under-64KiB"] = resultBytes < 64 * 1024,
++        ["result-under-4MiB"] = resultBytes < 4 * 1024 * 1024,
++        ["toolpath-visualization-bounded"] = result.Visualization is
++        {
++            SegmentCount: > 0 and <= 100_000,
++            SourceSegmentCount: > 100_000,
++            Truncated: true,
++        },
++        ["toolpath-payload-consistent"] = result.Visualization is { } visualization &&
++            visualization.Data.Length == visualization.SegmentCount * visualization.RecordStrideBytes &&
++            visualization.Layers.Sum(static layer => layer.SegmentCount) == visualization.SegmentCount,
+         ["cancellation-under-500ms"] = cancelled && cancellationLatencyMs < 500,
+         ["profile-bound"] = result.Profile.MachineProfileId == options.MachineProfileId &&
+             result.Profile.MaterialProfileId == options.MaterialProfileId,
+@@ -144,6 +153,16 @@ try
+         cancelled,
+         cancellationLatencyMs,
+         profileFingerprint = result.Profile.Fingerprint,
++        visualization = result.Visualization is null ? null : new
++        {
++            result.Visualization.Encoding,
++            result.Visualization.RecordStrideBytes,
++            result.Visualization.SourceSegmentCount,
++            result.Visualization.SegmentCount,
++            result.Visualization.Truncated,
++            result.Visualization.SamplingStride,
++            payloadBytes = result.Visualization.Data.Length,
++        },
+         layerPlan = new
+         {
+             layers = layerPlanResult.TotalLayers,
+@@ -161,6 +180,7 @@ try
+         $"GCodeBenchmark: {(pass ? "PASS" : "FAIL")} — {fixtureBytes / 1024d / 1024d:F2} MiB in {stopwatch.Elapsed.TotalMilliseconds:F1} ms; " +
+         $"firstProgress={firstProgressMs:F1} ms; memoryDelta={(peakPrivate - privateBefore) / 1024d / 1024d:F2} MiB; " +
+         $"result={resultBytes} bytes; cancellation={cancellationLatencyMs:F1} ms; " +
++        $"toolpath={result.Visualization?.SegmentCount}/{result.Visualization?.SourceSegmentCount} segments; " +
+         $"layerPlan={layerPlanResult.TotalLayers}/{layerPlanResultBytes} bytes in {layerPlanStopwatch.Elapsed.TotalMilliseconds:F1} ms");
+     Console.WriteLine(artifactPath);
+     return pass ? 0 : 1;
+diff --git a/backend/tests/ForgeX.GoldenDiff/Program.cs b/backend/tests/ForgeX.GoldenDiff/Program.cs
+index 6f2eae6..5501df9 100644
+--- a/backend/tests/ForgeX.GoldenDiff/Program.cs
++++ b/backend/tests/ForgeX.GoldenDiff/Program.cs
+@@ -1,3 +1,4 @@
++using System.Buffers.Binary;
+ using System.Globalization;
+ using System.Security.Cryptography;
+ using System.Text;
+@@ -279,6 +280,12 @@ internal static class GoldenDiffProgram
+             await RunProbeAsync(
+                 "layer-plan-invariants",
+                 () => Task.FromResult(CheckLayerPlanInvariants(baseline))),
++            await RunProbeAsync(
++                "toolpath-visualization-invariants",
++                () => Task.FromResult(CheckToolpathVisualizationInvariants(baseline))),
++            await RunProbeAsync(
++                "toolpath-visualization-budget",
++                () => CheckToolpathVisualizationBudgetAsync(analyzer, cancellationToken)),
+             await RunProbeAsync(
+                 "layer-limit",
+                 () => CheckLayerLimitAsync(analyzer, cancellationToken)),
+@@ -473,6 +480,73 @@ internal static class GoldenDiffProgram
+             StreamingGCodeAnalyzer.EngineVersion);
+     }
+ 
++    private static ContractCheck CheckToolpathVisualizationInvariants(GCodeAnalysisResult result)
++    {
++        var visualization = result.Visualization;
++        if (visualization is null)
++        {
++            return ContractFailure("toolpath-visualization-invariants", "Visualization is missing.");
++        }
++
++        var layerAligned = visualization.Layers.Count == result.Layers.Count &&
++            visualization.Layers.Select(static layer => layer.Index).SequenceEqual(Enumerable.Range(0, result.Layers.Count));
++        var contiguous = visualization.Layers
++            .Select((layer, index) => layer.SegmentOffset == visualization.Layers.Take(index).Sum(static item => item.SegmentCount))
++            .All(static value => value);
++        var countsMatch = visualization.Layers.Sum(static layer => layer.SegmentCount) == visualization.SegmentCount &&
++            visualization.Layers.Sum(static layer => layer.SourceSegmentCount) == visualization.SourceSegmentCount;
++        var payloadMatches = visualization.Encoding == "forgex-toolpath-f32le-v1" &&
++            visualization.RecordStrideBytes == 20 &&
++            visualization.Data.Length == visualization.SegmentCount * visualization.RecordStrideBytes;
++        var recordsValid = true;
++        for (var index = 0; index < visualization.SegmentCount; index++)
++        {
++            var record = visualization.Data.AsSpan(index * visualization.RecordStrideBytes, visualization.RecordStrideBytes);
++            recordsValid &= float.IsFinite(BinaryPrimitives.ReadSingleLittleEndian(record));
++            recordsValid &= float.IsFinite(BinaryPrimitives.ReadSingleLittleEndian(record[4..]));
++            recordsValid &= float.IsFinite(BinaryPrimitives.ReadSingleLittleEndian(record[8..]));
++            recordsValid &= float.IsFinite(BinaryPrimitives.ReadSingleLittleEndian(record[12..]));
++            var typeIndex = BinaryPrimitives.ReadInt32LittleEndian(record[16..]);
++            recordsValid &= typeIndex >= 0 && typeIndex < visualization.PathTypes.Count;
++        }
++
++        var pass = layerAligned && contiguous && countsMatch && payloadMatches && recordsValid;
++        return new ContractCheck(
++            "toolpath-visualization-invariants",
++            pass,
++            $"layerAligned={layerAligned}; contiguous={contiguous}; counts={countsMatch}; payload={payloadMatches}; records={recordsValid}; segments={visualization.SegmentCount}/{visualization.SourceSegmentCount}",
++            StreamingGCodeAnalyzer.EngineVersion);
++    }
++
++    private static async Task<ContractCheck> CheckToolpathVisualizationBudgetAsync(
++        StreamingGCodeAnalyzer analyzer,
++        CancellationToken cancellationToken)
++    {
++        var builder = new StringBuilder("G90\nM83\nG1 X0 Y0 Z0.2 F1200\n");
++        for (var index = 1; index <= 10; index++)
++        {
++            builder.AppendLine(FormattableString.Invariant($"G1 X{index} Y{index} E0.1 F900"));
++        }
++        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(builder.ToString()), writable: false);
++        var result = await analyzer.AnalyzeAsync(
++            stream,
++            new GCodeAnalysisOptions(MaxLayers: 2, MaxVisualizationSegments: 4),
++            cancellationToken);
++        var visualization = result.Visualization!;
++        var pass = visualization.SourceSegmentCount == 10 &&
++            visualization.SegmentCount is > 0 and <= 4 &&
++            visualization.Truncated &&
++            visualization.SamplingStride > 1 &&
++            visualization.Layers.Count == 1 &&
++            visualization.Layers[0].SourceSegmentCount == 10 &&
++            visualization.Data.Length <= 4 * 20;
++        return new ContractCheck(
++            "toolpath-visualization-budget",
++            pass,
++            $"segments={visualization.SegmentCount}/{visualization.SourceSegmentCount}; stride={visualization.SamplingStride}; bytes={visualization.Data.Length}",
++            StreamingGCodeAnalyzer.EngineVersion);
++    }
++
+     private static async Task<ContractCheck> CheckLayerLimitAsync(
+         StreamingGCodeAnalyzer analyzer,
+         CancellationToken cancellationToken)
+diff --git a/backend/tests/ForgeX.JobGate/Program.cs b/backend/tests/ForgeX.JobGate/Program.cs
+index 6ec8ceb..2f21ea8 100644
+--- a/backend/tests/ForgeX.JobGate/Program.cs
++++ b/backend/tests/ForgeX.JobGate/Program.cs
+@@ -118,12 +118,17 @@ try
+     var legacyCompletedPath = Path.Combine(legacyRoot, legacyCompleted.Id + ".json");
+     var legacyCompletedJson = JsonNode.Parse(await File.ReadAllTextAsync(legacyCompletedPath))!.AsObject();
+     legacyCompletedJson["options"]!.AsObject().Remove("maxLayers");
+-    legacyCompletedJson["result"]!.AsObject().Remove("layers");
++    legacyCompletedJson["options"]!.AsObject().Remove("maxVisualizationSegments");
++    legacyCompletedJson["result"]!.AsObject().Remove("visualization");
+     await File.WriteAllTextAsync(legacyCompletedPath, legacyCompletedJson.ToJsonString());
+     var migratedCompleted = await legacyRepository.GetAsync(legacyCompleted.Id, CancellationToken.None);
+     Check("legacy-options-get-layer-limit", migratedCompleted?.Options.MaxLayers == 20_000, migratedCompleted?.Options.MaxLayers);
+     Check(
+-        "legacy-result-degrades-without-invalid-response",
++        "stage5b-options-get-visualization-limit",
++        migratedCompleted?.Options.MaxVisualizationSegments == 100_000,
++        migratedCompleted?.Options.MaxVisualizationSegments);
++    Check(
++        "stage5b-result-degrades-without-invalid-response",
+         migratedCompleted is
+         {
+             Status: GCodeJobStatus.Degraded,
+@@ -133,7 +138,7 @@ try
+         },
+         migratedCompleted?.Status);
+     Check(
+-        "legacy-result-appends-terminal-evidence",
++        "stage5b-result-appends-terminal-evidence",
+         migratedCompleted?.Events[^1] is
+         {
+             Status: GCodeJobStatus.Degraded,
+diff --git a/frontend/src/engine/ViewerEngine.ts b/frontend/src/engine/ViewerEngine.ts
+index a2f4cd9..aa2afc9 100644
+--- a/frontend/src/engine/ViewerEngine.ts
++++ b/frontend/src/engine/ViewerEngine.ts
+@@ -16,7 +16,7 @@ import {
+   type Material,
+ } from "three";
+ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+-import type { GcodeBounds, PreviewLayer } from "../features/gcode/gcode-types";
++import type { AuthorityToolpathLayerView, GcodeBounds, PreviewLayer } from "../features/gcode/gcode-types";
+ 
+ const COLORS: Readonly<Record<string, ColorRepresentation>> = {
+   perimeter: 0xe7ebf1,
+@@ -91,12 +91,53 @@ export class ViewerEngine {
+     this.layerObject = new LineSegments(geometry, material);
+     this.scene.add(this.layerObject);
+ 
++    this.frameLayer(bounds, layer.z);
++  }
++
++  public setAuthorityLayer(layer: AuthorityToolpathLayerView | null, bounds: GcodeBounds | null): void {
++    this.disposeLayer();
++    if (!layer || !bounds) {
++      this.render();
++      return;
++    }
++
++    const centerX = (bounds.minX + bounds.maxX) / 2;
++    const centerY = (bounds.minY + bounds.maxY) / 2;
++    const positions = new Float32Array(layer.segmentCount * 6);
++    const colors = new Float32Array(layer.segmentCount * 6);
++    for (let index = 0; index < layer.segmentCount; index += 1) {
++      const coordinateOffset = index * 4;
++      const vertexOffset = index * 6;
++      positions[vertexOffset] = (layer.coordinates[coordinateOffset] ?? 0) - centerX;
++      positions[vertexOffset + 1] = layer.z;
++      positions[vertexOffset + 2] = -((layer.coordinates[coordinateOffset + 1] ?? 0) - centerY);
++      positions[vertexOffset + 3] = (layer.coordinates[coordinateOffset + 2] ?? 0) - centerX;
++      positions[vertexOffset + 4] = layer.z;
++      positions[vertexOffset + 5] = -((layer.coordinates[coordinateOffset + 3] ?? 0) - centerY);
++
++      const pathType = layer.pathTypes[layer.pathTypeIndexes[index] ?? -1] ?? "unknown";
++      const color = new Color(COLORS[pathType] ?? 0xaab3c1);
++      colors.set([color.r, color.g, color.b, color.r, color.g, color.b], vertexOffset);
++    }
++
++    const geometry = new BufferGeometry();
++    geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
++    geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
++    geometry.computeBoundingSphere();
++    const material = new LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.94 });
++    this.layerObject = new LineSegments(geometry, material);
++    this.scene.add(this.layerObject);
++
++    this.frameLayer(bounds, layer.z);
++  }
++
++  private frameLayer(bounds: GcodeBounds, z: number): void {
+     const span = Math.max(40, bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
+     this.camera.near = Math.max(0.1, span / 1000);
+     this.camera.far = span * 20;
+     this.camera.position.set(span * 0.72, span * 0.88, span * 0.72);
+     this.camera.updateProjectionMatrix();
+-    this.controls.target.set(0, Math.max(0, layer.z * 0.35), 0);
++    this.controls.target.set(0, Math.max(0, z * 0.35), 0);
+     this.controls.update();
+     this.render();
+   }
+diff --git a/frontend/src/features/gcode/GcodePage.tsx b/frontend/src/features/gcode/GcodePage.tsx
+index 17e00d8..e8b988d 100644
+--- a/frontend/src/features/gcode/GcodePage.tsx
++++ b/frontend/src/features/gcode/GcodePage.tsx
+@@ -4,6 +4,7 @@ import { MachineLogPanel } from "../machine-logs/MachineLogPanel";
+ import type { GcodeReconciliationPlan } from "../machine-logs/machine-log-types";
+ import { ProfileSelector } from "../profiles/ProfileSelector";
+ import { useProfileSelection } from "../profiles/useProfileSelection";
++import { decodeAuthorityToolpathLayer } from "./authority-toolpath";
+ import { selectEffectiveSummary } from "./gcode-authority";
+ import type { GcodeParseOptions } from "./gcode-types";
+ import { useGcodeAuthority } from "./useGcodeAuthority";
+@@ -56,6 +57,19 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
+   const result = state.result;
+   const authority = useGcodeAuthority(file, submittedOptions, result);
+   const layer = result?.layers[selectedLayer] ?? null;
++  const authorityToolpathActive = Boolean(
++    authority.mode === "dotnet" && authority.status === "done" && authority.result
++  );
++  const authorityLayer = useMemo(
++    () =>
++      authorityToolpathActive && authority.result
++        ? decodeAuthorityToolpathLayer(authority.result, selectedLayer)
++        : null,
++    [authority.result, authorityToolpathActive, selectedLayer]
++  );
++  const visualizationLayerCount = authorityToolpathActive
++    ? (authority.result?.visualization.layers.length ?? 0)
++    : (result?.layers.length ?? 0);
+   const effectiveSummary = selectEffectiveSummary(authority.mode, authority.status, result, authority.result);
+   const primaryWarnings =
+     effectiveSummary?.provenance === "dotnet-authority"
+@@ -109,7 +123,7 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
+     return "浏览器即时预览（非权威）";
+   })();
+ 
+-  useEffect(() => setSelectedLayer(0), [result]);
++  useEffect(() => setSelectedLayer(0), [result?.sha256, authorityToolpathActive, authority.result?.input.sha256]);
+ 
+   const acceptFile = (next: File | null) => {
+     if (!next || !options) return;
+@@ -202,7 +216,7 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
+               <code>{authority.diff.sha256Matches ? "match" : "mismatch"}</code>
+             </p>
+             <p>
+-              <span>契约 / 输入 / 参数 / Profile / 层计划</span>
++              <span>契约 / 输入 / 参数 / Profile / 层计划 / 工具路径</span>
+               <code>
+                 {authority.diff.engineMatches &&
+                 authority.diff.contractMatches &&
+@@ -238,6 +252,14 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
+                   : `${authority.diff.layerMismatchCount} layers mismatch`}
+               </code>
+             </p>
++            <p>
++              <span>权威工具路径</span>
++              <code>
++                {authority.result.visualization.encoding} · {authority.result.visualization.segmentCount} /{" "}
++                {authority.result.visualization.sourceSegmentCount} segments · stride{" "}
++                {authority.result.visualization.samplingStride}
++              </code>
++            </p>
+             <p>
+               <span>切换判定</span>
+               <code>
+@@ -418,13 +440,16 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
+         />
+       ) : null}
+ 
+-      {result ? (
++      {result || authorityToolpathActive ? (
+         <section className="panel gcode-result">
+           <div className="viewer-toolbar">
+             <div>
+-              <p className="eyebrow">BROWSER LAYER VISUALIZATION SAMPLE</p>
++              <p className="eyebrow">
++                {authorityToolpathActive ? "C# PACKED TOOLPATH / THREE.JS" : "BROWSER LAYER VISUALIZATION SAMPLE"}
++              </p>
+               <h2>
+-                浏览器可视化抽样 · 第 {selectedLayer + 1} / {result.totalLayers} 层
++                {authorityToolpathActive ? "C# 有界工具路径" : "浏览器可视化抽样"} · 第 {selectedLayer + 1} /{" "}
++                {visualizationLayerCount} 层
+               </h2>
+             </div>
+             <label>
+@@ -432,7 +457,7 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
+               <input
+                 type="range"
+                 min="0"
+-                max={Math.max(0, result.layers.length - 1)}
++                max={Math.max(0, visualizationLayerCount - 1)}
+                 value={selectedLayer}
+                 onInput={(event) => setSelectedLayer(Number(event.currentTarget.value))}
+               />
+@@ -445,21 +470,35 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
+               </div>
+             }
+           >
+-            <GcodeViewer layer={layer} bounds={effectiveSummary?.bounds ?? result.bounds} />
++            <GcodeViewer
++              layer={authorityToolpathActive ? null : layer}
++              authorityLayer={authorityLayer}
++              bounds={effectiveSummary?.bounds ?? result?.bounds ?? null}
++            />
+           </Suspense>
+           <div className="gcode-evidence">
+             <p>
+-              <span>浏览器抽样层</span>
++              <span>{authorityToolpathActive ? "C# 工具路径层" : "浏览器抽样层"}</span>
+               <code>
+-                Z {number(layer?.z ?? 0)} mm · {layer?.sourcePathCount ?? 0} paths · {layer?.sourcePointCount ?? 0}{" "}
+-                points
++                Z {number(authorityLayer?.z ?? layer?.z ?? 0)} mm ·{" "}
++                {authorityLayer?.sourcePathCount ?? layer?.sourcePathCount ?? 0} paths ·{" "}
++                {authorityToolpathActive
++                  ? `${number(authorityLayer?.sourceSegmentCount ?? 0, 0)} source segments`
++                  : `${number(layer?.sourcePointCount ?? 0, 0)} points`}
+               </code>
+             </p>
+             <p>
+               <span>预览预算</span>
+               <code>
+-                {number(result.previewSegments, 0)} / {number(result.sourceSegments, 0)} segments
+-                {result.previewTruncated ? " · browser sampled" : " · browser complete"}
++                {authorityToolpathActive
++                  ? `${number(authority.result?.visualization.segmentCount ?? 0, 0)} / ${number(
++                      authority.result?.visualization.sourceSegmentCount ?? 0,
++                      0
++                    )} segments${authority.result?.visualization.truncated ? " · C# bounded" : " · C# complete"}`
++                  : `${number(result?.previewSegments ?? 0, 0)} / ${number(
++                      result?.sourceSegments ?? 0,
++                      0
++                    )} segments${result?.previewTruncated ? " · browser sampled" : " · browser complete"}`}
+               </code>
+             </p>
+           </div>
+diff --git a/frontend/src/features/gcode/GcodeViewer.test.tsx b/frontend/src/features/gcode/GcodeViewer.test.tsx
+index 672d1d3..d5a6d34 100644
+--- a/frontend/src/features/gcode/GcodeViewer.test.tsx
++++ b/frontend/src/features/gcode/GcodeViewer.test.tsx
+@@ -2,12 +2,13 @@
+ 
+ import { render } from "@testing-library/react";
+ import { describe, expect, it, vi } from "vitest";
+-import type { GcodeBounds, PreviewLayer } from "./gcode-types";
++import type { AuthorityToolpathLayerView, GcodeBounds, PreviewLayer } from "./gcode-types";
+ import { GcodeViewer } from "./GcodeViewer";
+ 
+ const viewerSpies = vi.hoisted(() => ({
+   construct: vi.fn(),
+   setLayer: vi.fn(),
++  setAuthorityLayer: vi.fn(),
+   dispose: vi.fn(),
+ }));
+ 
+@@ -21,6 +22,10 @@ vi.mock("../../engine/ViewerEngine", () => ({
+       viewerSpies.setLayer(layer, bounds);
+     }
+ 
++    public setAuthorityLayer(layer: AuthorityToolpathLayerView | null, bounds: GcodeBounds | null): void {
++      viewerSpies.setAuthorityLayer(layer, bounds);
++    }
++
+     public dispose(): void {
+       viewerSpies.dispose();
+     }
+@@ -55,4 +60,22 @@ describe("GcodeViewer lifecycle", () => {
+     view.unmount();
+     expect(viewerSpies.dispose).toHaveBeenCalledOnce();
+   });
++
++  it("routes a decoded C# layer directly to the packed Three.js buffer path", () => {
++    const bounds = { minX: 0, maxX: 20, minY: 0, maxY: 20 };
++    const authorityLayer: AuthorityToolpathLayerView = {
++      index: 0,
++      z: 0.2,
++      sourcePathCount: 1,
++      sourceSegmentCount: 1,
++      segmentCount: 1,
++      coordinates: new Float32Array([0, 0, 20, 20]),
++      pathTypeIndexes: new Uint8Array([0]),
++      pathTypes: ["perimeter"],
++    };
++
++    const view = render(<GcodeViewer layer={null} authorityLayer={authorityLayer} bounds={bounds} />);
++    expect(viewerSpies.setAuthorityLayer).toHaveBeenLastCalledWith(authorityLayer, bounds);
++    view.unmount();
++  });
+ });
+diff --git a/frontend/src/features/gcode/GcodeViewer.tsx b/frontend/src/features/gcode/GcodeViewer.tsx
+index 4f76075..28b1311 100644
+--- a/frontend/src/features/gcode/GcodeViewer.tsx
++++ b/frontend/src/features/gcode/GcodeViewer.tsx
+@@ -1,13 +1,14 @@
+ import { useEffect, useRef } from "react";
+ import { ViewerEngine } from "../../engine/ViewerEngine";
+-import type { GcodeBounds, PreviewLayer } from "./gcode-types";
++import type { AuthorityToolpathLayerView, GcodeBounds, PreviewLayer } from "./gcode-types";
+ 
+ interface GcodeViewerProps {
+   readonly layer: PreviewLayer | null;
++  readonly authorityLayer?: AuthorityToolpathLayerView | null;
+   readonly bounds: GcodeBounds | null;
+ }
+ 
+-export function GcodeViewer({ layer, bounds }: GcodeViewerProps) {
++export function GcodeViewer({ layer, authorityLayer = null, bounds }: GcodeViewerProps) {
+   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+   const engineRef = useRef<ViewerEngine | null>(null);
+ 
+@@ -22,12 +23,15 @@ export function GcodeViewer({ layer, bounds }: GcodeViewerProps) {
+     };
+   }, []);
+ 
+-  useEffect(() => engineRef.current?.setLayer(layer, bounds), [layer, bounds]);
++  useEffect(() => {
++    if (authorityLayer) engineRef.current?.setAuthorityLayer(authorityLayer, bounds);
++    else engineRef.current?.setLayer(layer, bounds);
++  }, [authorityLayer, layer, bounds]);
+ 
+   return (
+     <div className="gcode-viewer">
+       <canvas ref={canvasRef} aria-label="当前 G-code 层的三维路径预览" />
+-      {!layer ? <p>导入 G-code 后显示逐层路径</p> : null}
++      {!layer && !authorityLayer ? <p>导入 G-code 后显示逐层路径</p> : null}
+     </div>
+   );
+ }
+diff --git a/frontend/src/features/gcode/gcode-authority.test.ts b/frontend/src/features/gcode/gcode-authority.test.ts
+index 08162e8..88fde65 100644
+--- a/frontend/src/features/gcode/gcode-authority.test.ts
++++ b/frontend/src/features/gcode/gcode-authority.test.ts
+@@ -1,5 +1,6 @@
+ import { describe, expect, it, vi } from "vitest";
+ import type { GcodePreviewResult } from "./gcode-types";
++import { decodeAuthorityToolpathLayer } from "./authority-toolpath";
+ import {
+   compareAuthority,
+   requestAuthorityAnalysis,
+@@ -68,6 +69,24 @@ const PREVIEW: GcodePreviewResult = {
+   previewTruncated: false,
+ };
+ 
++function packedToolpathBase64(): string {
++  const bytes = new Uint8Array(40);
++  const view = new DataView(bytes.buffer);
++  const records = [
++    [0, 1, 5, 6, 0],
++    [5, 6, 10, 11, 2],
++  ] as const;
++  records.forEach((record, index) => {
++    const offset = index * 20;
++    view.setFloat32(offset, record[0], true);
++    view.setFloat32(offset + 4, record[1], true);
++    view.setFloat32(offset + 8, record[2], true);
++    view.setFloat32(offset + 12, record[3], true);
++    view.setInt32(offset + 16, record[4], true);
++  });
++  return btoa(String.fromCharCode(...bytes));
++}
++
+ const AUTHORITY: AuthorityAnalysisResponse = {
+   schemaVersion: "1.0",
+   engine: { version: "forgex-gcode-csharp/1", source: "gcode-import" },
+@@ -93,12 +112,39 @@ const AUTHORITY: AuthorityAnalysisResponse = {
+   },
+   bounds: PREVIEW.bounds,
+   layers: PREVIEW.layerSummaries,
++  visualization: {
++    encoding: "forgex-toolpath-f32le-v1",
++    recordStrideBytes: 20,
++    sourceSegmentCount: 2,
++    segmentCount: 2,
++    truncated: false,
++    samplingStride: 1,
++    pathTypes: ["perimeter", "solid", "infill", "support", "skirt"],
++    layers: [
++      { index: 0, sourceSegmentCount: 1, segmentOffset: 0, segmentCount: 1 },
++      { index: 1, sourceSegmentCount: 1, segmentOffset: 1, segmentCount: 1 },
++    ],
++    dataBase64: packedToolpathBase64(),
++  },
+   claims: {},
+   pathTypeCounts: { perimeter: 1, infill: 1 },
+   warnings: [],
+ };
+ 
+ describe("G-code authority adapter", () => {
++  it("decodes a selected C# packed layer without expanding the full toolpath into JSON points", () => {
++    expect(decodeAuthorityToolpathLayer(AUTHORITY, 1)).toMatchObject({
++      index: 1,
++      z: 0.4,
++      sourcePathCount: 1,
++      sourceSegmentCount: 1,
++      segmentCount: 1,
++      pathTypes: ["perimeter", "solid", "infill", "support", "skirt"],
++    });
++    expect(Array.from(decodeAuthorityToolpathLayer(AUTHORITY, 1)?.coordinates ?? [])).toEqual([5, 6, 10, 11]);
++    expect(Array.from(decodeAuthorityToolpathLayer(AUTHORITY, 1)?.pathTypeIndexes ?? [])).toEqual([2]);
++  });
++
+   it("defaults invalid or absent authority values to browser rollback mode", () => {
+     expect(resolveAuthorityMode(env())).toBe("browser");
+     expect(resolveAuthorityMode(env("unexpected"))).toBe("browser");
+@@ -267,6 +313,27 @@ describe("G-code authority adapter", () => {
+     ["profile values", { ...AUTHORITY, profile: { ...AUTHORITY.profile, bedSizeMm: 300 } }],
+     ["profile fingerprint", { ...AUTHORITY, profile: { ...AUTHORITY.profile, fingerprint: "invalid" } }],
+     ["layer index", { ...AUTHORITY, layers: [{ ...AUTHORITY.layers[0], index: 1 }, AUTHORITY.layers[1]] }],
++    ["toolpath encoding", { ...AUTHORITY, visualization: { ...AUTHORITY.visualization, encoding: "unexpected" } }],
++    [
++      "toolpath layer slice",
++      {
++        ...AUTHORITY,
++        visualization: {
++          ...AUTHORITY.visualization,
++          layers: [AUTHORITY.visualization.layers[0], { ...AUTHORITY.visualization.layers[1], segmentOffset: 9 }],
++        },
++      },
++    ],
++    [
++      "toolpath payload",
++      {
++        ...AUTHORITY,
++        visualization: {
++          ...AUTHORITY.visualization,
++          dataBase64: `!${AUTHORITY.visualization.dataBase64.slice(1)}`,
++        },
++      },
++    ],
+     ["engine version", { ...AUTHORITY, engine: { ...AUTHORITY.engine, version: "" } }],
+     ["engine source", { ...AUTHORITY, engine: { ...AUTHORITY.engine, source: "unexpected-route" } }],
+   ])("rejects a %s contract mismatch", async (_label, responseBody) => {
+diff --git a/frontend/src/features/gcode/gcode-authority.ts b/frontend/src/features/gcode/gcode-authority.ts
+index c6b9ecf..84135d9 100644
+--- a/frontend/src/features/gcode/gcode-authority.ts
++++ b/frontend/src/features/gcode/gcode-authority.ts
+@@ -2,6 +2,7 @@ import { detectRuntimeMode } from "../../app/runtime/runtime-mode";
+ import { createNodeRequestInit, resolveNodeApiBase } from "../../app/api/api-adapter";
+ import { forgeXApiOperations, type GCodeAnalysisResponse } from "../../generated/forgex-api";
+ import type { GcodeParseOptions, GcodePreviewResult } from "./gcode-types";
++import { validateAuthorityToolpath } from "./authority-toolpath";
+ 
+ export type GcodeAuthorityMode = "browser" | "shadow" | "dotnet";
+ export type GcodeAuthorityStatus = "idle" | "running" | "done" | "error";
+@@ -152,6 +153,12 @@ function requireNonNegativeFinite(record: Record<string, unknown>, key: string,
+   return value;
+ }
+ 
++function requireBoolean(record: Record<string, unknown>, key: string): boolean {
++  const value = record[key];
++  if (typeof value !== "boolean") throw new Error(`C# 权威结果字段 ${key} 类型无效`);
++  return value;
++}
++
+ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisResponse {
+   const root = requireRecord(value, "root");
+   const engine = requireRecord(root.engine, "engine");
+@@ -215,6 +222,96 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
+       pathTypeCounts,
+     };
+   });
++  const rawVisualization = requireRecord(root.visualization, "visualization");
++  const encoding = requireString(rawVisualization, "encoding");
++  const recordStrideBytes = requireNonNegativeInteger(rawVisualization, "recordStrideBytes");
++  const sourceSegmentCount = requireNonNegativeInteger(rawVisualization, "sourceSegmentCount");
++  const segmentCount = requireNonNegativeInteger(rawVisualization, "segmentCount");
++  const samplingStride = requireNonNegativeInteger(rawVisualization, "samplingStride");
++  const dataBase64 = requireString(rawVisualization, "dataBase64");
++  if (encoding !== "forgex-toolpath-f32le-v1" || recordStrideBytes !== 20 || segmentCount > 100_000) {
++    throw new Error("C# 权威结果契约不一致：visualization 编码或预算无效");
++  }
++  if (samplingStride < 1 || sourceSegmentCount < segmentCount) {
++    throw new Error("C# 权威结果契约不一致：visualization 计数无效");
++  }
++  const truncated = requireBoolean(rawVisualization, "truncated");
++  if (truncated !== segmentCount < sourceSegmentCount) {
++    throw new Error("C# 权威结果契约不一致：visualization.truncated 不一致");
++  }
++  if (
++    !Array.isArray(rawVisualization.pathTypes) ||
++    rawVisualization.pathTypes.length === 0 ||
++    rawVisualization.pathTypes.length > 16
++  ) {
++    throw new Error("C# 权威结果契约不一致：visualization.pathTypes 结构无效");
++  }
++  const pathTypes = rawVisualization.pathTypes.map((value, index) => {
++    if (typeof value !== "string" || value.length === 0 || value.length > 40) {
++      throw new Error(`C# 权威结果契约不一致：visualization.pathTypes[${index}] 类型无效`);
++    }
++    return value;
++  });
++  if (new Set(pathTypes).size !== pathTypes.length) {
++    throw new Error("C# 权威结果契约不一致：visualization.pathTypes 存在重复值");
++  }
++  if (!Array.isArray(rawVisualization.layers) || rawVisualization.layers.length !== totalLayers) {
++    throw new Error("C# 权威结果契约不一致：visualization.layers 结构无效");
++  }
++  let expectedOffset = 0;
++  let countedSourceSegments = 0;
++  const visualizationLayers = rawVisualization.layers.map((value, index) => {
++    const layer = requireRecord(value, `visualization.layers[${index}]`);
++    const actualIndex = requireNonNegativeInteger(layer, "index", `visualization.layers[${index}].index`);
++    const layerSourceSegments = requireNonNegativeInteger(
++      layer,
++      "sourceSegmentCount",
++      `visualization.layers[${index}].sourceSegmentCount`
++    );
++    const segmentOffset = requireNonNegativeInteger(
++      layer,
++      "segmentOffset",
++      `visualization.layers[${index}].segmentOffset`
++    );
++    const layerSegmentCount = requireNonNegativeInteger(
++      layer,
++      "segmentCount",
++      `visualization.layers[${index}].segmentCount`
++    );
++    if (actualIndex !== index || segmentOffset !== expectedOffset || layerSegmentCount > layerSourceSegments) {
++      throw new Error(`C# 权威结果契约不一致：visualization.layers[${index}] 切片无效`);
++    }
++    expectedOffset += layerSegmentCount;
++    countedSourceSegments += layerSourceSegments;
++    return {
++      index: actualIndex,
++      sourceSegmentCount: layerSourceSegments,
++      segmentOffset,
++      segmentCount: layerSegmentCount,
++    };
++  });
++  if (expectedOffset !== segmentCount || countedSourceSegments !== sourceSegmentCount) {
++    throw new Error("C# 权威结果契约不一致：visualization 层切片计数不一致");
++  }
++  const expectedBase64Length = 4 * Math.ceil((segmentCount * recordStrideBytes) / 3);
++  if (
++    dataBase64.length !== expectedBase64Length ||
++    (dataBase64.length > 0 && !/^[A-Za-z0-9+/]*={0,2}$/.test(dataBase64))
++  ) {
++    throw new Error("C# 权威结果契约不一致：visualization.dataBase64 长度或编码无效");
++  }
++  const visualization = {
++    encoding,
++    recordStrideBytes,
++    sourceSegmentCount,
++    segmentCount,
++    truncated,
++    samplingStride,
++    pathTypes,
++    layers: visualizationLayers,
++    dataBase64,
++  } as const;
++  validateAuthorityToolpath(visualization);
+   return {
+     schemaVersion,
+     engine: { version: requireString(engine, "version"), source: requireString(engine, "source") },
+@@ -253,6 +350,7 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
+       maxY: requireFinite(bounds, "maxY"),
+     },
+     layers,
++    visualization,
+     claims: Object.fromEntries(
+       Object.entries(claims).filter((entry): entry is [string, string] => typeof entry[1] === "string")
+     ),
+diff --git a/frontend/src/features/gcode/gcode-job-client.test.ts b/frontend/src/features/gcode/gcode-job-client.test.ts
+index 4fd65c5..89f482d 100644
+--- a/frontend/src/features/gcode/gcode-job-client.test.ts
++++ b/frontend/src/features/gcode/gcode-job-client.test.ts
+@@ -55,6 +55,20 @@ const AUTHORITY: AuthorityAnalysisResponse = {
+       pathTypeCounts: { infill: 1 },
+     },
+   ],
++  visualization: {
++    encoding: "forgex-toolpath-f32le-v1",
++    recordStrideBytes: 20,
++    sourceSegmentCount: 0,
++    segmentCount: 0,
++    truncated: false,
++    samplingStride: 1,
++    pathTypes: ["infill"],
++    layers: [
++      { index: 0, sourceSegmentCount: 0, segmentOffset: 0, segmentCount: 0 },
++      { index: 1, sourceSegmentCount: 0, segmentOffset: 0, segmentCount: 0 },
++    ],
++    dataBase64: "",
++  },
+   claims: {},
+   pathTypeCounts: {},
+   warnings: [],
+diff --git a/frontend/src/features/gcode/gcode-types.ts b/frontend/src/features/gcode/gcode-types.ts
+index 8c7614b..1ed4583 100644
+--- a/frontend/src/features/gcode/gcode-types.ts
++++ b/frontend/src/features/gcode/gcode-types.ts
+@@ -69,6 +69,19 @@ export interface PreviewLayer {
+   readonly paths: readonly PreviewPath[];
+ }
+ 
++/** A decoded layer view over the C# packed visualization contract. */
++export interface AuthorityToolpathLayerView {
++  readonly index: number;
++  readonly z: number;
++  readonly sourcePathCount: number;
++  readonly sourceSegmentCount: number;
++  readonly segmentCount: number;
++  /** Four XY float32 values per independent line segment: x1, y1, x2, y2. */
++  readonly coordinates: Float32Array;
++  readonly pathTypeIndexes: Uint8Array;
++  readonly pathTypes: readonly string[];
++}
++
+ export interface GcodeLayerSummary {
+   readonly index: number;
+   readonly zMm: number;
+diff --git a/frontend/src/features/gcode/openapi-generated.test.ts b/frontend/src/features/gcode/openapi-generated.test.ts
+index 22945a3..39947db 100644
+--- a/frontend/src/features/gcode/openapi-generated.test.ts
++++ b/frontend/src/features/gcode/openapi-generated.test.ts
+@@ -64,6 +64,20 @@ describe("generated ForgeX OpenAPI client", () => {
+           pathTypeCounts: { infill: 1 },
+         },
+       ],
++      visualization: {
++        encoding: "forgex-toolpath-f32le-v1",
++        recordStrideBytes: 20,
++        sourceSegmentCount: 0,
++        segmentCount: 0,
++        truncated: false,
++        samplingStride: 1,
++        pathTypes: ["infill"],
++        layers: [
++          { index: 0, sourceSegmentCount: 0, segmentOffset: 0, segmentCount: 0 },
++          { index: 1, sourceSegmentCount: 0, segmentOffset: 0, segmentCount: 0 },
++        ],
++        dataBase64: "",
++      },
+       claims: {},
+       pathTypeCounts: {},
+       warnings: [],
+diff --git a/frontend/src/features/gcode/useGcodeAuthority.test.tsx b/frontend/src/features/gcode/useGcodeAuthority.test.tsx
+index c5a2d8f..c6e7378 100644
+--- a/frontend/src/features/gcode/useGcodeAuthority.test.tsx
++++ b/frontend/src/features/gcode/useGcodeAuthority.test.tsx
+@@ -86,6 +86,20 @@ const AUTHORITY: AuthorityAnalysisResponse = {
+   },
+   bounds: PREVIEW.bounds,
+   layers: PREVIEW.layerSummaries,
++  visualization: {
++    encoding: "forgex-toolpath-f32le-v1",
++    recordStrideBytes: 20,
++    sourceSegmentCount: 0,
++    segmentCount: 0,
++    truncated: false,
++    samplingStride: 1,
++    pathTypes: ["infill"],
++    layers: [
++      { index: 0, sourceSegmentCount: 0, segmentOffset: 0, segmentCount: 0 },
++      { index: 1, sourceSegmentCount: 0, segmentOffset: 0, segmentCount: 0 },
++    ],
++    dataBase64: "",
++  },
+   claims: {},
+   pathTypeCounts: {},
+   warnings: [],
+diff --git a/frontend/src/generated/forgex-api.ts b/frontend/src/generated/forgex-api.ts
+index 3c7d220..3fcd0cf 100644
+--- a/frontend/src/generated/forgex-api.ts
++++ b/frontend/src/generated/forgex-api.ts
+@@ -1,5 +1,5 @@
+ // Generated by tools/generate-openapi-types.js. Do not edit by hand.
+-// Source: backend/src/ForgeX.Api/openapi/v1.json (sha256:e539138a5cabe56801dee721fed570c47fba175c75ccb6e54cf7cb17e5714255)
++// Source: backend/src/ForgeX.Api/openapi/v1.json (sha256:54487c62319b097f20913748779dfa051e3415fcf73525729ef27ef823adff9d)
+ 
+ export interface AnalyticsAuthorityEngine {
+   readonly name: "forgex-analytics-csharp";
+@@ -123,6 +123,7 @@ export interface GCodeAnalysisResponse {
+   readonly claims: Readonly<Record<string, string>>;
+   readonly pathTypeCounts: Readonly<Record<string, number>>;
+   readonly warnings: ReadonlyArray<{ readonly code: string; readonly message: string; }>;
++  readonly visualization: GCodeToolpathVisualization;
+ }
+ 
+ export interface GCodeInputSummary {
+@@ -199,6 +200,25 @@ export interface GCodeProfileSummary {
+   readonly fingerprint: string;
+ }
+ 
++export interface GCodeToolpathLayer {
++  readonly index: number;
++  readonly sourceSegmentCount: number;
++  readonly segmentOffset: number;
++  readonly segmentCount: number;
++}
++
++export interface GCodeToolpathVisualization {
++  readonly encoding: "forgex-toolpath-f32le-v1";
++  readonly recordStrideBytes: 20;
++  readonly sourceSegmentCount: number;
++  readonly segmentCount: number;
++  readonly truncated: boolean;
++  readonly samplingStride: number;
++  readonly pathTypes: ReadonlyArray<string>;
++  readonly layers: ReadonlyArray<GCodeToolpathLayer>;
++  readonly dataBase64: string;
++}
++
+ export interface HealthResponse {
+   readonly status: string;
+   readonly service: string;
+diff --git a/tests/e2e/react-stage3b-jobs.spec.js b/tests/e2e/react-stage3b-jobs.spec.js
+index 50529ea..9a89cb1 100644
+--- a/tests/e2e/react-stage3b-jobs.spec.js
++++ b/tests/e2e/react-stage3b-jobs.spec.js
+@@ -9,6 +9,29 @@ const GCODE_FIXTURE = path.join(ROOT, "validation", "fixtures", "cura-marlin.gco
+ const JOB_ID = "3".repeat(32);
+ const SHA256 = "0881cfdac2ef41f6df48f7f5e0f47fd632dcddec8238955ce3a59a6bd754cf07";
+ 
++function packedToolpathBase64() {
++  const records = [
++    [-108, -108, -8, -108, 0],
++    [-8, -108, -8, -8, 0],
++    [-8, -8, -108, -8, 0],
++    [-108, -8, -108, -108, 0],
++    [-98, -98, -18, -98, 2],
++    [-18, -98, -18, -18, 2],
++    [-18, -18, -98, -18, 2],
++    [-98, -18, -98, -98, 2],
++  ];
++  const payload = Buffer.alloc(records.length * 20);
++  records.forEach((record, index) => {
++    const offset = index * 20;
++    payload.writeFloatLE(record[0], offset);
++    payload.writeFloatLE(record[1], offset + 4);
++    payload.writeFloatLE(record[2], offset + 8);
++    payload.writeFloatLE(record[3], offset + 12);
++    payload.writeInt32LE(record[4], offset + 16);
++  });
++  return payload.toString("base64");
++}
++
+ test.describe("React Stage 3-B async authority", () => {
+   test.skip(process.env.E2E_GCODE_AUTHORITY !== "dotnet", "dedicated dotnet build is required");
+ 
+@@ -19,7 +42,7 @@ test.describe("React Stage 3-B async authority", () => {
+     const links = { status: base, events: `${base}/events`, cancel: `${base}/cancel` };
+     const authority = {
+       schemaVersion: "1.0",
+-      engine: { version: "1.2.0", source: "gcode-import" },
++      engine: { version: "1.3.0", source: "gcode-import" },
+       input: { sha256: SHA256, bytesRead: 350, linesRead: 18 },
+       profile: {
+         machineProfileId: "corexy",
+@@ -63,6 +86,20 @@ test.describe("React Stage 3-B async authority", () => {
+           pathTypeCounts: { infill: 1 },
+         },
+       ],
++      visualization: {
++        encoding: "forgex-toolpath-f32le-v1",
++        recordStrideBytes: 20,
++        sourceSegmentCount: 8,
++        segmentCount: 8,
++        truncated: false,
++        samplingStride: 1,
++        pathTypes: ["perimeter", "solid", "infill", "support", "skirt"],
++        layers: [
++          { index: 0, sourceSegmentCount: 4, segmentOffset: 0, segmentCount: 4 },
++          { index: 1, sourceSegmentCount: 4, segmentOffset: 4, segmentCount: 4 },
++        ],
++        dataBase64: packedToolpathBase64(),
++      },
+       claims: {},
+       pathTypeCounts: { perimeter: 1, infill: 1 },
+       warnings: [],
+@@ -133,6 +170,8 @@ test.describe("React Stage 3-B async authority", () => {
+     await expect(page.getByText("C# 引擎权威口径", { exact: true })).toBeVisible();
+     await expect(page.getByText("corexy / PLA", { exact: true })).toBeVisible();
+     await expect(page.getByText("2 layers match", { exact: true })).toBeVisible();
++    await expect(page.getByRole("heading", { name: /C# 有界工具路径 · 第 1 \/ 2 层/ })).toBeVisible();
++    await expect(page.getByText(/8 \/ 8 segments · C# complete/)).toBeVisible();
+     expect(creationCount).toBe(1);
+     expect(sseCount).toBe(1);
+   });
+diff --git a/tools/verify-openapi-runtime.js b/tools/verify-openapi-runtime.js
+index dd1d3e1..c18bbfa 100644
+--- a/tools/verify-openapi-runtime.js
++++ b/tools/verify-openapi-runtime.js
+@@ -34,6 +34,34 @@ function sha256(bytes) {
+   return crypto.createHash("sha256").update(bytes).digest("hex");
+ }
+ 
++function validatePackedToolpath(result, label) {
++  const visualization = result?.visualization;
++  if (
++    visualization?.encoding !== "forgex-toolpath-f32le-v1" ||
++    visualization.recordStrideBytes !== 20 ||
++    visualization.layers?.length !== result.layers?.length
++  ) {
++    throw new Error(`${label} packed toolpath contract mismatch`);
++  }
++  const payload = Buffer.from(visualization.dataBase64, "base64");
++  if (
++    payload.length !== visualization.segmentCount * visualization.recordStrideBytes ||
++    visualization.layers.reduce((total, layer) => total + layer.segmentCount, 0) !== visualization.segmentCount ||
++    visualization.layers.reduce((total, layer) => total + layer.sourceSegmentCount, 0) !==
++      visualization.sourceSegmentCount
++  ) {
++    throw new Error(`${label} packed toolpath counts mismatch`);
++  }
++  for (let index = 0; index < visualization.segmentCount; index += 1) {
++    const offset = index * visualization.recordStrideBytes;
++    const coordinates = [0, 4, 8, 12].map((coordinate) => payload.readFloatLE(offset + coordinate));
++    const pathTypeIndex = payload.readInt32LE(offset + 16);
++    if (coordinates.some((value) => !Number.isFinite(value)) || !visualization.pathTypes[pathTypeIndex]) {
++      throw new Error(`${label} packed toolpath record ${index} mismatch`);
++    }
++  }
++}
++
+ async function request(url, init = {}, timeoutMs = 10_000) {
+   return fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+ }
+@@ -179,6 +207,7 @@ async function main() {
+       throw new Error(`sync analysis returned ${syncResponse.status}: ${await syncResponse.text()}`);
+     const syncResult = await syncResponse.json();
+     if (syncResult.input.sha256 !== sha256(gcode)) throw new Error("sync analysis raw-byte SHA mismatch");
++    validatePackedToolpath(syncResult, "sync analysis");
+ 
+     const createUrl = `${baseUrl}${operationPaths.get("createGCodeAnalysisJob")}?${query}`;
+     const untrustedCreate = await request(createUrl, {
+@@ -242,6 +271,7 @@ async function main() {
+           `stdout=${stdout.join("")}\nstderr=${stderr.join("")}`
+       );
+     }
++    validatePackedToolpath(snapshot.result, "async analysis");
+ 
+     await waitForTerminal(baseUrl, acceptedB.links.status, callerB);
+     await readTerminalSse(baseUrl + accepted.links.events, callerA);
+@@ -288,6 +318,11 @@ async function main() {
+ 
+     console.log(`OpenAPI runtime gate PASS: ${Object.keys(document.paths).length} paths`);
+     console.log(`canonicalSha256=${sha256(canonical)}`);
++    console.log(
++      `engine=${syncResult.engine.version} toolpath=${syncResult.visualization.segmentCount}/${syncResult.visualization.sourceSegmentCount} ` +
++        `stride=${syncResult.visualization.samplingStride} payloadBytes=${Buffer.from(syncResult.visualization.dataBase64, "base64").length} ` +
++        `layers=${syncResult.visualization.layers.length} encoding=${syncResult.visualization.encoding}`
++    );
+     console.log(
+       `jobId=${accepted.jobId} status=${snapshot.status} sse=terminal tenantIsolation=pass metrics=pass jsonLogs=pass`
+     );
+diff --git a/frontend/src/features/gcode/authority-toolpath.ts b/frontend/src/features/gcode/authority-toolpath.ts
+new file mode 100644
+index 0000000..65cdc4a
+--- /dev/null
++++ b/frontend/src/features/gcode/authority-toolpath.ts
+@@ -0,0 +1,89 @@
++import type { GCodeAnalysisResponse, GCodeToolpathVisualization } from "../../generated/forgex-api";
++import type { AuthorityToolpathLayerView } from "./gcode-types";
++
++const payloadCache = new WeakMap<GCodeToolpathVisualization, Uint8Array>();
++const layerCache = new WeakMap<GCodeToolpathVisualization, Map<number, AuthorityToolpathLayerView>>();
++
++function decodeBase64(value: string): Uint8Array {
++  const binary = atob(value);
++  const bytes = new Uint8Array(binary.length);
++  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
++  return bytes;
++}
++
++function payload(visualization: GCodeToolpathVisualization): Uint8Array {
++  const cached = payloadCache.get(visualization);
++  if (cached) return cached;
++  const decoded = decodeBase64(visualization.dataBase64);
++  payloadCache.set(visualization, decoded);
++  return decoded;
++}
++
++/** Decode and validate the complete bounded payload before dotnet mode may switch atomically. */
++export function validateAuthorityToolpath(visualization: GCodeToolpathVisualization): void {
++  const bytes = payload(visualization);
++  const expectedBytes = visualization.segmentCount * visualization.recordStrideBytes;
++  if (bytes.byteLength !== expectedBytes) {
++    throw new Error(`C# 权威结果契约不一致：可视化数据长度不一致：${bytes.byteLength} != ${expectedBytes}`);
++  }
++
++  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
++  for (let index = 0; index < visualization.segmentCount; index += 1) {
++    const offset = index * visualization.recordStrideBytes;
++    for (let coordinate = 0; coordinate < 4; coordinate += 1) {
++      if (!Number.isFinite(view.getFloat32(offset + coordinate * 4, true))) {
++        throw new Error(`C# 权威结果契约不一致：可视化坐标无效：segment=${index}`);
++      }
++    }
++    const pathTypeIndex = view.getInt32(offset + 16, true);
++    if (pathTypeIndex < 0 || pathTypeIndex >= visualization.pathTypes.length) {
++      throw new Error(`C# 权威结果契约不一致：可视化路径类型无效：segment=${index}`);
++    }
++  }
++}
++
++/** Decode one selected layer only; decoded payload and visited layers are cached by response identity. */
++export function decodeAuthorityToolpathLayer(
++  authority: GCodeAnalysisResponse,
++  layerIndex: number
++): AuthorityToolpathLayerView | null {
++  const visualization = authority.visualization;
++  const descriptor = visualization.layers[layerIndex];
++  const summary = authority.layers[layerIndex];
++  if (!descriptor || !summary) return null;
++
++  let cachedLayers = layerCache.get(visualization);
++  if (!cachedLayers) {
++    cachedLayers = new Map();
++    layerCache.set(visualization, cachedLayers);
++  }
++  const cached = cachedLayers.get(layerIndex);
++  if (cached) return cached;
++
++  const bytes = payload(visualization);
++  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
++  const coordinates = new Float32Array(descriptor.segmentCount * 4);
++  const pathTypeIndexes = new Uint8Array(descriptor.segmentCount);
++  for (let index = 0; index < descriptor.segmentCount; index += 1) {
++    const offset = (descriptor.segmentOffset + index) * visualization.recordStrideBytes;
++    const coordinateOffset = index * 4;
++    coordinates[coordinateOffset] = view.getFloat32(offset, true);
++    coordinates[coordinateOffset + 1] = view.getFloat32(offset + 4, true);
++    coordinates[coordinateOffset + 2] = view.getFloat32(offset + 8, true);
++    coordinates[coordinateOffset + 3] = view.getFloat32(offset + 12, true);
++    pathTypeIndexes[index] = view.getInt32(offset + 16, true);
++  }
++
++  const result: AuthorityToolpathLayerView = {
++    index: layerIndex,
++    z: summary.zMm,
++    sourcePathCount: summary.pathCount,
++    sourceSegmentCount: descriptor.sourceSegmentCount,
++    segmentCount: descriptor.segmentCount,
++    coordinates,
++    pathTypeIndexes,
++    pathTypes: visualization.pathTypes,
++  };
++  cachedLayers.set(layerIndex, result);
++  return result;
++}

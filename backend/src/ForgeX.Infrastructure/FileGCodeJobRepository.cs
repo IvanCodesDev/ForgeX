@@ -132,7 +132,7 @@ public sealed partial class FileGCodeJobRepository : IGCodeJobRepository, IGCode
         // Stage 5-A completed results predate the required layer-plan contract. Preserve the
         // record and its provenance, but expose a stable degraded terminal state instead of
         // serializing an invalid Stage 5-B response or throwing from the snapshot endpoint.
-        if (job.Result is not null && job.Result.Layers is null)
+        if (job.Result is not null && (job.Result.Layers is null || job.Result.Visualization is null))
         {
             const string errorCode = "gcode_result_contract_outdated";
             var atUtc = job.FinishedAtUtc ?? job.CreatedAtUtc;

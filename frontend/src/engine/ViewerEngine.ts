@@ -16,7 +16,7 @@ import {
   type Material,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import type { GcodeBounds, PreviewLayer } from "../features/gcode/gcode-types";
+import type { AuthorityToolpathLayerView, GcodeBounds, PreviewLayer } from "../features/gcode/gcode-types";
 
 const COLORS: Readonly<Record<string, ColorRepresentation>> = {
   perimeter: 0xe7ebf1,
@@ -91,12 +91,53 @@ export class ViewerEngine {
     this.layerObject = new LineSegments(geometry, material);
     this.scene.add(this.layerObject);
 
+    this.frameLayer(bounds, layer.z);
+  }
+
+  public setAuthorityLayer(layer: AuthorityToolpathLayerView | null, bounds: GcodeBounds | null): void {
+    this.disposeLayer();
+    if (!layer || !bounds) {
+      this.render();
+      return;
+    }
+
+    const centerX = (bounds.minX + bounds.maxX) / 2;
+    const centerY = (bounds.minY + bounds.maxY) / 2;
+    const positions = new Float32Array(layer.segmentCount * 6);
+    const colors = new Float32Array(layer.segmentCount * 6);
+    for (let index = 0; index < layer.segmentCount; index += 1) {
+      const coordinateOffset = index * 4;
+      const vertexOffset = index * 6;
+      positions[vertexOffset] = (layer.coordinates[coordinateOffset] ?? 0) - centerX;
+      positions[vertexOffset + 1] = layer.z;
+      positions[vertexOffset + 2] = -((layer.coordinates[coordinateOffset + 1] ?? 0) - centerY);
+      positions[vertexOffset + 3] = (layer.coordinates[coordinateOffset + 2] ?? 0) - centerX;
+      positions[vertexOffset + 4] = layer.z;
+      positions[vertexOffset + 5] = -((layer.coordinates[coordinateOffset + 3] ?? 0) - centerY);
+
+      const pathType = layer.pathTypes[layer.pathTypeIndexes[index] ?? -1] ?? "unknown";
+      const color = new Color(COLORS[pathType] ?? 0xaab3c1);
+      colors.set([color.r, color.g, color.b, color.r, color.g, color.b], vertexOffset);
+    }
+
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
+    geometry.computeBoundingSphere();
+    const material = new LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.94 });
+    this.layerObject = new LineSegments(geometry, material);
+    this.scene.add(this.layerObject);
+
+    this.frameLayer(bounds, layer.z);
+  }
+
+  private frameLayer(bounds: GcodeBounds, z: number): void {
     const span = Math.max(40, bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
     this.camera.near = Math.max(0.1, span / 1000);
     this.camera.far = span * 20;
     this.camera.position.set(span * 0.72, span * 0.88, span * 0.72);
     this.camera.updateProjectionMatrix();
-    this.controls.target.set(0, Math.max(0, layer.z * 0.35), 0);
+    this.controls.target.set(0, Math.max(0, z * 0.35), 0);
     this.controls.update();
     this.render();
   }

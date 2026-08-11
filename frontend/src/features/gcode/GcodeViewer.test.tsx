@@ -2,12 +2,13 @@
 
 import { render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { GcodeBounds, PreviewLayer } from "./gcode-types";
+import type { AuthorityToolpathLayerView, GcodeBounds, PreviewLayer } from "./gcode-types";
 import { GcodeViewer } from "./GcodeViewer";
 
 const viewerSpies = vi.hoisted(() => ({
   construct: vi.fn(),
   setLayer: vi.fn(),
+  setAuthorityLayer: vi.fn(),
   dispose: vi.fn(),
 }));
 
@@ -19,6 +20,10 @@ vi.mock("../../engine/ViewerEngine", () => ({
 
     public setLayer(layer: PreviewLayer | null, bounds: GcodeBounds | null): void {
       viewerSpies.setLayer(layer, bounds);
+    }
+
+    public setAuthorityLayer(layer: AuthorityToolpathLayerView | null, bounds: GcodeBounds | null): void {
+      viewerSpies.setAuthorityLayer(layer, bounds);
     }
 
     public dispose(): void {
@@ -54,5 +59,23 @@ describe("GcodeViewer lifecycle", () => {
 
     view.unmount();
     expect(viewerSpies.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("routes a decoded C# layer directly to the packed Three.js buffer path", () => {
+    const bounds = { minX: 0, maxX: 20, minY: 0, maxY: 20 };
+    const authorityLayer: AuthorityToolpathLayerView = {
+      index: 0,
+      z: 0.2,
+      sourcePathCount: 1,
+      sourceSegmentCount: 1,
+      segmentCount: 1,
+      coordinates: new Float32Array([0, 0, 20, 20]),
+      pathTypeIndexes: new Uint8Array([0]),
+      pathTypes: ["perimeter"],
+    };
+
+    const view = render(<GcodeViewer layer={null} authorityLayer={authorityLayer} bounds={bounds} />);
+    expect(viewerSpies.setAuthorityLayer).toHaveBeenLastCalledWith(authorityLayer, bounds);
+    view.unmount();
   });
 });

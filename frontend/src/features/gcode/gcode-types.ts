@@ -69,6 +69,19 @@ export interface PreviewLayer {
   readonly paths: readonly PreviewPath[];
 }
 
+/** A decoded layer view over the C# packed visualization contract. */
+export interface AuthorityToolpathLayerView {
+  readonly index: number;
+  readonly z: number;
+  readonly sourcePathCount: number;
+  readonly sourceSegmentCount: number;
+  readonly segmentCount: number;
+  /** Four XY float32 values per independent line segment: x1, y1, x2, y2. */
+  readonly coordinates: Float32Array;
+  readonly pathTypeIndexes: Uint8Array;
+  readonly pathTypes: readonly string[];
+}
+
 export interface GcodeLayerSummary {
   readonly index: number;
   readonly zMm: number;

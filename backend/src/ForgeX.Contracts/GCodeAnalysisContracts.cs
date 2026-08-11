@@ -9,6 +9,7 @@ public sealed record GCodeAnalysisResponse(
     GCodeAnalysisSummaryDto Summary,
     GCodeBoundsDto Bounds,
     IReadOnlyList<GCodeLayerSummaryDto> Layers,
+    GCodeToolpathVisualizationDto Visualization,
     IReadOnlyDictionary<string, string> Claims,
     IReadOnlyDictionary<string, long> PathTypeCounts,
     IReadOnlyList<GCodeWarningDto> Warnings);
@@ -51,5 +52,22 @@ public sealed record GCodeLayerSummaryDto(
     double TimeSeconds,
     double FilamentLengthMm,
     IReadOnlyDictionary<string, long> PathTypeCounts);
+
+public sealed record GCodeToolpathVisualizationDto(
+    string Encoding,
+    int RecordStrideBytes,
+    long SourceSegmentCount,
+    int SegmentCount,
+    bool Truncated,
+    long SamplingStride,
+    IReadOnlyList<string> PathTypes,
+    IReadOnlyList<GCodeToolpathLayerDto> Layers,
+    string DataBase64);
+
+public sealed record GCodeToolpathLayerDto(
+    int Index,
+    long SourceSegmentCount,
+    int SegmentOffset,
+    int SegmentCount);
 
 public sealed record GCodeWarningDto(string Code, string Message);

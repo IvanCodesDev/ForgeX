@@ -1,0 +1,19 @@
+[PASS] gcode-cura-marlin-pla-default: 43/43 fields
+[PASS] gcode-cura-marlin-petg-default: 43/43 fields
+[PASS] gcode-orca-klipper-pla-default: 51/51 fields
+[PASS] gcode-orca-klipper-petg-default: 51/51 fields
+[PASS] gcode-prusa-marlin-pla-default: 42/42 fields
+[PASS] gcode-prusa-marlin-petg-default: 42/42 fields
+[PASS] gcode-superslicer-rrf-pla-default: 60/60 fields
+[PASS] gcode-superslicer-rrf-petg-default: 60/60 fields
+[PASS] contract/malformed-input: stableCode=GCODE_NO_EXTRUSION_PATH
+[PASS] contract/pre-cancelled: OperationCanceledException observed before parsing.
+[PASS] contract/non-seekable-stream: canSeek=False; shaMatch=True; semanticMatch=True
+[PASS] contract/crlf-utf8-byte-boundary: maxReadBytes=1; shaMatch=True; semanticMatch=True
+[PASS] contract/profile-summary: valuesMatch=True; fingerprintShape=True; deterministic=True; materialSensitive=True
+[PASS] contract/profile-id-validation: stableCode=GCODE_INVALID_OPTIONS
+[PASS] contract/layer-plan-invariants: sequential=True; sorted=True; pathCounts=True; extrusion=True; types=True; countHeight=True
+[PASS] contract/toolpath-visualization-invariants: layerAligned=True; contiguous=True; counts=True; payload=True; records=True; segments=8/8
+[PASS] contract/toolpath-visualization-budget: segments=3/10; stride=4; bytes=60
+[PASS] contract/layer-limit: stableCode=GCODE_MAX_LAYERS_EXCEEDED
+GoldenDiff: PASS — 392/392 fields, artifact=E:\Projects\3dprint\backend\artifacts\gcode-golden-diff.json

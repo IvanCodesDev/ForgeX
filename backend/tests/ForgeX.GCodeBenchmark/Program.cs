@@ -114,7 +114,16 @@ try
         ["first-progress-under-1000ms"] = firstProgressMs is >= 0 and < 1000,
         ["duration-under-30s"] = stopwatch.Elapsed < TimeSpan.FromSeconds(30),
         ["private-memory-delta-under-64MiB"] = peakPrivate - privateBefore < 64L * 1024 * 1024,
-        ["result-under-64KiB"] = resultBytes < 64 * 1024,
+        ["result-under-4MiB"] = resultBytes < 4 * 1024 * 1024,
+        ["toolpath-visualization-bounded"] = result.Visualization is
+        {
+            SegmentCount: > 0 and <= 100_000,
+            SourceSegmentCount: > 100_000,
+            Truncated: true,
+        },
+        ["toolpath-payload-consistent"] = result.Visualization is { } visualization &&
+            visualization.Data.Length == visualization.SegmentCount * visualization.RecordStrideBytes &&
+            visualization.Layers.Sum(static layer => layer.SegmentCount) == visualization.SegmentCount,
         ["cancellation-under-500ms"] = cancelled && cancellationLatencyMs < 500,
         ["profile-bound"] = result.Profile.MachineProfileId == options.MachineProfileId &&
             result.Profile.MaterialProfileId == options.MaterialProfileId,
@@ -144,6 +153,16 @@ try
         cancelled,
         cancellationLatencyMs,
         profileFingerprint = result.Profile.Fingerprint,
+        visualization = result.Visualization is null ? null : new
+        {
+            result.Visualization.Encoding,
+            result.Visualization.RecordStrideBytes,
+            result.Visualization.SourceSegmentCount,
+            result.Visualization.SegmentCount,
+            result.Visualization.Truncated,
+            result.Visualization.SamplingStride,
+            payloadBytes = result.Visualization.Data.Length,
+        },
         layerPlan = new
         {
             layers = layerPlanResult.TotalLayers,
@@ -161,6 +180,7 @@ try
         $"GCodeBenchmark: {(pass ? "PASS" : "FAIL")} — {fixtureBytes / 1024d / 1024d:F2} MiB in {stopwatch.Elapsed.TotalMilliseconds:F1} ms; " +
         $"firstProgress={firstProgressMs:F1} ms; memoryDelta={(peakPrivate - privateBefore) / 1024d / 1024d:F2} MiB; " +
         $"result={resultBytes} bytes; cancellation={cancellationLatencyMs:F1} ms; " +
+        $"toolpath={result.Visualization?.SegmentCount}/{result.Visualization?.SourceSegmentCount} segments; " +
         $"layerPlan={layerPlanResult.TotalLayers}/{layerPlanResultBytes} bytes in {layerPlanStopwatch.Elapsed.TotalMilliseconds:F1} ms");
     Console.WriteLine(artifactPath);
     return pass ? 0 : 1;

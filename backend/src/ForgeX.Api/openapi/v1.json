@@ -528,6 +528,7 @@
           "summary",
           "bounds",
           "layers",
+          "visualization",
           "claims",
           "pathTypeCounts",
           "warnings"
@@ -685,6 +686,9 @@
               },
               "additionalProperties": false
             }
+          },
+          "visualization": {
+            "$ref": "#/components/schemas/GCodeToolpathVisualization"
           }
         },
         "additionalProperties": false
@@ -1538,6 +1542,98 @@
               "type": "integer",
               "format": "int64"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "GCodeToolpathLayer": {
+        "type": "object",
+        "required": [
+          "index",
+          "sourceSegmentCount",
+          "segmentOffset",
+          "segmentCount"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sourceSegmentCount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "segmentOffset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "segmentCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000
+          }
+        },
+        "additionalProperties": false
+      },
+      "GCodeToolpathVisualization": {
+        "type": "object",
+        "required": [
+          "encoding",
+          "recordStrideBytes",
+          "sourceSegmentCount",
+          "segmentCount",
+          "truncated",
+          "samplingStride",
+          "pathTypes",
+          "layers",
+          "dataBase64"
+        ],
+        "properties": {
+          "encoding": {
+            "type": "string",
+            "const": "forgex-toolpath-f32le-v1"
+          },
+          "recordStrideBytes": {
+            "type": "integer",
+            "const": 20
+          },
+          "sourceSegmentCount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "segmentCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "samplingStride": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "pathTypes": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "string"
+            }
+          },
+          "layers": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "$ref": "#/components/schemas/GCodeToolpathLayer"
+            }
+          },
+          "dataBase64": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "maxLength": 2666668
           }
         },
         "additionalProperties": false

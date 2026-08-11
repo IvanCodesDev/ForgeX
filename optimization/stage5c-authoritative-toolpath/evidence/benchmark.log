@@ -1,0 +1,2 @@
+GCodeBenchmark: PASS — 16.00 MiB in 484.4 ms; firstProgress=9.4 ms; memoryDelta=30.96 MiB; result=2433048 bytes; cancellation=17.8 ms; toolpath=91181/729442 segments; layerPlan=5000/1461282 bytes in 18.4 ms
+E:\Projects\3dprint\backend\artifacts\gcode-stage5-benchmark.json

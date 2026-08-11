@@ -1,0 +1,15 @@
+
+> forgex-insight@0.19.0 test:e2e:chromium
+> playwright test --config config/playwright.config.js --project=chromium tests/e2e/react-stage3b-jobs.spec.js
+
+[WebServer] [plugin builtin:vite-reporter] 
+[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+[WebServer] - Using dynamic import() to code-split the application
+[WebServer] - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+
+Running 1 test using 1 worker
+
+  ok 1 [chromium] › tests\e2e\react-stage3b-jobs.spec.js:38:3 › React Stage 3-B async authority › creates one job, consumes SSE, and switches the primary summary (912ms)
+
+  1 passed (3.9s)

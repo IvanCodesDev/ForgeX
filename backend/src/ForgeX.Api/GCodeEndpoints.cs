@@ -59,8 +59,11 @@ internal static class GCodeEndpoints
         return Results.Ok(ToResponse(result, options));
     }
 
-    internal static GCodeAnalysisResponse ToResponse(GCodeAnalysisResult result, GCodeAnalysisOptions options) =>
-        new(
+    internal static GCodeAnalysisResponse ToResponse(GCodeAnalysisResult result, GCodeAnalysisOptions options)
+    {
+        var visualization = result.Visualization ?? throw new InvalidOperationException(
+            "The stored G-code result predates the required visualization contract.");
+        return new(
             "1.0",
             new GCodeEngineDto(result.EngineVersion, result.Source),
             new GCodeInputSummaryDto(result.Sha256, result.BytesRead, result.LinesRead),
@@ -98,10 +101,25 @@ internal static class GCodeEndpoints
                 layer.TimeSeconds,
                 layer.FilamentLengthMm,
                 layer.PathTypeCounts)).ToArray(),
+            new GCodeToolpathVisualizationDto(
+                visualization.Encoding,
+                visualization.RecordStrideBytes,
+                visualization.SourceSegmentCount,
+                visualization.SegmentCount,
+                visualization.Truncated,
+                visualization.SamplingStride,
+                visualization.PathTypes,
+                visualization.Layers.Select(static layer => new GCodeToolpathLayerDto(
+                    layer.Index,
+                    layer.SourceSegmentCount,
+                    layer.SegmentOffset,
+                    layer.SegmentCount)).ToArray(),
+                Convert.ToBase64String(visualization.Data)),
             result.Claims,
             result.PathTypeCounts,
             [.. result.Warnings
                 .Select(static warning => new GCodeWarningDto(warning.Code, warning.Message))]);
+    }
 
     internal static bool TryReadOptions(
         HttpRequest request,

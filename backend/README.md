@@ -36,9 +36,9 @@ GET  /openapi/v1.json
 POST /api/v1/gcode/analyze
 ```
 
-The G-code endpoint accepts the raw `application/x-gcode` body. It returns an authoritative summary
-and a bounded per-layer plan; the React Worker remains responsible for immediate, display-only 3D
-preview geometry.
+The G-code endpoint accepts the raw `application/x-gcode` body. It returns an authoritative summary,
+a bounded per-layer plan, and packed display-only extrusion geometry. The React Worker still owns
+the immediate preview used by `browser` and `shadow` modes.
 
 ## Stage 5-A G-code Profile authority
 
@@ -72,12 +72,28 @@ npm run dotnet:golden
 npm run gcode:layer-golden:update   # reviewed update only
 ```
 
-The G-code engine contract version is `1.2.0`.
+## Stage 5-C authoritative packed toolpath
+
+The `visualization` response carries at most 100,000 extrusion segments. The
+`forgex-toolpath-f32le-v1` payload is Base64 over fixed 20-byte little-endian records: four float32
+XY endpoint coordinates and one int32 path-type index. Layer descriptors provide contiguous segment
+slices plus exact pre-sampling segment counts. When the stream exceeds the budget, the analyzer
+raises a deterministic power-of-two sampling stride while retaining each layer's first segment; it
+never needs a seekable input or an unbounded point list. The 16 MiB benchmark currently verifies a
+sub-4 MiB result, sub-64 MiB private-memory delta, first-read progress, cancellation latency, and
+payload/layer-slice consistency.
+
+React validates encoding, counts, slices, Base64 length, finite coordinates, and path-type indices
+before `dotnet` mode switches. It decodes only the selected layer into typed arrays for Three.js.
+`shadow` deliberately retains browser geometry, and `VITE_GCODE_AUTHORITY=browser` remains the
+single-switch rollback.
+
+The G-code engine contract version is `1.3.0`.
 New asynchronous idempotency fingerprints use `forgex-gcode-job/2`. A completed Stage 5-A file-job
-record without `layers` is reopened as a stable `degraded / gcode_result_contract_outdated` terminal
-snapshot rather than an invalid response; its input and provenance remain stored, and resubmission
-with a new idempotency key produces a Stage 5-B result. Missing persisted `MaxLayers` values migrate
-to 20,000 on read.
+record without `layers`, or a Stage 5-B record without `visualization`, is reopened as a stable
+`degraded / gcode_result_contract_outdated` terminal snapshot rather than an invalid response; its
+input and provenance remain stored, and resubmission with a new idempotency key produces a Stage 5-C
+result. Missing persisted limits migrate to their current defaults on read.
 
 The API writes JSON console logs with a bounded route template, status, elapsed milliseconds, and
 trace ID. `/metrics` emits Prometheus text with bounded method/route/status labels, request duration

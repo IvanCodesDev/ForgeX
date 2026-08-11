@@ -1,0 +1,15 @@
+﻿{
+    "schemaVersion":  1,
+    "engine":  "1.3.0",
+    "encoding":  "forgex-toolpath-f32le-v1",
+    "syncToolpath":  "1/1",
+    "payloadBytes":  20,
+    "layers":  1,
+    "openapiPaths":  9,
+    "canonicalSha256":  "54487c62319b097f20913748779dfa051e3415fcf73525729ef27ef823adff9d",
+    "asyncStatus":  "succeeded",
+    "sse":  "terminal",
+    "tenantIsolation":  "pass",
+    "metrics":  "pass",
+    "exitStatus":  0
+}

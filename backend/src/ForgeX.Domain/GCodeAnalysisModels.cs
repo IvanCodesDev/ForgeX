@@ -22,7 +22,8 @@ public sealed record GCodeAnalysisOptions(
     int MaxLineLength = 1_048_576,
     string MachineProfileId = "unspecified-machine",
     string MaterialProfileId = "unspecified-material",
-    int MaxLayers = 20_000)
+    int MaxLayers = 20_000,
+    int MaxVisualizationSegments = 100_000)
 {
     /// <summary>Compatibility alias used by the streaming implementation.</summary>
     public long MaxBytes => MaxInputBytes;
@@ -91,6 +92,28 @@ public sealed record GCodeLayerSummary(
     double FilamentLengthMm,
     IReadOnlyDictionary<string, long> PathTypeCounts);
 
+/// <summary>A bounded layer slice within the packed visualization segment buffer.</summary>
+public sealed record GCodeToolpathLayer(
+    int Index,
+    long SourceSegmentCount,
+    int SegmentOffset,
+    int SegmentCount);
+
+/// <summary>
+/// Display-only extrusion geometry. Each little-endian record contains four float32 XY values
+/// followed by one int32 path-type index; summary and layer-plan fields remain authoritative.
+/// </summary>
+public sealed record GCodeToolpathVisualization(
+    string Encoding,
+    int RecordStrideBytes,
+    long SourceSegmentCount,
+    int SegmentCount,
+    bool Truncated,
+    long SamplingStride,
+    IReadOnlyList<string> PathTypes,
+    IReadOnlyList<GCodeToolpathLayer> Layers,
+    byte[] Data);
+
 /// <summary>The deterministic, auditable result of one streamed G-code analysis.</summary>
 public sealed record GCodeAnalysisResult(
     string Sha256,
@@ -107,7 +130,8 @@ public sealed record GCodeAnalysisResult(
     IReadOnlyDictionary<string, string> Claims,
     IReadOnlyDictionary<string, long> PathTypeCounts,
     IReadOnlyList<GCodeLayerSummary> Layers,
-    IReadOnlyList<GCodeWarning> Warnings);
+    IReadOnlyList<GCodeWarning> Warnings,
+    GCodeToolpathVisualization? Visualization = null);
 
 /// <summary>An analysis failure with a stable code suitable for API problem details.</summary>
 public sealed class GCodeAnalysisException : Exception

@@ -1,0 +1,13 @@
+﻿sandbox=E:\C\c_tmp\forgex-stage5c-verify-87c8900aff2d4b1f8b98b9efb389a658
+archiveEntries=26
+archiveMissing=0
+archiveExtra=0
+archiveHashMismatch=0
+patchCheck=0
+patchApply=0
+modifiedMismatch=0
+rollback=0
+baselinePatchCheck=0
+rollbackMismatch=0
+newFilesAbsent=True
+exitStatus=0

@@ -118,12 +118,17 @@ try
     var legacyCompletedPath = Path.Combine(legacyRoot, legacyCompleted.Id + ".json");
     var legacyCompletedJson = JsonNode.Parse(await File.ReadAllTextAsync(legacyCompletedPath))!.AsObject();
     legacyCompletedJson["options"]!.AsObject().Remove("maxLayers");
-    legacyCompletedJson["result"]!.AsObject().Remove("layers");
+    legacyCompletedJson["options"]!.AsObject().Remove("maxVisualizationSegments");
+    legacyCompletedJson["result"]!.AsObject().Remove("visualization");
     await File.WriteAllTextAsync(legacyCompletedPath, legacyCompletedJson.ToJsonString());
     var migratedCompleted = await legacyRepository.GetAsync(legacyCompleted.Id, CancellationToken.None);
     Check("legacy-options-get-layer-limit", migratedCompleted?.Options.MaxLayers == 20_000, migratedCompleted?.Options.MaxLayers);
     Check(
-        "legacy-result-degrades-without-invalid-response",
+        "stage5b-options-get-visualization-limit",
+        migratedCompleted?.Options.MaxVisualizationSegments == 100_000,
+        migratedCompleted?.Options.MaxVisualizationSegments);
+    Check(
+        "stage5b-result-degrades-without-invalid-response",
         migratedCompleted is
         {
             Status: GCodeJobStatus.Degraded,
@@ -133,7 +138,7 @@ try
         },
         migratedCompleted?.Status);
     Check(
-        "legacy-result-appends-terminal-evidence",
+        "stage5b-result-appends-terminal-evidence",
         migratedCompleted?.Events[^1] is
         {
             Status: GCodeJobStatus.Degraded,

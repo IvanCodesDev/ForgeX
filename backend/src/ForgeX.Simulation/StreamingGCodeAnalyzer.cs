@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -14,7 +15,7 @@ namespace ForgeX.Simulation;
 /// </summary>
 public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
 {
-    public const string EngineVersion = "1.2.0";
+    public const string EngineVersion = "1.3.0";
 
     private const int ReadBufferSize = 64 * 1024;
     private static readonly Encoding StrictUtf8 = new UTF8Encoding(
@@ -176,6 +177,12 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
             InvalidOption(nameof(options.MaxLayers));
         }
 
+        if (options.MaxVisualizationSegments is <= 0 or > 1_000_000 ||
+            options.MaxVisualizationSegments < options.MaxLayers)
+        {
+            InvalidOption(nameof(options.MaxVisualizationSegments));
+        }
+
         if (!IsValidProfileId(options.MachineProfileId))
         {
             InvalidOption(nameof(options.MachineProfileId));
@@ -204,6 +211,8 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
         private const double EpsilonE = 1e-9;
         private const double EpsilonDistance = 1e-6;
         private const double FilamentArea175 = Math.PI * 0.875d * 0.875d;
+        private const int ToolpathRecordStrideBytes = 20;
+        private static readonly string[] ToolpathTypes = ["perimeter", "solid", "infill", "support", "skirt"];
 
         private readonly GCodeAnalysisOptions _options;
         private readonly double _halfBed;
@@ -237,6 +246,9 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
         private double _minY = double.PositiveInfinity;
         private double _maxY = double.NegativeInfinity;
         private long _arcCount;
+        private long _sourceToolpathSegments;
+        private int _sampledToolpathSegments;
+        private long _toolpathSamplingStride = 1;
         private bool _lastWasCarriageReturn;
         private bool _atStart = true;
         private long _lineCount = 1;
@@ -387,6 +399,8 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
                     PathTypeCounts: GCodeReadOnly.Dictionary(layer.PathTypeCounts)));
             }
 
+            var visualization = BuildVisualization(ct);
+
             return new GCodeAnalysisResult(
                 Sha256: sha256,
                 EngineVersion: StreamingGCodeAnalyzer.EngineVersion,
@@ -408,7 +422,8 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
                 Claims: GCodeReadOnly.Dictionary(_claims),
                 PathTypeCounts: GCodeReadOnly.Dictionary(aggregateTypes),
                 Layers: GCodeReadOnly.List(layerResults),
-                Warnings: GCodeReadOnly.List(_warnings));
+                Warnings: GCodeReadOnly.List(_warnings),
+                Visualization: visualization);
         }
 
         private void EmitLine()
@@ -573,6 +588,7 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
                 _currentLayer!.ExtrusionLengthMm += distance;
                 _currentLayer.TimeSeconds += distance / speed;
                 _currentLayer.FilamentLengthMm += extrusionDelta;
+                SampleToolpath(previousX, previousY, _x, _y, pathType);
 
                 UpdateBounds(previousX, previousY);
                 UpdateBounds(_x, _y);
@@ -679,6 +695,103 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
             _minY = Math.Min(_minY, y);
             _maxY = Math.Max(_maxY, y);
         }
+
+        private void SampleToolpath(double x1, double y1, double x2, double y2, string pathType)
+        {
+            var layer = _currentLayer!;
+            var sequence = ++_sourceToolpathSegments;
+            var layerSequence = ++layer.SourceSegmentCount;
+            if (!ShouldKeepVisualizationSegment(sequence, layerSequence))
+            {
+                return;
+            }
+
+            while (_sampledToolpathSegments >= _options.MaxVisualizationSegments)
+            {
+                _toolpathSamplingStride = checked(_toolpathSamplingStride * 2);
+                CompactVisualizationSegments();
+                if (!ShouldKeepVisualizationSegment(sequence, layerSequence))
+                {
+                    return;
+                }
+            }
+
+            layer.ToolpathSegments.Add(new ToolpathSegment(
+                sequence,
+                layerSequence,
+                x1,
+                y1,
+                x2,
+                y2,
+                PathTypeIndex(pathType)));
+            _sampledToolpathSegments++;
+        }
+
+        private bool ShouldKeepVisualizationSegment(long sequence, long layerSequence) =>
+            layerSequence == 1 || ((sequence - 1) % _toolpathSamplingStride) == 0;
+
+        private void CompactVisualizationSegments()
+        {
+            var retained = 0;
+            foreach (var layer in _layers)
+            {
+                layer.ToolpathSegments.RemoveAll(segment =>
+                    !ShouldKeepVisualizationSegment(segment.Sequence, segment.LayerSequence));
+                retained += layer.ToolpathSegments.Count;
+            }
+
+            _sampledToolpathSegments = retained;
+        }
+
+        private GCodeToolpathVisualization BuildVisualization(CancellationToken ct)
+        {
+            var payload = new byte[checked(_sampledToolpathSegments * ToolpathRecordStrideBytes)];
+            var layers = new List<GCodeToolpathLayer>(_layers.Count);
+            var segmentOffset = 0;
+            for (var index = 0; index < _layers.Count; index++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var layer = _layers[index];
+                var layerOffset = segmentOffset;
+                foreach (var segment in layer.ToolpathSegments)
+                {
+                    var record = payload.AsSpan(segmentOffset * ToolpathRecordStrideBytes, ToolpathRecordStrideBytes);
+                    BinaryPrimitives.WriteSingleLittleEndian(record, (float)(segment.X1 - _offset));
+                    BinaryPrimitives.WriteSingleLittleEndian(record[4..], (float)(segment.Y1 - _offset));
+                    BinaryPrimitives.WriteSingleLittleEndian(record[8..], (float)(segment.X2 - _offset));
+                    BinaryPrimitives.WriteSingleLittleEndian(record[12..], (float)(segment.Y2 - _offset));
+                    BinaryPrimitives.WriteInt32LittleEndian(record[16..], segment.PathTypeIndex);
+                    segmentOffset++;
+                }
+
+                layers.Add(new GCodeToolpathLayer(
+                    index,
+                    layer.SourceSegmentCount,
+                    layerOffset,
+                    layer.ToolpathSegments.Count));
+            }
+
+            return new GCodeToolpathVisualization(
+                Encoding: "forgex-toolpath-f32le-v1",
+                RecordStrideBytes: ToolpathRecordStrideBytes,
+                SourceSegmentCount: _sourceToolpathSegments,
+                SegmentCount: _sampledToolpathSegments,
+                Truncated: _sampledToolpathSegments < _sourceToolpathSegments,
+                SamplingStride: _toolpathSamplingStride,
+                PathTypes: GCodeReadOnly.List(ToolpathTypes),
+                Layers: GCodeReadOnly.List(layers),
+                Data: payload);
+        }
+
+        private static int PathTypeIndex(string pathType) => pathType switch
+        {
+            "perimeter" => 0,
+            "solid" => 1,
+            "infill" => 2,
+            "support" => 3,
+            "skirt" => 4,
+            _ => 2,
+        };
 
         private void ReadClaims(string line)
         {
@@ -968,7 +1081,18 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
             public double TimeSeconds { get; set; }
             public double FilamentLengthMm { get; set; }
             public Dictionary<string, long> PathTypeCounts { get; } = new(StringComparer.Ordinal);
+            public long SourceSegmentCount { get; set; }
+            public List<ToolpathSegment> ToolpathSegments { get; } = [];
         }
+
+        private readonly record struct ToolpathSegment(
+            long Sequence,
+            long LayerSequence,
+            double X1,
+            double Y1,
+            double X2,
+            double Y2,
+            int PathTypeIndex);
     }
 
     [GeneratedRegex(@"^;\s*TYPE\s*:\s*(.+)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]

@@ -2,6 +2,7 @@ import { detectRuntimeMode } from "../../app/runtime/runtime-mode";
 import { createNodeRequestInit, resolveNodeApiBase } from "../../app/api/api-adapter";
 import { forgeXApiOperations, type GCodeAnalysisResponse } from "../../generated/forgex-api";
 import type { GcodeParseOptions, GcodePreviewResult } from "./gcode-types";
+import { validateAuthorityToolpath } from "./authority-toolpath";
 
 export type GcodeAuthorityMode = "browser" | "shadow" | "dotnet";
 export type GcodeAuthorityStatus = "idle" | "running" | "done" | "error";
@@ -152,6 +153,12 @@ function requireNonNegativeFinite(record: Record<string, unknown>, key: string, 
   return value;
 }
 
+function requireBoolean(record: Record<string, unknown>, key: string): boolean {
+  const value = record[key];
+  if (typeof value !== "boolean") throw new Error(`C# 权威结果字段 ${key} 类型无效`);
+  return value;
+}
+
 export function parseAuthorityResponse(value: unknown): AuthorityAnalysisResponse {
   const root = requireRecord(value, "root");
   const engine = requireRecord(root.engine, "engine");
@@ -215,6 +222,96 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
       pathTypeCounts,
     };
   });
+  const rawVisualization = requireRecord(root.visualization, "visualization");
+  const encoding = requireString(rawVisualization, "encoding");
+  const recordStrideBytes = requireNonNegativeInteger(rawVisualization, "recordStrideBytes");
+  const sourceSegmentCount = requireNonNegativeInteger(rawVisualization, "sourceSegmentCount");
+  const segmentCount = requireNonNegativeInteger(rawVisualization, "segmentCount");
+  const samplingStride = requireNonNegativeInteger(rawVisualization, "samplingStride");
+  const dataBase64 = requireString(rawVisualization, "dataBase64");
+  if (encoding !== "forgex-toolpath-f32le-v1" || recordStrideBytes !== 20 || segmentCount > 100_000) {
+    throw new Error("C# 权威结果契约不一致：visualization 编码或预算无效");
+  }
+  if (samplingStride < 1 || sourceSegmentCount < segmentCount) {
+    throw new Error("C# 权威结果契约不一致：visualization 计数无效");
+  }
+  const truncated = requireBoolean(rawVisualization, "truncated");
+  if (truncated !== segmentCount < sourceSegmentCount) {
+    throw new Error("C# 权威结果契约不一致：visualization.truncated 不一致");
+  }
+  if (
+    !Array.isArray(rawVisualization.pathTypes) ||
+    rawVisualization.pathTypes.length === 0 ||
+    rawVisualization.pathTypes.length > 16
+  ) {
+    throw new Error("C# 权威结果契约不一致：visualization.pathTypes 结构无效");
+  }
+  const pathTypes = rawVisualization.pathTypes.map((value, index) => {
+    if (typeof value !== "string" || value.length === 0 || value.length > 40) {
+      throw new Error(`C# 权威结果契约不一致：visualization.pathTypes[${index}] 类型无效`);
+    }
+    return value;
+  });
+  if (new Set(pathTypes).size !== pathTypes.length) {
+    throw new Error("C# 权威结果契约不一致：visualization.pathTypes 存在重复值");
+  }
+  if (!Array.isArray(rawVisualization.layers) || rawVisualization.layers.length !== totalLayers) {
+    throw new Error("C# 权威结果契约不一致：visualization.layers 结构无效");
+  }
+  let expectedOffset = 0;
+  let countedSourceSegments = 0;
+  const visualizationLayers = rawVisualization.layers.map((value, index) => {
+    const layer = requireRecord(value, `visualization.layers[${index}]`);
+    const actualIndex = requireNonNegativeInteger(layer, "index", `visualization.layers[${index}].index`);
+    const layerSourceSegments = requireNonNegativeInteger(
+      layer,
+      "sourceSegmentCount",
+      `visualization.layers[${index}].sourceSegmentCount`
+    );
+    const segmentOffset = requireNonNegativeInteger(
+      layer,
+      "segmentOffset",
+      `visualization.layers[${index}].segmentOffset`
+    );
+    const layerSegmentCount = requireNonNegativeInteger(
+      layer,
+      "segmentCount",
+      `visualization.layers[${index}].segmentCount`
+    );
+    if (actualIndex !== index || segmentOffset !== expectedOffset || layerSegmentCount > layerSourceSegments) {
+      throw new Error(`C# 权威结果契约不一致：visualization.layers[${index}] 切片无效`);
+    }
+    expectedOffset += layerSegmentCount;
+    countedSourceSegments += layerSourceSegments;
+    return {
+      index: actualIndex,
+      sourceSegmentCount: layerSourceSegments,
+      segmentOffset,
+      segmentCount: layerSegmentCount,
+    };
+  });
+  if (expectedOffset !== segmentCount || countedSourceSegments !== sourceSegmentCount) {
+    throw new Error("C# 权威结果契约不一致：visualization 层切片计数不一致");
+  }
+  const expectedBase64Length = 4 * Math.ceil((segmentCount * recordStrideBytes) / 3);
+  if (
+    dataBase64.length !== expectedBase64Length ||
+    (dataBase64.length > 0 && !/^[A-Za-z0-9+/]*={0,2}$/.test(dataBase64))
+  ) {
+    throw new Error("C# 权威结果契约不一致：visualization.dataBase64 长度或编码无效");
+  }
+  const visualization = {
+    encoding,
+    recordStrideBytes,
+    sourceSegmentCount,
+    segmentCount,
+    truncated,
+    samplingStride,
+    pathTypes,
+    layers: visualizationLayers,
+    dataBase64,
+  } as const;
+  validateAuthorityToolpath(visualization);
   return {
     schemaVersion,
     engine: { version: requireString(engine, "version"), source: requireString(engine, "source") },
@@ -253,6 +350,7 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
       maxY: requireFinite(bounds, "maxY"),
     },
     layers,
+    visualization,
     claims: Object.fromEntries(
       Object.entries(claims).filter((entry): entry is [string, string] => typeof entry[1] === "string")
     ),

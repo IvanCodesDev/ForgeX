@@ -34,6 +34,34 @@ function sha256(bytes) {
   return crypto.createHash("sha256").update(bytes).digest("hex");
 }
 
+function validatePackedToolpath(result, label) {
+  const visualization = result?.visualization;
+  if (
+    visualization?.encoding !== "forgex-toolpath-f32le-v1" ||
+    visualization.recordStrideBytes !== 20 ||
+    visualization.layers?.length !== result.layers?.length
+  ) {
+    throw new Error(`${label} packed toolpath contract mismatch`);
+  }
+  const payload = Buffer.from(visualization.dataBase64, "base64");
+  if (
+    payload.length !== visualization.segmentCount * visualization.recordStrideBytes ||
+    visualization.layers.reduce((total, layer) => total + layer.segmentCount, 0) !== visualization.segmentCount ||
+    visualization.layers.reduce((total, layer) => total + layer.sourceSegmentCount, 0) !==
+      visualization.sourceSegmentCount
+  ) {
+    throw new Error(`${label} packed toolpath counts mismatch`);
+  }
+  for (let index = 0; index < visualization.segmentCount; index += 1) {
+    const offset = index * visualization.recordStrideBytes;
+    const coordinates = [0, 4, 8, 12].map((coordinate) => payload.readFloatLE(offset + coordinate));
+    const pathTypeIndex = payload.readInt32LE(offset + 16);
+    if (coordinates.some((value) => !Number.isFinite(value)) || !visualization.pathTypes[pathTypeIndex]) {
+      throw new Error(`${label} packed toolpath record ${index} mismatch`);
+    }
+  }
+}
+
 async function request(url, init = {}, timeoutMs = 10_000) {
   return fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
 }
@@ -179,6 +207,7 @@ async function main() {
       throw new Error(`sync analysis returned ${syncResponse.status}: ${await syncResponse.text()}`);
     const syncResult = await syncResponse.json();
     if (syncResult.input.sha256 !== sha256(gcode)) throw new Error("sync analysis raw-byte SHA mismatch");
+    validatePackedToolpath(syncResult, "sync analysis");
 
     const createUrl = `${baseUrl}${operationPaths.get("createGCodeAnalysisJob")}?${query}`;
     const untrustedCreate = await request(createUrl, {
@@ -242,6 +271,7 @@ async function main() {
           `stdout=${stdout.join("")}\nstderr=${stderr.join("")}`
       );
     }
+    validatePackedToolpath(snapshot.result, "async analysis");
 
     await waitForTerminal(baseUrl, acceptedB.links.status, callerB);
     await readTerminalSse(baseUrl + accepted.links.events, callerA);
@@ -288,6 +318,11 @@ async function main() {
 
     console.log(`OpenAPI runtime gate PASS: ${Object.keys(document.paths).length} paths`);
     console.log(`canonicalSha256=${sha256(canonical)}`);
+    console.log(
+      `engine=${syncResult.engine.version} toolpath=${syncResult.visualization.segmentCount}/${syncResult.visualization.sourceSegmentCount} ` +
+        `stride=${syncResult.visualization.samplingStride} payloadBytes=${Buffer.from(syncResult.visualization.dataBase64, "base64").length} ` +
+        `layers=${syncResult.visualization.layers.length} encoding=${syncResult.visualization.encoding}`
+    );
     console.log(
       `jobId=${accepted.jobId} status=${snapshot.status} sse=terminal tenantIsolation=pass metrics=pass jsonLogs=pass`
     );

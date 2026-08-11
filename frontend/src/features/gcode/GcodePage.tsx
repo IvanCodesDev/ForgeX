@@ -4,6 +4,7 @@ import { MachineLogPanel } from "../machine-logs/MachineLogPanel";
 import type { GcodeReconciliationPlan } from "../machine-logs/machine-log-types";
 import { ProfileSelector } from "../profiles/ProfileSelector";
 import { useProfileSelection } from "../profiles/useProfileSelection";
+import { decodeAuthorityToolpathLayer } from "./authority-toolpath";
 import { selectEffectiveSummary } from "./gcode-authority";
 import type { GcodeParseOptions } from "./gcode-types";
 import { useGcodeAuthority } from "./useGcodeAuthority";
@@ -56,6 +57,19 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
   const result = state.result;
   const authority = useGcodeAuthority(file, submittedOptions, result);
   const layer = result?.layers[selectedLayer] ?? null;
+  const authorityToolpathActive = Boolean(
+    authority.mode === "dotnet" && authority.status === "done" && authority.result
+  );
+  const authorityLayer = useMemo(
+    () =>
+      authorityToolpathActive && authority.result
+        ? decodeAuthorityToolpathLayer(authority.result, selectedLayer)
+        : null,
+    [authority.result, authorityToolpathActive, selectedLayer]
+  );
+  const visualizationLayerCount = authorityToolpathActive
+    ? (authority.result?.visualization.layers.length ?? 0)
+    : (result?.layers.length ?? 0);
   const effectiveSummary = selectEffectiveSummary(authority.mode, authority.status, result, authority.result);
   const primaryWarnings =
     effectiveSummary?.provenance === "dotnet-authority"
@@ -109,7 +123,7 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
     return "浏览器即时预览（非权威）";
   })();
 
-  useEffect(() => setSelectedLayer(0), [result]);
+  useEffect(() => setSelectedLayer(0), [result?.sha256, authorityToolpathActive, authority.result?.input.sha256]);
 
   const acceptFile = (next: File | null) => {
     if (!next || !options) return;
@@ -202,7 +216,7 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
               <code>{authority.diff.sha256Matches ? "match" : "mismatch"}</code>
             </p>
             <p>
-              <span>契约 / 输入 / 参数 / Profile / 层计划</span>
+              <span>契约 / 输入 / 参数 / Profile / 层计划 / 工具路径</span>
               <code>
                 {authority.diff.engineMatches &&
                 authority.diff.contractMatches &&
@@ -236,6 +250,14 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
                 {authority.diff.layerPlanMatches
                   ? `${authority.result.layers.length} layers match`
                   : `${authority.diff.layerMismatchCount} layers mismatch`}
+              </code>
+            </p>
+            <p>
+              <span>权威工具路径</span>
+              <code>
+                {authority.result.visualization.encoding} · {authority.result.visualization.segmentCount} /{" "}
+                {authority.result.visualization.sourceSegmentCount} segments · stride{" "}
+                {authority.result.visualization.samplingStride}
               </code>
             </p>
             <p>
@@ -418,13 +440,16 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
         />
       ) : null}
 
-      {result ? (
+      {result || authorityToolpathActive ? (
         <section className="panel gcode-result">
           <div className="viewer-toolbar">
             <div>
-              <p className="eyebrow">BROWSER LAYER VISUALIZATION SAMPLE</p>
+              <p className="eyebrow">
+                {authorityToolpathActive ? "C# PACKED TOOLPATH / THREE.JS" : "BROWSER LAYER VISUALIZATION SAMPLE"}
+              </p>
               <h2>
-                浏览器可视化抽样 · 第 {selectedLayer + 1} / {result.totalLayers} 层
+                {authorityToolpathActive ? "C# 有界工具路径" : "浏览器可视化抽样"} · 第 {selectedLayer + 1} /{" "}
+                {visualizationLayerCount} 层
               </h2>
             </div>
             <label>
@@ -432,7 +457,7 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
               <input
                 type="range"
                 min="0"
-                max={Math.max(0, result.layers.length - 1)}
+                max={Math.max(0, visualizationLayerCount - 1)}
                 value={selectedLayer}
                 onInput={(event) => setSelectedLayer(Number(event.currentTarget.value))}
               />
@@ -445,21 +470,35 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
               </div>
             }
           >
-            <GcodeViewer layer={layer} bounds={effectiveSummary?.bounds ?? result.bounds} />
+            <GcodeViewer
+              layer={authorityToolpathActive ? null : layer}
+              authorityLayer={authorityLayer}
+              bounds={effectiveSummary?.bounds ?? result?.bounds ?? null}
+            />
           </Suspense>
           <div className="gcode-evidence">
             <p>
-              <span>浏览器抽样层</span>
+              <span>{authorityToolpathActive ? "C# 工具路径层" : "浏览器抽样层"}</span>
               <code>
-                Z {number(layer?.z ?? 0)} mm · {layer?.sourcePathCount ?? 0} paths · {layer?.sourcePointCount ?? 0}{" "}
-                points
+                Z {number(authorityLayer?.z ?? layer?.z ?? 0)} mm ·{" "}
+                {authorityLayer?.sourcePathCount ?? layer?.sourcePathCount ?? 0} paths ·{" "}
+                {authorityToolpathActive
+                  ? `${number(authorityLayer?.sourceSegmentCount ?? 0, 0)} source segments`
+                  : `${number(layer?.sourcePointCount ?? 0, 0)} points`}
               </code>
             </p>
             <p>
               <span>预览预算</span>
               <code>
-                {number(result.previewSegments, 0)} / {number(result.sourceSegments, 0)} segments
-                {result.previewTruncated ? " · browser sampled" : " · browser complete"}
+                {authorityToolpathActive
+                  ? `${number(authority.result?.visualization.segmentCount ?? 0, 0)} / ${number(
+                      authority.result?.visualization.sourceSegmentCount ?? 0,
+                      0
+                    )} segments${authority.result?.visualization.truncated ? " · C# bounded" : " · C# complete"}`
+                  : `${number(result?.previewSegments ?? 0, 0)} / ${number(
+                      result?.sourceSegments ?? 0,
+                      0
+                    )} segments${result?.previewTruncated ? " · browser sampled" : " · browser complete"}`}
               </code>
             </p>
           </div>

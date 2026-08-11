@@ -1,0 +1,19 @@
+  ForgeX.Domain -> E:\Projects\3dprint\backend\src\ForgeX.Domain\bin\Release\net10.0\ForgeX.Domain.dll
+  ForgeX.Application -> E:\Projects\3dprint\backend\src\ForgeX.Application\bin\Release\net10.0\ForgeX.Application.dll
+  ForgeX.Simulation -> E:\Projects\3dprint\backend\src\ForgeX.Simulation\bin\Release\net10.0\ForgeX.Simulation.dll
+  ForgeX.Infrastructure -> E:\Projects\3dprint\backend\src\ForgeX.Infrastructure\bin\Release\net10.0\ForgeX.Infrastructure.dll
+  ForgeX.Contracts -> E:\Projects\3dprint\backend\src\ForgeX.Contracts\bin\Release\net10.0\ForgeX.Contracts.dll
+  ForgeX.Analytics -> E:\Projects\3dprint\backend\src\ForgeX.Analytics\bin\Release\net10.0\ForgeX.Analytics.dll
+  ForgeX.Api -> E:\Projects\3dprint\backend\src\ForgeX.Api\bin\Release\net10.0\ForgeX.Api.dll
+  ForgeX.GoldenDiff -> E:\Projects\3dprint\backend\tests\ForgeX.GoldenDiff\bin\Release\net10.0\ForgeX.GoldenDiff.dll
+  ForgeX.JobGate -> E:\Projects\3dprint\backend\tests\ForgeX.JobGate\bin\Release\net10.0\ForgeX.JobGate.dll
+  ForgeX.PersistenceTool -> E:\Projects\3dprint\backend\tools\ForgeX.PersistenceTool\bin\Release\net10.0\ForgeX.PersistenceTool.dll
+  ForgeX.PersistenceGate -> E:\Projects\3dprint\backend\tests\ForgeX.PersistenceGate\bin\Release\net10.0\ForgeX.PersistenceGate.dll
+  ForgeX.AnalyticsGate -> E:\Projects\3dprint\backend\tests\ForgeX.AnalyticsGate\bin\Release\net10.0\ForgeX.AnalyticsGate.dll
+  ForgeX.GCodeBenchmark -> E:\Projects\3dprint\backend\tests\ForgeX.GCodeBenchmark\bin\Release\net10.0\ForgeX.GCodeBenchmark.dll
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:01.24
