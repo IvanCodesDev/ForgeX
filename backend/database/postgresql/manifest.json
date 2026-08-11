@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "engine": "postgresql",
+  "minimumMajorVersion": 15,
+  "migrations": [
+    {
+      "version": 1,
+      "name": "gcode_jobs",
+      "file": "migrations/0001_gcode_jobs.sql",
+      "sha256": "e89ee97a3844fee1f452d0234ca690639fc681f432900bbfce3980b2143c22b3",
+      "transactional": true,
+      "rollbackPolicy": "retain-schema"
+    }
+  ]
+}

@@ -124,6 +124,12 @@ jobs:
       - name: 异步作业存储、幂等与队列门禁
         run: node tools/run-dotnet.js run --project backend/tests/ForgeX.JobGate/ForgeX.JobGate.csproj --configuration Release --no-build
 
+      - name: PostgreSQL 迁移契约门禁
+        run: npm run postgres:migrations:check
+
+      - name: 文件仓库备份、校验与恢复演练
+        run: node tools/run-dotnet.js run --project backend/tests/ForgeX.PersistenceGate/ForgeX.PersistenceGate.csproj --configuration Release --no-build
+
       - uses: actions/upload-artifact@v4
         with:
           name: gcode-golden-diff-dotnet-10.0.302
@@ -135,6 +141,15 @@ jobs:
         with:
           name: gcode-job-gate-dotnet-10.0.302
           path: backend/artifacts/gcode-job-gate.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: persistence-recovery-dotnet-10.0.302
+          path: |
+            backend/artifacts/persistence-recovery-gate.json
+            backend/artifacts/persistence-recovery-gate.fxbackup
           if-no-files-found: error
           retention-days: 14
 

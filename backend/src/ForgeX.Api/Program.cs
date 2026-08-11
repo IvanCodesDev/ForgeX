@@ -12,9 +12,15 @@ const long MaxGCodeBytes = 64L * 1024 * 1024;
 
 var builder = WebApplication.CreateBuilder(args);
 var internalSharedSecret = builder.Configuration["InternalAuth:SharedSecret"] ?? string.Empty;
+var persistenceProvider = builder.Configuration["Persistence:Provider"] ?? "file";
 if (!string.IsNullOrEmpty(internalSharedSecret) && Encoding.UTF8.GetByteCount(internalSharedSecret) < 32)
 {
     throw new InvalidOperationException("InternalAuth:SharedSecret must contain at least 32 UTF-8 bytes.");
+}
+if (!string.Equals(persistenceProvider, "file", StringComparison.OrdinalIgnoreCase))
+{
+    throw new InvalidOperationException(
+        "Persistence:Provider currently supports only 'file'. The versioned PostgreSQL schema is staged but its runtime driver is not active.");
 }
 
 builder.WebHost.ConfigureKestrel(options =>
@@ -47,7 +53,9 @@ if (allowedOrigins.Length > 0)
 builder.Services.AddSingleton<IGCodeAnalyzer, StreamingGCodeAnalyzer>();
 var storageRoot = Path.GetFullPath(builder.Configuration["Storage:Root"] ?? "data/dotnet-preview", builder.Environment.ContentRootPath);
 builder.Services.AddSingleton<IContentObjectStore>(_ => new ContentAddressedObjectStore(Path.Combine(storageRoot, "objects")));
-builder.Services.AddSingleton<IGCodeJobRepository>(_ => new FileGCodeJobRepository(Path.Combine(storageRoot, "jobs")));
+builder.Services.AddSingleton(_ => new FileGCodeJobRepository(Path.Combine(storageRoot, "jobs")));
+builder.Services.AddSingleton<IGCodeJobRepository>(static services => services.GetRequiredService<FileGCodeJobRepository>());
+builder.Services.AddSingleton<IGCodeJobRepositoryMaintenance>(static services => services.GetRequiredService<FileGCodeJobRepository>());
 builder.Services.AddSingleton<IGCodeJobQueue>(_ => new GCodeJobQueue());
 builder.Services.AddSingleton<GCodeJobRuntime>();
 builder.Services.AddSingleton<GCodeJobWorker>();
@@ -135,10 +143,11 @@ app.MapGet("/health/live", () => Results.Ok(new HealthResponse(
     .WithName("GetLiveness")
     .Produces<HealthResponse>();
 
-app.MapGet("/health/ready", async (IGCodeAnalyzer analyzer, IContentObjectStore objects, IGCodeJobQueue queue, GCodeJobWorker worker, CancellationToken ct) =>
+app.MapGet("/health/ready", async (IGCodeAnalyzer analyzer, IContentObjectStore objects, IGCodeJobRepositoryMaintenance jobs, IGCodeJobQueue queue, GCodeJobWorker worker, CancellationToken ct) =>
     {
         var writable = await objects.ProbeWritableAsync(ct);
-        var ready = writable && queue.IsAccepting && worker.Started;
+        var repository = await jobs.ProbeAsync(ct);
+        var ready = writable && repository.Ready && queue.IsAccepting && worker.Started;
         var response = new HealthResponse(
             ready ? "ready" : "not_ready",
             "forgex-authoritative-api",
@@ -148,6 +157,9 @@ app.MapGet("/health/ready", async (IGCodeAnalyzer analyzer, IContentObjectStore 
             {
                 ["gcodeAnalyzer"] = analyzer.GetType().Name,
                 ["objectStore"] = writable ? "writable" : "unavailable",
+                ["jobRepository"] = repository.Ready ? repository.Provider : repository.ErrorCode ?? "unavailable",
+                ["jobRepositorySchema"] = repository.SchemaVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["jobRepositoryRecords"] = repository.RecordCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["jobQueue"] = queue.IsAccepting ? "accepting" : "closed",
                 ["jobWorker"] = worker.Started ? "started" : "starting",
                 ["callerContext"] = string.IsNullOrEmpty(internalSharedSecret) ? "local-development" : "trusted-node",

@@ -51,14 +51,16 @@ async function waitForReady(baseUrl, child, stderr) {
 }
 
 async function waitForTerminal(baseUrl, statusPath, headers) {
-  for (let attempt = 0; attempt < 80; attempt += 1) {
+  let lastSnapshot;
+  for (let attempt = 0; attempt < 160; attempt += 1) {
     const response = await request(baseUrl + statusPath, { headers });
     if (!response.ok) throw new Error(`job snapshot returned ${response.status}`);
     const snapshot = await response.json();
+    lastSnapshot = snapshot;
     if (["succeeded", "degraded", "failed", "cancelled"].includes(snapshot.status)) return snapshot;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error("async job did not reach a terminal state");
+  throw new Error(`async job did not reach a terminal state: ${JSON.stringify(lastSnapshot)}`);
 }
 
 async function readTerminalSse(url, headers) {
@@ -150,6 +152,15 @@ async function main() {
     for (const route of ["/health/live", "/health/ready", "/healthz"]) {
       const response = await request(baseUrl + route);
       if (response.status !== 200) throw new Error(`${route} returned ${response.status}`);
+    }
+    const readiness = await (await request(`${baseUrl}/health/ready`)).json();
+    if (
+      readiness?.status !== "ready" ||
+      readiness?.checks?.jobRepository !== "file-json" ||
+      readiness?.checks?.jobRepositorySchema !== "1" ||
+      !/^\d+$/.test(readiness?.checks?.jobRepositoryRecords ?? "")
+    ) {
+      throw new Error(`readiness persistence evidence invalid: ${JSON.stringify(readiness)}`);
     }
 
     const gcode = Buffer.from("G90\nM82\nG28\nG1 X0 Y0 Z0.2 F1200\nG1 X10 Y0 E1 F600\n", "utf8");

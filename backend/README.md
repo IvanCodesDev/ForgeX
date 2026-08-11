@@ -18,6 +18,8 @@ The local SDK is discovered by `tools/run-dotnet.js`. CI may use a system SDK wi
 ```text
 npm run dotnet:build
 npm run dotnet:golden
+npm run dotnet:jobs
+npm run dotnet:persistence
 npm run dotnet:api
 ```
 
@@ -40,6 +42,25 @@ loopback sidecar boundary. Missing or invalid internal authentication is rejecte
 cross-tenant status, SSE, and cancellation requests return the same not-found response. An empty
 secret keeps the explicit `tn_local` / `ow_local` development scope for direct local smoke tests.
 
+## Persistence and recovery
+
+`Persistence:Provider=file` remains the only active runtime provider in this slice. The file job
+repository now exposes a readiness probe plus a versioned `forgex-gcode-job-backup/v1` archive.
+Archives contain a manifest, tenant/owner metadata, raw job JSON, and a SHA-256 for every entry.
+Restore validates the complete archive before writing and accepts only a new or empty target.
+
+```text
+node tools/run-dotnet.js run --project backend/tools/ForgeX.PersistenceTool/ForgeX.PersistenceTool.csproj -- backup --source data/dotnet-preview/jobs --output backup/jobs.fxbackup
+node tools/run-dotnet.js run --project backend/tools/ForgeX.PersistenceTool/ForgeX.PersistenceTool.csproj -- verify --input backup/jobs.fxbackup
+node tools/run-dotnet.js run --project backend/tools/ForgeX.PersistenceTool/ForgeX.PersistenceTool.csproj -- restore --input backup/jobs.fxbackup --target data/restore-drill/jobs
+```
+
+`backend/database/postgresql/manifest.json` pins the forward-only PostgreSQL v1 schema by SHA-256.
+`npm run postgres:migrations:check` validates ordering, transaction boundaries, tenant/owner keys,
+idempotency uniqueness, event storage, row-level security, and the absence of destructive DDL. The
+schema is deployment-ready, but selecting `Persistence:Provider=postgresql` fails fast until a
+pinned runtime driver and a real PostgreSQL integration environment are added.
+
 ## Rollback boundary
 
-The old page remains at `/`, the React page remains at `/react/`, and the default G-code authority remains the browser. Rollback therefore builds React with `VITE_REACT_GCODE_ENABLED=0` and `VITE_GCODE_AUTHORITY=browser`, clears `GCODE_AUTHORITY_URL`, and stops the .NET process. The gateway route may remain deployed: while unconfigured it returns a structured `503` and receives no requests from the rolled-back UI. No Node data migration is required for this slice.
+The old page remains at `/`, the React page remains at `/react/`, and the default G-code authority remains the browser. Rollback therefore builds React with `VITE_REACT_GCODE_ENABLED=0` and `VITE_GCODE_AUTHORITY=browser`, clears `GCODE_AUTHORITY_URL`, and stops the .NET process. The gateway route may remain deployed: while unconfigured it returns a structured `503` and receives no requests from the rolled-back UI. Keep the file-job backup and any applied PostgreSQL expand migration during the rollback window; no Node data migration is required for this slice.

@@ -5,7 +5,7 @@ using ForgeX.Domain;
 
 namespace ForgeX.Infrastructure;
 
-public sealed class FileGCodeJobRepository : IGCodeJobRepository
+public sealed partial class FileGCodeJobRepository : IGCodeJobRepository, IGCodeJobRepositoryMaintenance
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
