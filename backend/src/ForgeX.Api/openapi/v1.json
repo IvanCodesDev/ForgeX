@@ -87,6 +87,66 @@
             }
           },
           {
+            "name": "materialPriceCnyPerKg",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 5000,
+              "default": 0
+            }
+          },
+          {
+            "name": "nozzleTemperatureMinC",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 500,
+              "default": 0
+            }
+          },
+          {
+            "name": "nozzleTemperatureMaxC",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 500,
+              "default": 500
+            }
+          },
+          {
+            "name": "bedTemperatureMinC",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 200,
+              "default": 0
+            }
+          },
+          {
+            "name": "materialMaxSpeedMmPerSecond",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 5,
+              "maximum": 1000,
+              "default": 1000
+            }
+          },
+          {
+            "name": "materialMaxFlowMm3PerSecond",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0.2,
+              "maximum": 100,
+              "default": 100
+            }
+          },
+          {
             "name": "machineProfileId",
             "in": "query",
             "schema": {
@@ -189,6 +249,66 @@
               "exclusiveMinimum": 0,
               "maximum": 20,
               "default": 1.24
+            }
+          },
+          {
+            "name": "materialPriceCnyPerKg",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 5000,
+              "default": 0
+            }
+          },
+          {
+            "name": "nozzleTemperatureMinC",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 500,
+              "default": 0
+            }
+          },
+          {
+            "name": "nozzleTemperatureMaxC",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 500,
+              "default": 500
+            }
+          },
+          {
+            "name": "bedTemperatureMinC",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 200,
+              "default": 0
+            }
+          },
+          {
+            "name": "materialMaxSpeedMmPerSecond",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 5,
+              "maximum": 1000,
+              "default": 1000
+            }
+          },
+          {
+            "name": "materialMaxFlowMm3PerSecond",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0.2,
+              "maximum": 100,
+              "default": 100
             }
           },
           {
@@ -531,7 +651,9 @@
           "visualization",
           "claims",
           "pathTypeCounts",
-          "warnings"
+          "warnings",
+          "material",
+          "risk"
         ],
         "properties": {
           "schemaVersion": {
@@ -565,7 +687,13 @@
             "required": [
               "bedSizeMm",
               "coordinateOrigin",
-              "filamentDensityGPerCm3"
+              "filamentDensityGPerCm3",
+              "materialPriceCnyPerKg",
+              "nozzleTemperatureMinC",
+              "nozzleTemperatureMaxC",
+              "bedTemperatureMinC",
+              "materialMaxSpeedMmPerSecond",
+              "materialMaxFlowMm3PerSecond"
             ],
             "properties": {
               "bedSizeMm": {
@@ -579,6 +707,24 @@
                 ]
               },
               "filamentDensityGPerCm3": {
+                "type": "number"
+              },
+              "materialPriceCnyPerKg": {
+                "type": "number"
+              },
+              "nozzleTemperatureMinC": {
+                "type": "number"
+              },
+              "nozzleTemperatureMaxC": {
+                "type": "number"
+              },
+              "bedTemperatureMinC": {
+                "type": "number"
+              },
+              "materialMaxSpeedMmPerSecond": {
+                "type": "number"
+              },
+              "materialMaxFlowMm3PerSecond": {
                 "type": "number"
               }
             },
@@ -689,6 +835,12 @@
           },
           "visualization": {
             "$ref": "#/components/schemas/GCodeToolpathVisualization"
+          },
+          "material": {
+            "$ref": "#/components/schemas/GCodeMaterialEstimate"
+          },
+          "risk": {
+            "$ref": "#/components/schemas/GCodeRiskAssessment"
           }
         },
         "additionalProperties": false
@@ -1466,7 +1618,13 @@
           "bedSizeMm",
           "coordinateOrigin",
           "filamentDensityGPerCm3",
-          "fingerprint"
+          "fingerprint",
+          "materialPriceCnyPerKg",
+          "nozzleTemperatureMinC",
+          "nozzleTemperatureMaxC",
+          "bedTemperatureMinC",
+          "materialMaxSpeedMmPerSecond",
+          "materialMaxFlowMm3PerSecond"
         ],
         "properties": {
           "machineProfileId": {
@@ -1491,6 +1649,24 @@
           "fingerprint": {
             "type": "string",
             "pattern": "^[a-f0-9]{64}$"
+          },
+          "materialPriceCnyPerKg": {
+            "type": "number"
+          },
+          "nozzleTemperatureMinC": {
+            "type": "number"
+          },
+          "nozzleTemperatureMaxC": {
+            "type": "number"
+          },
+          "bedTemperatureMinC": {
+            "type": "number"
+          },
+          "materialMaxSpeedMmPerSecond": {
+            "type": "number"
+          },
+          "materialMaxFlowMm3PerSecond": {
+            "type": "number"
           }
         },
         "additionalProperties": false
@@ -1634,6 +1810,152 @@
             "type": "string",
             "contentEncoding": "base64",
             "maxLength": 2666668
+          }
+        },
+        "additionalProperties": false
+      },
+      "GCodeMaterialEstimate": {
+        "type": "object",
+        "required": [
+          "materialProfileId",
+          "filamentDiameterMm",
+          "densityGPerCm3",
+          "volumeCm3",
+          "filamentLengthM",
+          "filamentMassG",
+          "priceCnyPerKg",
+          "materialCostCny"
+        ],
+        "properties": {
+          "materialProfileId": {
+            "type": "string"
+          },
+          "filamentDiameterMm": {
+            "type": "number"
+          },
+          "densityGPerCm3": {
+            "type": "number"
+          },
+          "volumeCm3": {
+            "type": "number"
+          },
+          "filamentLengthM": {
+            "type": "number"
+          },
+          "filamentMassG": {
+            "type": "number"
+          },
+          "priceCnyPerKg": {
+            "type": "number"
+          },
+          "materialCostCny": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      },
+      "GCodeRiskFinding": {
+        "type": "object",
+        "required": [
+          "code",
+          "severity",
+          "message",
+          "observed",
+          "minimum",
+          "maximum",
+          "unit"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "observed": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "minimum": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "maximum": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "GCodeRiskAssessment": {
+        "type": "object",
+        "required": [
+          "level",
+          "score",
+          "nozzleTemperatureC",
+          "bedTemperatureC",
+          "maxExtrusionSpeedMmPerSecond",
+          "maxVolumetricFlowMm3PerSecond",
+          "findings"
+        ],
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "score": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "nozzleTemperatureC": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "bedTemperatureC": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "maxExtrusionSpeedMmPerSecond": {
+            "type": "number"
+          },
+          "maxVolumetricFlowMm3PerSecond": {
+            "type": "number"
+          },
+          "findings": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "$ref": "#/components/schemas/GCodeRiskFinding"
+            }
           }
         },
         "additionalProperties": false

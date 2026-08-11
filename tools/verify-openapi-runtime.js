@@ -62,6 +62,28 @@ function validatePackedToolpath(result, label) {
   }
 }
 
+function validateMaterialRisk(result, label) {
+  const material = result?.material;
+  const risk = result?.risk;
+  const expectedCost = (material?.filamentMassG * material?.priceCnyPerKg) / 1000;
+  const findingCodes = new Set(risk?.findings?.map((finding) => finding.code));
+  if (
+    material?.materialProfileId !== "PLA" ||
+    material.priceCnyPerKg !== 100 ||
+    Math.abs(material.materialCostCny - expectedCost) > 1e-9 ||
+    risk?.level !== "high" ||
+    !Number.isInteger(risk.score) ||
+    risk.score < 0 ||
+    risk.score > 100 ||
+    !findingCodes.has("GCODE_RISK_NOZZLE_TEMP_OUTSIDE_PROFILE") ||
+    !findingCodes.has("GCODE_RISK_BED_TEMP_BELOW_PROFILE") ||
+    !findingCodes.has("GCODE_RISK_SPEED_EXCEEDS_PROFILE") ||
+    !findingCodes.has("GCODE_RISK_FLOW_EXCEEDS_PROFILE")
+  ) {
+    throw new Error(`${label} material/risk contract mismatch: ${JSON.stringify({ material, risk })}`);
+  }
+}
+
 async function request(url, init = {}, timeoutMs = 10_000) {
   return fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
 }
@@ -196,8 +218,12 @@ async function main() {
       throw new Error(`readiness persistence evidence invalid: ${JSON.stringify(readiness)}`);
     }
 
-    const gcode = Buffer.from("G90\nM82\nG28\nG1 X0 Y0 Z0.2 F1200\nG1 X10 Y0 E1 F600\n", "utf8");
-    const query = "bedSizeMm=256&coordinateOrigin=corner&filamentDensityGPerCm3=1.24";
+    const gcode = Buffer.from("G90\nM82\nG28\nM104 S250\nM140 S40\nG1 X0 Y0 Z0.2 F1200\nG1 X10 Y0 E1 F600\n", "utf8");
+    const query =
+      "bedSizeMm=256&coordinateOrigin=corner&filamentDensityGPerCm3=1.24" +
+      "&machineProfileId=corexy&materialProfileId=PLA&materialPriceCnyPerKg=100" +
+      "&nozzleTemperatureMinC=195&nozzleTemperatureMaxC=225&bedTemperatureMinC=55" +
+      "&materialMaxSpeedMmPerSecond=5&materialMaxFlowMm3PerSecond=1";
     const syncResponse = await request(`${baseUrl}${operationPaths.get("analyzeGCode")}?${query}`, {
       method: "POST",
       headers: { "Content-Type": "application/x-gcode" },
@@ -208,6 +234,7 @@ async function main() {
     const syncResult = await syncResponse.json();
     if (syncResult.input.sha256 !== sha256(gcode)) throw new Error("sync analysis raw-byte SHA mismatch");
     validatePackedToolpath(syncResult, "sync analysis");
+    validateMaterialRisk(syncResult, "sync analysis");
 
     const createUrl = `${baseUrl}${operationPaths.get("createGCodeAnalysisJob")}?${query}`;
     const untrustedCreate = await request(createUrl, {
@@ -272,6 +299,7 @@ async function main() {
       );
     }
     validatePackedToolpath(snapshot.result, "async analysis");
+    validateMaterialRisk(snapshot.result, "async analysis");
 
     await waitForTerminal(baseUrl, acceptedB.links.status, callerB);
     await readTerminalSse(baseUrl + accepted.links.events, callerA);
@@ -321,7 +349,8 @@ async function main() {
     console.log(
       `engine=${syncResult.engine.version} toolpath=${syncResult.visualization.segmentCount}/${syncResult.visualization.sourceSegmentCount} ` +
         `stride=${syncResult.visualization.samplingStride} payloadBytes=${Buffer.from(syncResult.visualization.dataBase64, "base64").length} ` +
-        `layers=${syncResult.visualization.layers.length} encoding=${syncResult.visualization.encoding}`
+        `layers=${syncResult.visualization.layers.length} encoding=${syncResult.visualization.encoding} ` +
+        `materialCostCny=${syncResult.material.materialCostCny} risk=${syncResult.risk.level}/${syncResult.risk.score}`
     );
     console.log(
       `jobId=${accepted.jobId} status=${snapshot.status} sse=terminal tenantIsolation=pass metrics=pass jsonLogs=pass`

@@ -109,6 +109,12 @@ describe("GcodePage Profile integration", () => {
         origin: "center",
         machineProfileId: "delta",
         materialProfileId: "PETG",
+        materialPriceCnyPerKg: 89,
+        nozzleTemperatureMinC: 230,
+        nozzleTemperatureMaxC: 255,
+        bedTemperatureMinC: 70,
+        materialMaxSpeedMmPerSecond: 200,
+        materialMaxFlowMm3PerSecond: 9,
       })
     );
 
@@ -124,6 +130,12 @@ describe("GcodePage Profile integration", () => {
         origin: "center",
         machineProfileId: "delta",
         materialProfileId: "ABS",
+        materialPriceCnyPerKg: 79,
+        nozzleTemperatureMinC: 245,
+        nozzleTemperatureMaxC: 268,
+        bedTemperatureMinC: 95,
+        materialMaxSpeedMmPerSecond: 220,
+        materialMaxFlowMm3PerSecond: 10,
       })
     );
   });

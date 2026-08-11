@@ -88,11 +88,24 @@ before `dotnet` mode switches. It decodes only the selected layer into typed arr
 `shadow` deliberately retains browser geometry, and `VITE_GCODE_AUTHORITY=browser` remains the
 single-switch rollback.
 
-The G-code engine contract version is `1.3.0`.
+## Stage 5-D authoritative material cost and preflight risk
+
+Both G-code endpoints now accept bounded material Profile inputs for direct price, nozzle range,
+minimum bed temperature, maximum extrusion-move speed, and maximum volumetric flow. These values
+join density and machine geometry in `forgex-gcode-profile/2`, so async idempotency separates jobs
+whose operational limits or price differ even when their bytes and Profile IDs match. Engine
+`1.4.0` returns a `material` estimate whose direct CNY cost is `filamentMassG * priceCnyPerKg /
+1000`, plus a `risk` assessment with a bounded score, low/medium/high level, observed metrics, and
+stable findings for bounds, temperature, speed, flow, homing, single-layer completeness, and arc
+approximation. Energy and machine-time cost are intentionally excluded until auditable power and
+rate inputs exist.
+
+The G-code engine contract version is `1.4.0`.
 New asynchronous idempotency fingerprints use `forgex-gcode-job/2`. A completed Stage 5-A file-job
-record without `layers`, or a Stage 5-B record without `visualization`, is reopened as a stable
+record without `layers`, a Stage 5-B record without `visualization`, or a Stage 5-C record without
+`material`/`risk`, is reopened as a stable
 `degraded / gcode_result_contract_outdated` terminal snapshot rather than an invalid response; its
-input and provenance remain stored, and resubmission with a new idempotency key produces a Stage 5-C
+input and provenance remain stored, and resubmission with a new idempotency key produces a Stage 5-D
 result. Missing persisted limits migrate to their current defaults on read.
 
 The API writes JSON console logs with a bounded route template, status, elapsed milliseconds, and

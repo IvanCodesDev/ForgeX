@@ -54,6 +54,12 @@ export interface GcodeParseOptions {
   readonly origin: "corner" | "center";
   readonly machineProfileId?: string;
   readonly materialProfileId?: string;
+  readonly materialPriceCnyPerKg?: number;
+  readonly nozzleTemperatureMinC?: number;
+  readonly nozzleTemperatureMaxC?: number;
+  readonly bedTemperatureMinC?: number;
+  readonly materialMaxSpeedMmPerSecond?: number;
+  readonly materialMaxFlowMm3PerSecond?: number;
 }
 
 export interface PreviewPath {

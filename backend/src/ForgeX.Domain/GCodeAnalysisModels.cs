@@ -23,7 +23,13 @@ public sealed record GCodeAnalysisOptions(
     string MachineProfileId = "unspecified-machine",
     string MaterialProfileId = "unspecified-material",
     int MaxLayers = 20_000,
-    int MaxVisualizationSegments = 100_000)
+    int MaxVisualizationSegments = 100_000,
+    double MaterialPriceCnyPerKg = 0d,
+    double NozzleTemperatureMinC = 0d,
+    double NozzleTemperatureMaxC = 500d,
+    double BedTemperatureMinC = 0d,
+    double MaterialMaxSpeedMmPerSecond = 1000d,
+    double MaterialMaxFlowMm3PerSecond = 100d)
 {
     /// <summary>Compatibility alias used by the streaming implementation.</summary>
     public long MaxBytes => MaxInputBytes;
@@ -36,9 +42,15 @@ public sealed record GCodeProfileSummary(
     double BedSizeMm,
     CoordinateOrigin CoordinateOrigin,
     double FilamentDensityGPerCm3,
+    double MaterialPriceCnyPerKg,
+    double NozzleTemperatureMinC,
+    double NozzleTemperatureMaxC,
+    double BedTemperatureMinC,
+    double MaterialMaxSpeedMmPerSecond,
+    double MaterialMaxFlowMm3PerSecond,
     string Fingerprint)
 {
-    public const string FingerprintVersion = "forgex-gcode-profile/1";
+    public const string FingerprintVersion = "forgex-gcode-profile/2";
 
     public static GCodeProfileSummary Create(GCodeAnalysisOptions options)
     {
@@ -50,7 +62,13 @@ public sealed record GCodeProfileSummary(
             options.MaterialProfileId,
             options.BedSizeMm.ToString("R", CultureInfo.InvariantCulture),
             options.CoordinateOrigin.ToString().ToLowerInvariant(),
-            options.MaterialDensityGPerCm3.ToString("R", CultureInfo.InvariantCulture));
+            options.MaterialDensityGPerCm3.ToString("R", CultureInfo.InvariantCulture),
+            options.MaterialPriceCnyPerKg.ToString("R", CultureInfo.InvariantCulture),
+            options.NozzleTemperatureMinC.ToString("R", CultureInfo.InvariantCulture),
+            options.NozzleTemperatureMaxC.ToString("R", CultureInfo.InvariantCulture),
+            options.BedTemperatureMinC.ToString("R", CultureInfo.InvariantCulture),
+            options.MaterialMaxSpeedMmPerSecond.ToString("R", CultureInfo.InvariantCulture),
+            options.MaterialMaxFlowMm3PerSecond.ToString("R", CultureInfo.InvariantCulture));
         var fingerprint = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
         return new GCodeProfileSummary(
             options.MachineProfileId,
@@ -58,6 +76,12 @@ public sealed record GCodeProfileSummary(
             options.BedSizeMm,
             options.CoordinateOrigin,
             options.MaterialDensityGPerCm3,
+            options.MaterialPriceCnyPerKg,
+            options.NozzleTemperatureMinC,
+            options.NozzleTemperatureMaxC,
+            options.BedTemperatureMinC,
+            options.MaterialMaxSpeedMmPerSecond,
+            options.MaterialMaxFlowMm3PerSecond,
             fingerprint);
     }
 }
@@ -114,6 +138,37 @@ public sealed record GCodeToolpathVisualization(
     IReadOnlyList<GCodeToolpathLayer> Layers,
     byte[] Data);
 
+/// <summary>Authoritative material quantity and direct filament-cost estimate.</summary>
+public sealed record GCodeMaterialEstimate(
+    string MaterialProfileId,
+    double FilamentDiameterMm,
+    double DensityGPerCm3,
+    double VolumeCm3,
+    double FilamentLengthM,
+    double FilamentMassG,
+    double PriceCnyPerKg,
+    double MaterialCostCny);
+
+/// <summary>One bounded, machine-readable preflight risk finding.</summary>
+public sealed record GCodeRiskFinding(
+    string Code,
+    string Severity,
+    string Message,
+    double? Observed = null,
+    double? Minimum = null,
+    double? Maximum = null,
+    string? Unit = null);
+
+/// <summary>Deterministic preflight risk assessment derived from G-code and effective Profile limits.</summary>
+public sealed record GCodeRiskAssessment(
+    string Level,
+    int Score,
+    double? NozzleTemperatureC,
+    double? BedTemperatureC,
+    double MaxExtrusionSpeedMmPerSecond,
+    double MaxVolumetricFlowMm3PerSecond,
+    IReadOnlyList<GCodeRiskFinding> Findings);
+
 /// <summary>The deterministic, auditable result of one streamed G-code analysis.</summary>
 public sealed record GCodeAnalysisResult(
     string Sha256,
@@ -131,7 +186,9 @@ public sealed record GCodeAnalysisResult(
     IReadOnlyDictionary<string, long> PathTypeCounts,
     IReadOnlyList<GCodeLayerSummary> Layers,
     IReadOnlyList<GCodeWarning> Warnings,
-    GCodeToolpathVisualization? Visualization = null);
+    GCodeToolpathVisualization? Visualization = null,
+    GCodeMaterialEstimate? Material = null,
+    GCodeRiskAssessment? Risk = null);
 
 /// <summary>An analysis failure with a stable code suitable for API problem details.</summary>
 public sealed class GCodeAnalysisException : Exception

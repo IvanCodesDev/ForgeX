@@ -32,6 +32,18 @@ describe("ProfileSelector", () => {
         origin: "corner",
         machineProfileId: "corexy",
         materialProfileId: "PLA",
+
+        materialPriceCnyPerKg: 69,
+
+        nozzleTemperatureMinC: 195,
+
+        nozzleTemperatureMaxC: 225,
+
+        bedTemperatureMinC: 55,
+
+        materialMaxSpeedMmPerSecond: 300,
+
+        materialMaxFlowMm3PerSecond: 11,
       })
     );
     expect(screen.getByTestId("dirty")).toHaveTextContent("false");
@@ -45,6 +57,18 @@ describe("ProfileSelector", () => {
         origin: "center",
         machineProfileId: "delta",
         materialProfileId: "PETG",
+
+        materialPriceCnyPerKg: 89,
+
+        nozzleTemperatureMinC: 230,
+
+        nozzleTemperatureMaxC: 255,
+
+        bedTemperatureMinC: 70,
+
+        materialMaxSpeedMmPerSecond: 200,
+
+        materialMaxFlowMm3PerSecond: 9,
       })
     );
   });
@@ -66,6 +90,18 @@ describe("ProfileSelector", () => {
         origin: "corner",
         machineProfileId: "corexy",
         materialProfileId: "PLA",
+
+        materialPriceCnyPerKg: 69,
+
+        nozzleTemperatureMinC: 195,
+
+        nozzleTemperatureMaxC: 225,
+
+        bedTemperatureMinC: 55,
+
+        materialMaxSpeedMmPerSecond: 300,
+
+        materialMaxFlowMm3PerSecond: 11,
       })
     );
     expect(screen.getByTestId("dirty")).toHaveTextContent("false");

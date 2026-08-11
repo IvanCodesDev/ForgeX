@@ -7,6 +7,8 @@ public sealed record GCodeAnalysisResponse(
     GCodeProfileSummaryDto Profile,
     GCodeAnalyzeParametersDto Parameters,
     GCodeAnalysisSummaryDto Summary,
+    GCodeMaterialEstimateDto Material,
+    GCodeRiskAssessmentDto Risk,
     GCodeBoundsDto Bounds,
     IReadOnlyList<GCodeLayerSummaryDto> Layers,
     GCodeToolpathVisualizationDto Visualization,
@@ -24,12 +26,24 @@ public sealed record GCodeProfileSummaryDto(
     double BedSizeMm,
     string CoordinateOrigin,
     double FilamentDensityGPerCm3,
+    double MaterialPriceCnyPerKg,
+    double NozzleTemperatureMinC,
+    double NozzleTemperatureMaxC,
+    double BedTemperatureMinC,
+    double MaterialMaxSpeedMmPerSecond,
+    double MaterialMaxFlowMm3PerSecond,
     string Fingerprint);
 
 public sealed record GCodeAnalyzeParametersDto(
     double BedSizeMm,
     string CoordinateOrigin,
-    double FilamentDensityGPerCm3);
+    double FilamentDensityGPerCm3,
+    double MaterialPriceCnyPerKg,
+    double NozzleTemperatureMinC,
+    double NozzleTemperatureMaxC,
+    double BedTemperatureMinC,
+    double MaterialMaxSpeedMmPerSecond,
+    double MaterialMaxFlowMm3PerSecond);
 
 public sealed record GCodeAnalysisSummaryDto(
     int TotalLayers,
@@ -40,6 +54,34 @@ public sealed record GCodeAnalysisSummaryDto(
     double VolumeCm3,
     double FilamentLengthM,
     double FilamentMassG);
+
+public sealed record GCodeMaterialEstimateDto(
+    string MaterialProfileId,
+    double FilamentDiameterMm,
+    double DensityGPerCm3,
+    double VolumeCm3,
+    double FilamentLengthM,
+    double FilamentMassG,
+    double PriceCnyPerKg,
+    double MaterialCostCny);
+
+public sealed record GCodeRiskAssessmentDto(
+    string Level,
+    int Score,
+    double? NozzleTemperatureC,
+    double? BedTemperatureC,
+    double MaxExtrusionSpeedMmPerSecond,
+    double MaxVolumetricFlowMm3PerSecond,
+    IReadOnlyList<GCodeRiskFindingDto> Findings);
+
+public sealed record GCodeRiskFindingDto(
+    string Code,
+    string Severity,
+    string Message,
+    double? Observed,
+    double? Minimum,
+    double? Maximum,
+    string? Unit);
 
 public sealed record GCodeBoundsDto(double MinX, double MaxX, double MinY, double MaxY);
 

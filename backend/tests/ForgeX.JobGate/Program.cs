@@ -103,7 +103,17 @@ try
         new Dictionary<string, string>(),
         new Dictionary<string, long> { ["infill"] = 1 },
         [new GCodeLayerSummary(0, 0.2, 1, 14.1421356, 0, 1, 1, new Dictionary<string, long> { ["infill"] = 1 })],
-        []);
+        [],
+        new GCodeToolpathVisualization(
+            "forgex-toolpath-f32le-v1",
+            20,
+            1,
+            1,
+            false,
+            1,
+            ["infill"],
+            [new GCodeToolpathLayer(0, 1, 0, 1)],
+            new byte[20]));
     var legacyCompleted = legacyJob with
     {
         Id = Guid.NewGuid().ToString("N"),
@@ -119,7 +129,12 @@ try
     var legacyCompletedJson = JsonNode.Parse(await File.ReadAllTextAsync(legacyCompletedPath))!.AsObject();
     legacyCompletedJson["options"]!.AsObject().Remove("maxLayers");
     legacyCompletedJson["options"]!.AsObject().Remove("maxVisualizationSegments");
-    legacyCompletedJson["result"]!.AsObject().Remove("visualization");
+    legacyCompletedJson["options"]!.AsObject().Remove("materialPriceCnyPerKg");
+    legacyCompletedJson["options"]!.AsObject().Remove("nozzleTemperatureMinC");
+    legacyCompletedJson["options"]!.AsObject().Remove("nozzleTemperatureMaxC");
+    legacyCompletedJson["options"]!.AsObject().Remove("bedTemperatureMinC");
+    legacyCompletedJson["options"]!.AsObject().Remove("materialMaxSpeedMmPerSecond");
+    legacyCompletedJson["options"]!.AsObject().Remove("materialMaxFlowMm3PerSecond");
     await File.WriteAllTextAsync(legacyCompletedPath, legacyCompletedJson.ToJsonString());
     var migratedCompleted = await legacyRepository.GetAsync(legacyCompleted.Id, CancellationToken.None);
     Check("legacy-options-get-layer-limit", migratedCompleted?.Options.MaxLayers == 20_000, migratedCompleted?.Options.MaxLayers);
@@ -128,7 +143,19 @@ try
         migratedCompleted?.Options.MaxVisualizationSegments == 100_000,
         migratedCompleted?.Options.MaxVisualizationSegments);
     Check(
-        "stage5b-result-degrades-without-invalid-response",
+        "stage5d-options-get-material-defaults",
+        migratedCompleted?.Options is
+        {
+            MaterialPriceCnyPerKg: 0,
+            NozzleTemperatureMinC: 0,
+            NozzleTemperatureMaxC: 500,
+            BedTemperatureMinC: 0,
+            MaterialMaxSpeedMmPerSecond: 1000,
+            MaterialMaxFlowMm3PerSecond: 100,
+        },
+        migratedCompleted?.Options);
+    Check(
+        "stage5d-result-degrades-without-material-risk",
         migratedCompleted is
         {
             Status: GCodeJobStatus.Degraded,
@@ -138,7 +165,7 @@ try
         },
         migratedCompleted?.Status);
     Check(
-        "stage5b-result-appends-terminal-evidence",
+        "stage5d-result-appends-terminal-evidence",
         migratedCompleted?.Events[^1] is
         {
             Status: GCodeJobStatus.Degraded,

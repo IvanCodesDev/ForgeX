@@ -34,6 +34,14 @@ export interface AuthorityDiff {
 
 export const DEFAULT_MACHINE_PROFILE_ID = "unspecified-machine";
 export const DEFAULT_MATERIAL_PROFILE_ID = "unspecified-material";
+const DEFAULT_MATERIAL_LIMITS = Object.freeze({
+  materialPriceCnyPerKg: 0,
+  nozzleTemperatureMinC: 0,
+  nozzleTemperatureMaxC: 500,
+  bedTemperatureMinC: 0,
+  materialMaxSpeedMmPerSecond: 1000,
+  materialMaxFlowMm3PerSecond: 100,
+});
 
 function effectiveProfileIds(options: GcodeParseOptions): {
   readonly machineProfileId: string;
@@ -45,14 +53,34 @@ function effectiveProfileIds(options: GcodeParseOptions): {
   };
 }
 
+function effectiveMaterialLimits(options: GcodeParseOptions) {
+  return {
+    materialPriceCnyPerKg: options.materialPriceCnyPerKg ?? DEFAULT_MATERIAL_LIMITS.materialPriceCnyPerKg,
+    nozzleTemperatureMinC: options.nozzleTemperatureMinC ?? DEFAULT_MATERIAL_LIMITS.nozzleTemperatureMinC,
+    nozzleTemperatureMaxC: options.nozzleTemperatureMaxC ?? DEFAULT_MATERIAL_LIMITS.nozzleTemperatureMaxC,
+    bedTemperatureMinC: options.bedTemperatureMinC ?? DEFAULT_MATERIAL_LIMITS.bedTemperatureMinC,
+    materialMaxSpeedMmPerSecond:
+      options.materialMaxSpeedMmPerSecond ?? DEFAULT_MATERIAL_LIMITS.materialMaxSpeedMmPerSecond,
+    materialMaxFlowMm3PerSecond:
+      options.materialMaxFlowMm3PerSecond ?? DEFAULT_MATERIAL_LIMITS.materialMaxFlowMm3PerSecond,
+  } as const;
+}
+
 export function buildGcodeAuthorityQuery(options: GcodeParseOptions): URLSearchParams {
   const profile = effectiveProfileIds(options);
+  const material = effectiveMaterialLimits(options);
   return new URLSearchParams({
     bedSizeMm: String(options.bedSize),
     coordinateOrigin: options.origin,
     filamentDensityGPerCm3: String(options.densityG),
     machineProfileId: profile.machineProfileId,
     materialProfileId: profile.materialProfileId,
+    materialPriceCnyPerKg: String(material.materialPriceCnyPerKg),
+    nozzleTemperatureMinC: String(material.nozzleTemperatureMinC),
+    nozzleTemperatureMaxC: String(material.nozzleTemperatureMaxC),
+    bedTemperatureMinC: String(material.bedTemperatureMinC),
+    materialMaxSpeedMmPerSecond: String(material.materialMaxSpeedMmPerSecond),
+    materialMaxFlowMm3PerSecond: String(material.materialMaxFlowMm3PerSecond),
   });
 }
 
@@ -66,6 +94,8 @@ export interface EffectiveGcodeSummary {
   readonly volumeCm3: number;
   readonly filamentLengthM: number;
   readonly filamentMassG: number | null;
+  readonly materialCostCny: number | null;
+  readonly risk: AuthorityAnalysisResponse["risk"] | null;
   readonly bounds: GcodePreviewResult["bounds"];
   readonly sha256: string;
 }
@@ -79,7 +109,8 @@ export function selectEffectiveSummary(
   mode: GcodeAuthorityMode,
   status: GcodeAuthorityStatus,
   preview: GcodePreviewResult | null,
-  authority: AuthorityAnalysisResponse | null
+  authority: AuthorityAnalysisResponse | null,
+  options?: GcodeParseOptions
 ): EffectiveGcodeSummary | null {
   if (
     mode === "dotnet" &&
@@ -91,6 +122,8 @@ export function selectEffectiveSummary(
     return {
       provenance: "dotnet-authority",
       ...authority.summary,
+      materialCostCny: authority.material.materialCostCny,
+      risk: authority.risk,
       bounds: authority.bounds,
       sha256: authority.input.sha256,
     };
@@ -108,6 +141,11 @@ export function selectEffectiveSummary(
     volumeCm3: preview.stats.volumeCm3,
     filamentLengthM: preview.stats.filamentM,
     filamentMassG: preview.stats.filamentG ?? null,
+    materialCostCny:
+      preview.stats.filamentG == null || options?.materialPriceCnyPerKg == null
+        ? null
+        : (preview.stats.filamentG * options.materialPriceCnyPerKg) / 1000,
+    risk: null,
     bounds: preview.bounds,
     sha256: preview.sha256,
   };
@@ -159,6 +197,13 @@ function requireBoolean(record: Record<string, unknown>, key: string): boolean {
   return value;
 }
 
+function requireNullableFinite(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  if (value === null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`C# 权威结果字段 ${key} 类型无效`);
+  return value;
+}
+
 export function parseAuthorityResponse(value: unknown): AuthorityAnalysisResponse {
   const root = requireRecord(value, "root");
   const engine = requireRecord(root.engine, "engine");
@@ -166,6 +211,8 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
   const profile = requireRecord(root.profile, "profile");
   const parameters = requireRecord(root.parameters, "parameters");
   const summary = requireRecord(root.summary, "summary");
+  const material = requireRecord(root.material, "material");
+  const risk = requireRecord(root.risk, "risk");
   const bounds = requireRecord(root.bounds, "bounds");
   if (!Array.isArray(root.layers) || root.layers.length > 20_000) {
     throw new Error("C# 权威结果字段 layers 结构无效");
@@ -191,6 +238,35 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
   if (root.layers.length !== totalLayers) {
     throw new Error(`C# 权威结果契约不一致：layers.length=${root.layers.length}, totalLayers=${totalLayers}`);
   }
+  const riskLevel = requireString(risk, "level");
+  if (riskLevel !== "low" && riskLevel !== "medium" && riskLevel !== "high") {
+    throw new Error(`C# 权威结果契约不一致：risk.level=${riskLevel}`);
+  }
+  const riskScore = requireNonNegativeInteger(risk, "score");
+  if (riskScore > 100 || !Array.isArray(risk.findings) || risk.findings.length > 32) {
+    throw new Error("C# 权威结果契约不一致：risk.score 或 findings 越界");
+  }
+  const riskFindings = risk.findings.map((value, index) => {
+    const finding = requireRecord(value, `risk.findings[${index}]`);
+    const severity = requireString(finding, "severity");
+    if (severity !== "low" && severity !== "medium" && severity !== "high") {
+      throw new Error(`C# 权威结果契约不一致：risk.findings[${index}].severity=${severity}`);
+    }
+    const normalizedSeverity: "low" | "medium" | "high" = severity;
+    const unit = finding.unit;
+    if (unit !== null && typeof unit !== "string") {
+      throw new Error(`C# 权威结果字段 risk.findings[${index}].unit 类型无效`);
+    }
+    return {
+      code: requireString(finding, "code"),
+      severity: normalizedSeverity,
+      message: requireString(finding, "message"),
+      observed: requireNullableFinite(finding, "observed"),
+      minimum: requireNullableFinite(finding, "minimum"),
+      maximum: requireNullableFinite(finding, "maximum"),
+      unit,
+    };
+  });
   const layers = root.layers.map((value, index) => {
     const layer = requireRecord(value, `layers[${index}]`);
     const actualIndex = requireNonNegativeInteger(layer, "index", `layers[${index}].index`);
@@ -326,12 +402,24 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
       bedSizeMm: requireFinite(profile, "bedSizeMm"),
       coordinateOrigin: profileCoordinateOrigin,
       filamentDensityGPerCm3: requireFinite(profile, "filamentDensityGPerCm3"),
+      materialPriceCnyPerKg: requireNonNegativeFinite(profile, "materialPriceCnyPerKg"),
+      nozzleTemperatureMinC: requireNonNegativeFinite(profile, "nozzleTemperatureMinC"),
+      nozzleTemperatureMaxC: requireNonNegativeFinite(profile, "nozzleTemperatureMaxC"),
+      bedTemperatureMinC: requireNonNegativeFinite(profile, "bedTemperatureMinC"),
+      materialMaxSpeedMmPerSecond: requireNonNegativeFinite(profile, "materialMaxSpeedMmPerSecond"),
+      materialMaxFlowMm3PerSecond: requireNonNegativeFinite(profile, "materialMaxFlowMm3PerSecond"),
       fingerprint,
     },
     parameters: {
       bedSizeMm: requireFinite(parameters, "bedSizeMm"),
       coordinateOrigin,
       filamentDensityGPerCm3: requireFinite(parameters, "filamentDensityGPerCm3"),
+      materialPriceCnyPerKg: requireNonNegativeFinite(parameters, "materialPriceCnyPerKg"),
+      nozzleTemperatureMinC: requireNonNegativeFinite(parameters, "nozzleTemperatureMinC"),
+      nozzleTemperatureMaxC: requireNonNegativeFinite(parameters, "nozzleTemperatureMaxC"),
+      bedTemperatureMinC: requireNonNegativeFinite(parameters, "bedTemperatureMinC"),
+      materialMaxSpeedMmPerSecond: requireNonNegativeFinite(parameters, "materialMaxSpeedMmPerSecond"),
+      materialMaxFlowMm3PerSecond: requireNonNegativeFinite(parameters, "materialMaxFlowMm3PerSecond"),
     },
     summary: {
       totalLayers,
@@ -342,6 +430,25 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
       volumeCm3: requireFinite(summary, "volumeCm3"),
       filamentLengthM: requireFinite(summary, "filamentLengthM"),
       filamentMassG: requireFinite(summary, "filamentMassG"),
+    },
+    material: {
+      materialProfileId: requireString(material, "materialProfileId"),
+      filamentDiameterMm: requireNonNegativeFinite(material, "filamentDiameterMm"),
+      densityGPerCm3: requireNonNegativeFinite(material, "densityGPerCm3"),
+      volumeCm3: requireNonNegativeFinite(material, "volumeCm3"),
+      filamentLengthM: requireNonNegativeFinite(material, "filamentLengthM"),
+      filamentMassG: requireNonNegativeFinite(material, "filamentMassG"),
+      priceCnyPerKg: requireNonNegativeFinite(material, "priceCnyPerKg"),
+      materialCostCny: requireNonNegativeFinite(material, "materialCostCny"),
+    },
+    risk: {
+      level: riskLevel,
+      score: riskScore,
+      nozzleTemperatureC: requireNullableFinite(risk, "nozzleTemperatureC"),
+      bedTemperatureC: requireNullableFinite(risk, "bedTemperatureC"),
+      maxExtrusionSpeedMmPerSecond: requireNonNegativeFinite(risk, "maxExtrusionSpeedMmPerSecond"),
+      maxVolumetricFlowMm3PerSecond: requireNonNegativeFinite(risk, "maxVolumetricFlowMm3PerSecond"),
+      findings: riskFindings,
     },
     bounds: {
       minX: requireFinite(bounds, "minX"),
@@ -371,6 +478,7 @@ export function assertAuthorityContract(
 ): AuthorityAnalysisResponse {
   const mismatches: string[] = [];
   const profile = effectiveProfileIds(options);
+  const material = effectiveMaterialLimits(options);
   if (result.schemaVersion !== "1.0") mismatches.push(`schemaVersion=${result.schemaVersion}`);
   if (!result.engine.version.trim()) mismatches.push("engine.version is empty");
   if (result.engine.source !== "gcode-import") {
@@ -388,6 +496,11 @@ export function assertAuthorityContract(
   if (result.parameters.filamentDensityGPerCm3 !== options.densityG) {
     mismatches.push(`filamentDensityGPerCm3=${result.parameters.filamentDensityGPerCm3}, expected=${options.densityG}`);
   }
+  for (const key of Object.keys(material) as Array<keyof typeof material>) {
+    if (result.parameters[key] !== material[key]) {
+      mismatches.push(`${key}=${result.parameters[key]}, expected=${material[key]}`);
+    }
+  }
   if (result.profile.machineProfileId !== profile.machineProfileId) {
     mismatches.push(
       `profile.machineProfileId=${result.profile.machineProfileId}, expected=${profile.machineProfileId}`
@@ -401,9 +514,27 @@ export function assertAuthorityContract(
   if (
     result.profile.bedSizeMm !== result.parameters.bedSizeMm ||
     result.profile.coordinateOrigin !== result.parameters.coordinateOrigin ||
-    result.profile.filamentDensityGPerCm3 !== result.parameters.filamentDensityGPerCm3
+    result.profile.filamentDensityGPerCm3 !== result.parameters.filamentDensityGPerCm3 ||
+    result.profile.materialPriceCnyPerKg !== result.parameters.materialPriceCnyPerKg ||
+    result.profile.nozzleTemperatureMinC !== result.parameters.nozzleTemperatureMinC ||
+    result.profile.nozzleTemperatureMaxC !== result.parameters.nozzleTemperatureMaxC ||
+    result.profile.bedTemperatureMinC !== result.parameters.bedTemperatureMinC ||
+    result.profile.materialMaxSpeedMmPerSecond !== result.parameters.materialMaxSpeedMmPerSecond ||
+    result.profile.materialMaxFlowMm3PerSecond !== result.parameters.materialMaxFlowMm3PerSecond
   ) {
     mismatches.push("profile effective values differ from parameters");
+  }
+  if (
+    result.material.materialProfileId !== result.profile.materialProfileId ||
+    result.material.densityGPerCm3 !== result.parameters.filamentDensityGPerCm3 ||
+    result.material.volumeCm3 !== result.summary.volumeCm3 ||
+    result.material.filamentLengthM !== result.summary.filamentLengthM ||
+    result.material.filamentMassG !== result.summary.filamentMassG ||
+    result.material.priceCnyPerKg !== result.parameters.materialPriceCnyPerKg ||
+    Math.abs(result.material.materialCostCny - (result.material.filamentMassG * result.material.priceCnyPerKg) / 1000) >
+      1e-9
+  ) {
+    mismatches.push("material estimate differs from summary or effective Profile");
   }
   if (mismatches.length) throw new Error(`C# 权威结果契约不一致：${mismatches.join("; ")}`);
   return result;
@@ -526,14 +657,31 @@ export function compareAuthority(
   const parametersMatch =
     authority.parameters.coordinateOrigin === preview.coordinateOrigin &&
     (!expectedOptions ||
-      (authority.parameters.bedSizeMm === expectedOptions.bedSize &&
-        authority.parameters.coordinateOrigin === expectedOptions.origin &&
-        authority.parameters.filamentDensityGPerCm3 === expectedOptions.densityG));
+      (() => {
+        const material = effectiveMaterialLimits(expectedOptions);
+        return (
+          authority.parameters.bedSizeMm === expectedOptions.bedSize &&
+          authority.parameters.coordinateOrigin === expectedOptions.origin &&
+          authority.parameters.filamentDensityGPerCm3 === expectedOptions.densityG &&
+          authority.parameters.materialPriceCnyPerKg === material.materialPriceCnyPerKg &&
+          authority.parameters.nozzleTemperatureMinC === material.nozzleTemperatureMinC &&
+          authority.parameters.nozzleTemperatureMaxC === material.nozzleTemperatureMaxC &&
+          authority.parameters.bedTemperatureMinC === material.bedTemperatureMinC &&
+          authority.parameters.materialMaxSpeedMmPerSecond === material.materialMaxSpeedMmPerSecond &&
+          authority.parameters.materialMaxFlowMm3PerSecond === material.materialMaxFlowMm3PerSecond
+        );
+      })());
   const profileIds = expectedOptions ? effectiveProfileIds(expectedOptions) : null;
   const profileMatches =
     authority.profile.bedSizeMm === authority.parameters.bedSizeMm &&
     authority.profile.coordinateOrigin === authority.parameters.coordinateOrigin &&
     authority.profile.filamentDensityGPerCm3 === authority.parameters.filamentDensityGPerCm3 &&
+    authority.profile.materialPriceCnyPerKg === authority.parameters.materialPriceCnyPerKg &&
+    authority.profile.nozzleTemperatureMinC === authority.parameters.nozzleTemperatureMinC &&
+    authority.profile.nozzleTemperatureMaxC === authority.parameters.nozzleTemperatureMaxC &&
+    authority.profile.bedTemperatureMinC === authority.parameters.bedTemperatureMinC &&
+    authority.profile.materialMaxSpeedMmPerSecond === authority.parameters.materialMaxSpeedMmPerSecond &&
+    authority.profile.materialMaxFlowMm3PerSecond === authority.parameters.materialMaxFlowMm3PerSecond &&
     (!profileIds ||
       (authority.profile.machineProfileId === profileIds.machineProfileId &&
         authority.profile.materialProfileId === profileIds.materialProfileId));

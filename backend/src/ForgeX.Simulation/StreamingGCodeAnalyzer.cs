@@ -15,7 +15,7 @@ namespace ForgeX.Simulation;
 /// </summary>
 public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
 {
-    public const string EngineVersion = "1.3.0";
+    public const string EngineVersion = "1.4.0";
 
     private const int ReadBufferSize = 64 * 1024;
     private static readonly Encoding StrictUtf8 = new UTF8Encoding(
@@ -157,6 +157,35 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
             InvalidOption(nameof(options.MaterialDensityGPerCm3));
         }
 
+        if (!double.IsFinite(options.MaterialPriceCnyPerKg) || options.MaterialPriceCnyPerKg is < 0d or > 5000d)
+        {
+            InvalidOption(nameof(options.MaterialPriceCnyPerKg));
+        }
+
+        if (!double.IsFinite(options.NozzleTemperatureMinC) || options.NozzleTemperatureMinC is < 0d or > 500d ||
+            !double.IsFinite(options.NozzleTemperatureMaxC) || options.NozzleTemperatureMaxC is < 0d or > 500d ||
+            options.NozzleTemperatureMaxC < options.NozzleTemperatureMinC)
+        {
+            InvalidOption(nameof(options.NozzleTemperatureMinC));
+        }
+
+        if (!double.IsFinite(options.BedTemperatureMinC) || options.BedTemperatureMinC is < 0d or > 200d)
+        {
+            InvalidOption(nameof(options.BedTemperatureMinC));
+        }
+
+        if (!double.IsFinite(options.MaterialMaxSpeedMmPerSecond) ||
+            options.MaterialMaxSpeedMmPerSecond is < 5d or > 1000d)
+        {
+            InvalidOption(nameof(options.MaterialMaxSpeedMmPerSecond));
+        }
+
+        if (!double.IsFinite(options.MaterialMaxFlowMm3PerSecond) ||
+            options.MaterialMaxFlowMm3PerSecond is < 0.2d or > 100d)
+        {
+            InvalidOption(nameof(options.MaterialMaxFlowMm3PerSecond));
+        }
+
         if (options.MaxBytes <= 0)
         {
             InvalidOption(nameof(options.MaxBytes));
@@ -241,6 +270,10 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
         private double _totalTravelMm;
         private double _totalTimeSeconds;
         private double _totalFilamentMm;
+        private double _maxExtrusionSpeedMmPerSecond;
+        private double _maxVolumetricFlowMm3PerSecond;
+        private double? _nozzleTemperatureC;
+        private double? _bedTemperatureC;
         private double _minX = double.PositiveInfinity;
         private double _maxX = double.NegativeInfinity;
         private double _minY = double.PositiveInfinity;
@@ -400,6 +433,23 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
             }
 
             var visualization = BuildVisualization(ct);
+            var statistics = new GCodeStatistics(
+                ExtrusionLengthMm: _totalExtrusionMm,
+                TravelLengthMm: _totalTravelMm,
+                TimeSeconds: _totalTimeSeconds,
+                VolumeCm3: volumeMm3 / 1000d,
+                FilamentLengthM: netFilamentMm / 1000d,
+                FilamentMassG: (volumeMm3 / 1000d) * _options.MaterialDensityGPerCm3);
+            var material = new GCodeMaterialEstimate(
+                MaterialProfileId: _options.MaterialProfileId,
+                FilamentDiameterMm: 1.75d,
+                DensityGPerCm3: _options.MaterialDensityGPerCm3,
+                VolumeCm3: statistics.VolumeCm3,
+                FilamentLengthM: statistics.FilamentLengthM,
+                FilamentMassG: statistics.FilamentMassG,
+                PriceCnyPerKg: _options.MaterialPriceCnyPerKg,
+                MaterialCostCny: statistics.FilamentMassG * _options.MaterialPriceCnyPerKg / 1000d);
+            var risk = BuildRiskAssessment();
 
             return new GCodeAnalysisResult(
                 Sha256: sha256,
@@ -412,18 +462,14 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
                 TotalLayers: layerResults.Count,
                 HeightMm: _layers[^1].ZMm,
                 Bounds: new GCodeBounds(centeredMinX, centeredMaxX, centeredMinY, centeredMaxY),
-                Statistics: new GCodeStatistics(
-                    ExtrusionLengthMm: _totalExtrusionMm,
-                    TravelLengthMm: _totalTravelMm,
-                    TimeSeconds: _totalTimeSeconds,
-                    VolumeCm3: volumeMm3 / 1000d,
-                    FilamentLengthM: netFilamentMm / 1000d,
-                    FilamentMassG: (volumeMm3 / 1000d) * _options.MaterialDensityGPerCm3),
+                Statistics: statistics,
                 Claims: GCodeReadOnly.Dictionary(_claims),
                 PathTypeCounts: GCodeReadOnly.Dictionary(aggregateTypes),
                 Layers: GCodeReadOnly.List(layerResults),
                 Warnings: GCodeReadOnly.List(_warnings),
-                Visualization: visualization);
+                Visualization: visualization,
+                Material: material,
+                Risk: risk);
         }
 
         private void EmitLine()
@@ -583,10 +629,16 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
                     _pathOpen = true;
                 }
 
+                var moveTimeSeconds = distance / speed;
+                var volumetricFlowMm3PerSecond = extrusionDelta * FilamentArea175 / moveTimeSeconds;
+                _maxExtrusionSpeedMmPerSecond = Math.Max(_maxExtrusionSpeedMmPerSecond, speed);
+                _maxVolumetricFlowMm3PerSecond = Math.Max(
+                    _maxVolumetricFlowMm3PerSecond,
+                    volumetricFlowMm3PerSecond);
                 _totalExtrusionMm += distance;
-                _totalTimeSeconds += distance / speed;
+                _totalTimeSeconds += moveTimeSeconds;
                 _currentLayer!.ExtrusionLengthMm += distance;
-                _currentLayer.TimeSeconds += distance / speed;
+                _currentLayer.TimeSeconds += moveTimeSeconds;
                 _currentLayer.FilamentLengthMm += extrusionDelta;
                 SampleToolpath(previousX, previousY, _x, _y, pathType);
 
@@ -621,13 +673,138 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
                     break;
                 case 104:
                 case 109:
-                    SetNumericClaimOnce("nozzleTemp", ReadWord(line, 'S'));
+                    var nozzleTemperature = ReadWord(line, 'S');
+                    SetNumericClaimOnce("nozzleTemp", nozzleTemperature);
+                    _nozzleTemperatureC ??= nozzleTemperature;
                     break;
                 case 140:
                 case 190:
-                    SetNumericClaimOnce("bedTemp", ReadWord(line, 'S'));
+                    var bedTemperature = ReadWord(line, 'S');
+                    SetNumericClaimOnce("bedTemp", bedTemperature);
+                    _bedTemperatureC ??= bedTemperature;
                     break;
             }
+        }
+
+        private GCodeRiskAssessment BuildRiskAssessment()
+        {
+            var findings = new List<GCodeRiskFinding>();
+            var warningCodes = _warnings.Select(static warning => warning.Code).ToHashSet(StringComparer.Ordinal);
+
+            if (warningCodes.Contains("GCODE_BOUNDS_EXCEEDED"))
+            {
+                findings.Add(new GCodeRiskFinding(
+                    "GCODE_RISK_BOUNDS_EXCEEDED",
+                    "high",
+                    "Extrusion bounds exceed the selected machine Profile build area."));
+            }
+
+            if (_nozzleTemperatureC is null)
+            {
+                findings.Add(new GCodeRiskFinding(
+                    "GCODE_RISK_NOZZLE_TEMP_UNAVAILABLE",
+                    "medium",
+                    "No nozzle temperature command was found, so material temperature compatibility is unverified."));
+            }
+            else if (_nozzleTemperatureC < _options.NozzleTemperatureMinC ||
+                     _nozzleTemperatureC > _options.NozzleTemperatureMaxC)
+            {
+                findings.Add(new GCodeRiskFinding(
+                    "GCODE_RISK_NOZZLE_TEMP_OUTSIDE_PROFILE",
+                    "high",
+                    "The commanded nozzle temperature is outside the selected material Profile range.",
+                    _nozzleTemperatureC,
+                    _options.NozzleTemperatureMinC,
+                    _options.NozzleTemperatureMaxC,
+                    "°C"));
+            }
+
+            if (_bedTemperatureC is null)
+            {
+                findings.Add(new GCodeRiskFinding(
+                    "GCODE_RISK_BED_TEMP_UNAVAILABLE",
+                    "low",
+                    "No bed temperature command was found, so the material minimum cannot be verified."));
+            }
+            else if (_bedTemperatureC < _options.BedTemperatureMinC)
+            {
+                findings.Add(new GCodeRiskFinding(
+                    "GCODE_RISK_BED_TEMP_BELOW_PROFILE",
+                    "medium",
+                    "The commanded bed temperature is below the selected material Profile minimum.",
+                    _bedTemperatureC,
+                    _options.BedTemperatureMinC,
+                    null,
+                    "°C"));
+            }
+
+            if (_maxExtrusionSpeedMmPerSecond > _options.MaterialMaxSpeedMmPerSecond)
+            {
+                findings.Add(new GCodeRiskFinding(
+                    "GCODE_RISK_SPEED_EXCEEDS_PROFILE",
+                    "medium",
+                    "The maximum extrusion move speed exceeds the selected material Profile limit.",
+                    _maxExtrusionSpeedMmPerSecond,
+                    null,
+                    _options.MaterialMaxSpeedMmPerSecond,
+                    "mm/s"));
+            }
+
+            if (_maxVolumetricFlowMm3PerSecond > _options.MaterialMaxFlowMm3PerSecond)
+            {
+                findings.Add(new GCodeRiskFinding(
+                    "GCODE_RISK_FLOW_EXCEEDS_PROFILE",
+                    "high",
+                    "The maximum filament volumetric flow exceeds the selected material Profile limit.",
+                    _maxVolumetricFlowMm3PerSecond,
+                    null,
+                    _options.MaterialMaxFlowMm3PerSecond,
+                    "mm³/s"));
+            }
+
+            if (warningCodes.Contains("GCODE_NO_HOME"))
+            {
+                findings.Add(new GCodeRiskFinding(
+                    "GCODE_RISK_NO_HOME",
+                    "medium",
+                    "No homing command was found before the analyzed toolpath."));
+            }
+
+            if (warningCodes.Contains("GCODE_SINGLE_LAYER"))
+            {
+                findings.Add(new GCodeRiskFinding(
+                    "GCODE_RISK_SINGLE_LAYER",
+                    "medium",
+                    "Only one extrusion layer was found; verify file completeness."));
+            }
+
+            if (warningCodes.Contains("GCODE_ARC_LINEARIZED"))
+            {
+                findings.Add(new GCodeRiskFinding(
+                    "GCODE_RISK_ARC_APPROXIMATION",
+                    "low",
+                    "Arc commands were approximated by endpoint chords for analysis."));
+            }
+
+            var score = Math.Min(100, findings.Sum(static finding => finding.Severity switch
+            {
+                "high" => 40,
+                "medium" => 20,
+                _ => 5,
+            }));
+            var level = findings.Any(static finding => finding.Severity == "high")
+                ? "high"
+                : findings.Any(static finding => finding.Severity == "medium")
+                    ? "medium"
+                    : "low";
+            return new GCodeRiskAssessment(
+                level,
+                score,
+                _nozzleTemperatureC,
+                _bedTemperatureC,
+                _maxExtrusionSpeedMmPerSecond,
+                _maxVolumetricFlowMm3PerSecond,
+                GCodeReadOnly.List(findings));
         }
 
         private void SetPosition(string line)

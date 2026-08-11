@@ -1,0 +1,5 @@
+MODIFIED_ARCHIVE_REOPEN=PASS files=26 comparison=sha256-exact
+PATCH_REOPEN_APPLY=PASS files=26 comparison=sha256-normalized-line-endings
+ROLLBACK_STAGE5D_OK restored=26 baseline=7beb2c5761336d8575f6d5d5d005689fec4c2844
+ROLLBACK_REOPEN_COMPARE=PASS files=26 comparison=sha256-exact
+VERIFICATION_RECORD_REOPEN=PASS commands=13 zeroExitStatuses=13

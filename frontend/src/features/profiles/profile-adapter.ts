@@ -84,6 +84,12 @@ export function deriveProfileOptions(machine: MachineProfile, material: Material
     origin: machine.kinematics === "delta" ? "center" : "corner",
     machineProfileId: machine.id,
     materialProfileId: material.id,
+    materialPriceCnyPerKg: material.priceCnyKg,
+    nozzleTemperatureMinC: material.nozzle.min,
+    nozzleTemperatureMaxC: material.nozzle.max,
+    bedTemperatureMinC: material.bed.min,
+    materialMaxSpeedMmPerSecond: material.maxSpeed,
+    materialMaxFlowMm3PerSecond: material.flowMm3s,
   });
 }
 

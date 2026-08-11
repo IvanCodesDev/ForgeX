@@ -67,6 +67,18 @@ describe("profile adapter", () => {
       origin: "corner",
       machineProfileId: "corexy",
       materialProfileId: "PLA",
+
+      materialPriceCnyPerKg: 69,
+
+      nozzleTemperatureMinC: 195,
+
+      nozzleTemperatureMaxC: 225,
+
+      bedTemperatureMinC: 55,
+
+      materialMaxSpeedMmPerSecond: 300,
+
+      materialMaxFlowMm3PerSecond: 11,
     });
     expect(delta && petg ? deriveProfileOptions(delta, petg) : null).toEqual({
       bedSize: 260,
@@ -74,6 +86,18 @@ describe("profile adapter", () => {
       origin: "center",
       machineProfileId: "delta",
       materialProfileId: "PETG",
+
+      materialPriceCnyPerKg: 89,
+
+      nozzleTemperatureMinC: 230,
+
+      nozzleTemperatureMaxC: 255,
+
+      bedTemperatureMinC: 70,
+
+      materialMaxSpeedMmPerSecond: 200,
+
+      materialMaxFlowMm3PerSecond: 9,
     });
     expect(Object.isFrozen(catalog.machines)).toBe(true);
     expect(Object.isFrozen(catalog.machines[0]?.buildVolume)).toBe(true);

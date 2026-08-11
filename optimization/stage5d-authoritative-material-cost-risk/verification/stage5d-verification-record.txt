@@ -1,0 +1,1571 @@
+FORGEX STAGE 5-D VERIFICATION RECORD
+baselineCommit=7beb2c5761336d8575f6d5d5d005689fec4c2844
+branch=feature/react-ts-csharp-authority
+input.gcode=G90\nM82\nG28\nM104 S250\nM140 S40\nG1 X0 Y0 Z0.2 F1200\nG1 X10 Y0 E1 F600\n
+input.profile=corexy/PLA,density=1.24,priceCnyPerKg=100,nozzle=195..225C,bedMin=55C,maxSpeed=5mm/s,maxFlow=1mm3/s
+
+===== baseline-behavior =====
+COMMAND: node -e "const fs=require('fs');const t=fs.readFileSync('optimization/stage5d-authoritative-material-cost-risk/baseline/reopen/backend/src/ForgeX.Simulation/StreamingGCodeAnalyzer.cs','utf8');const d=fs.readFileSync('optimization/stage5d-authoritative-material-cost-risk/baseline/reopen/backend/src/ForgeX.Domain/GCodeAnalysisModels.cs','utf8');if(!t.includes('EngineVersion = \"1.3.0\"')||d.includes('GCodeMaterialEstimate')||d.includes('GCodeRiskAssessment'))process.exit(1);console.log('baseline=engine-1.3.0 material=false risk=false')"
+EXIT_STATUS: 0
+OUTPUT_BEGIN
+baseline=engine-1.3.0 material=false risk=false
+OUTPUT_END
+
+===== openapi-generated-contract =====
+COMMAND: npm run openapi:check
+EXIT_STATUS: 0
+OUTPUT_BEGIN
+
+> forgex-insight@0.19.0 openapi:check
+> node tools/generate-openapi-types.js --check
+
+OpenAPI generated client is current: frontend\src\generated\forgex-api.ts
+OUTPUT_END
+
+===== frontend-typecheck =====
+COMMAND: npm run frontend:typecheck
+EXIT_STATUS: 0
+OUTPUT_BEGIN
+
+> forgex-insight@0.19.0 frontend:typecheck
+> npm run typecheck --workspace @forgex/frontend
+
+
+> @forgex/frontend@0.1.0 typecheck
+> tsc -b --pretty false
+OUTPUT_END
+
+===== frontend-unit-integration =====
+COMMAND: npm run frontend:test
+EXIT_STATUS: 0
+OUTPUT_BEGIN
+
+> forgex-insight@0.19.0 frontend:test
+> npm run test --workspace @forgex/frontend
+
+
+> @forgex/frontend@0.1.0 test
+> vitest run --config vitest.config.ts
+
+
+ RUN  v4.1.10 E:/Projects/3dprint/frontend
+
+
+ Test Files  32 passed (32)
+      Tests  170 passed (170)
+   Start at  23:35:15
+   Duration  3.02s (transform 3.53s, setup 635ms, import 8.92s, tests 3.14s, environment 26.81s)
+OUTPUT_END
+
+===== frontend-production-build =====
+COMMAND: npm run frontend:build
+EXIT_STATUS: 0
+OUTPUT_BEGIN
+
+> forgex-insight@0.19.0 frontend:build
+> npm run build --workspace @forgex/frontend
+
+
+> @forgex/frontend@0.1.0 build
+> tsc -b && vite build
+
+[36mvite v8.1.5 [32mbuilding client environment for production...[36m[39m
+[2K
+transforming...✓ 82 modules transformed.
+rendering chunks...
+computing gzip size...
+../dist/react/index.html                                       0.47 kB │ gzip:   0.32 kB
+../dist/react/assets/CalibrationGovernancePage-D1gxLK7c.css    3.44 kB │ gzip:   1.02 kB
+../dist/react/assets/AnalyticsPage-BEpXKdCY.css                5.25 kB │ gzip:   1.51 kB
+../dist/react/assets/SimulatorPage-DmeYl5fJ.css                6.45 kB │ gzip:   1.65 kB
+../dist/react/assets/index-DaV9IBj-.css                       16.51 kB │ gzip:   4.53 kB
+../dist/react/assets/forgex-api-BMxAbnBM.js                    0.75 kB │ gzip:   0.36 kB
+../dist/react/assets/ArchitecturePage-NRoHqlOf.js              0.81 kB │ gzip:   0.58 kB
+../dist/react/assets/useProfileSelection-LJypzfzc.js          16.18 kB │ gzip:   5.66 kB
+../dist/react/assets/CalibrationGovernancePage-DgnOtgvM.js    16.73 kB │ gzip:   5.80 kB
+../dist/react/assets/GcodePage-BIlN4YVu.js                    76.75 kB │ gzip:  24.91 kB
+../dist/react/assets/AnalyticsPage-Cbp7iLY8.js                96.85 kB │ gzip:  30.73 kB
+../dist/react/assets/SimulatorPage-DyVAJjfr.js                98.42 kB │ gzip:  33.04 kB
+../dist/react/assets/index-B-573hZ6.js                       254.53 kB │ gzip:  81.84 kB
+../dist/react/assets/GcodeViewer-DZ6O4hFp.js                 544.37 kB │ gzip: 136.13 kB
+
+[32m✓ built in 203ms[39m
+cmd.exe : [33m[plugin builtin:vite-reporter] 
+At line:16 char:640
++ ... entry.Value)"); $output=(& cmd.exe /d /s /c $entry.Value 2>&1 | Out-S ...
++                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([33m[plugin builtin:vite-reporter] :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeS
+plitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+OUTPUT_END
+
+===== lint =====
+COMMAND: npm run lint
+EXIT_STATUS: 0
+OUTPUT_BEGIN
+
+> forgex-insight@0.19.0 lint
+> eslint --config config/eslint.config.js .
+OUTPUT_END
+
+===== format =====
+COMMAND: npm run format:check
+EXIT_STATUS: 0
+OUTPUT_BEGIN
+
+> forgex-insight@0.19.0 format:check
+> prettier --config config/prettier.json --ignore-path config/prettier.ignore --ignore-path .gitignore --check "README.md" ".github/**/*.{md,yml,yaml}" "config/**/*.{js,json}" "package*.json" "frontend/**/*.{ts,tsx,css,json,html}" "css/tokens.css" "tools/**/*.js" "render.yaml"
+
+Checking formatting...
+All matched files use Prettier code style!
+OUTPUT_END
+
+===== legacy-node-regression =====
+COMMAND: npm test
+EXIT_STATUS: 0
+OUTPUT_BEGIN
+
+> forgex-insight@0.19.0 test
+> node tests/smoke.js && node tests/sim-calib.test.js && node tests/exporter.test.js && node tests/gcode.test.js && node tests/machine-log.test.js && node tests/time-calibration.test.js && node tests/calibration-registry.test.js && node tests/calibration-service.test.js && node tests/profiles.test.js && node tests/stats.test.js && node tests/insight.test.js && node tests/farm.test.js && node tests/server.test.js && node tests/gcode-async-jobs.test.js && node tests/analytics-authority.test.js && node tests/openapi-contract.test.js && node tests/partner-sso.test.js && node tests/stage0-hardening.test.js && node tests/check-refs.js && node tools/validate-ecosystem.js && node tools/validate-fixtures.js && node tools/validate-stage0-golden.js && node tools/validate-stage4-analytics-golden.js && node tools/validate-stage5-layer-plan-golden.js && node tools/validate-calibrations.js && node tools/validate-postgres-migrations.js && node tools/validate-containers.js && node tools/release-audit.js
+
+
+[1] 几何工具
+  PASS  正方形面积 = 400
+  PASS  内偏置后面积收缩至 ~324
+  PASS  过度收缩返回 null
+  PASS  路径长度计算
+
+[2] 扫描线填充（奇偶规则）
+  PASS  生成填充折线
+  PASS  填充点不落入孔洞
+  PASS  45° 斜向填充可用
+  PASS  蛇形串联（折线数 < 线段数）
+  PASS  直线填充生成 0° 主路径
+  PASS  斜线网格生成 45° 主路径
+  PASS  蜂窝生成 60°/120° 六边形边
+  PASS  三种填充的实际路径互不相同
+
+[3] Marching Squares 高度场等值线
+  PASS  提取到等值线
+  PASS  等值线半径 ≈ 4mm
+  PASS  高度场逐行填充
+
+[4] 内置模型 · 行星齿轮切片
+  PASS  总层数 = 80（16mm / 0.2mm）
+  PASS  首层含裙边
+  PASS  首层含周界
+  PASS  首层为实心填充
+  PASS  中段为稀疏填充
+  PASS  挤出总长 > 10m
+  PASS  时长估计为正
+  PASS  中心孔无路径穿越
+
+[5] 内置模型 · 支架支撑生成
+  PASS  悬垂区间存在支撑层
+  PASS  支撑位于 4–26mm 区间
+  PASS  关闭支撑后无支撑路径
+
+[6] 内置模型 · 叶轮动态轮廓
+  PASS  z=10 截面 = 轮毂+孔+7叶片 = 9 环
+  PASS  叶片随高度扭转
+  PASS  叶轮切片成功（150 层）
+
+[7] 图片高度场模型（模拟渐变图）
+  PASS  浮雕模型高度 ≤ 8mm
+  PASS  浮雕切片层数合理
+  PASS  浮雕中层含周界+填充
+  PASS  图片高度场响应周界圈数
+  PASS  剪影切片成功
+  PASS  剪影中层有轮廓周界
+
+[8] 变换与缩放
+  PASS  1.5× 缩放层数 = 120
+  PASS  平移后质心偏移 ≈ (20,-10)
+
+[9] 工艺参数因果差异
+  PASS  层高改变实际层数
+  PASS  周界圈数改变实际轮廓路径
+  PASS  实心层数改变顶底实体层
+  PASS  填充密度增加真实挤出路径
+  PASS  打印速度改变路径估时
+  PASS  空驶速度改变路径估时
+  PASS  回抽距离增加运动耗时
+  PASS  支撑间距改变支撑材料量
+
+═══ 结果：45 通过 / 0 失败 ═══
+
+[1] 床面误差场（机台固有 · 确定性）
+  PASS  同点两次采样一致
+  PASS  误差量级合理（|e| < 0.3mm）
+  PASS  同机型跨实例一致（按 ID 派生种子）
+  PASS  不同机型误差场不同
+
+[2] 调平数据链：探测 → 9点拟合 → 网格 → 补偿自洽
+  PASS  进入 level 状态
+  PASS  调平完成回到待机
+  PASS  9 个探测样本已记录
+  PASS  中心探测值 = 误差场实测（±6µm 读数噪声）
+  PASS  网格中心 = 中心探测值（拟合插值过点）
+  PASS  补偿插值过探测点
+  PASS  角部补偿贴近对应探测值（±20µm）
+  PASS  Z=0 全量补偿
+  PASS  Z≥6mm 补偿归零
+  PASS  重复调平结果稳定（差 < 12µm）
+
+[3] 全流程：预热 → 调平 → 打印 → 完成（遥测与实测报告）
+  PASS  进入预热
+  PASS  遥测已初始化
+  PASS  首层不均匀度已实测（≥0）
+  PASS  全流程跑完（done）
+  PASS  经过自动调平（levelMesh 生成）
+  PASS  job-record 上报 success
+  PASS  实测质量报告已生成
+  PASS  报告五个实测维度齐全
+  PASS  quality-actual 事件已广播
+  PASS  综合分与评级合法
+  PASS  干净打印 → 过程扰动高分
+  PASS  已调平 → 首层维度引用网格实测
+  PASS  实测耗材量 > 0
+  PASS  回抽执行被运行遥测记录
+  PASS  实测报告包含回抽与拉丝
+
+[4] 热失控监测链：物理注入 → 温度真实下跌 → 监测器凭偏差发现
+  PASS  到达打印态
+  PASS  注入后不立即报警（监测器还没发现）
+  PASS  物理层已注入（加热器失效）
+  PASS  监测器发现热失控并拉响保护
+  PASS  发现时温度确实已偏离目标 >15°C
+  PASS  故障事件已广播 + 遥测已实录
+  PASS  进入故障暂停态
+  PASS  排障后加热器修复
+  PASS  温度目标恢复设定值
+  PASS  恢复后可打完（done）
+  PASS  实测报告记录本次故障
+
+[5] 实测质量纯函数（遥测 → 报告边界行为）
+  PASS  干净遥测 → A/B 级
+  PASS  故障遥测 → 分数显著下降
+  PASS  扰动维度列出故障实录
+  PASS  未调平且床面差 → 首层维度亮红
+  PASS  未调平提示运行调平
+  PASS  变速 50% 时间 → 速度一致性降分
+  PASS  回抽不足 → 拉丝实测维度明显降分
+
+[6] 回抽参数进入切片估时
+  PASS  增加回抽会增加真实运动阶段与估时
+
+═══ 结果：48 通过 / 0 失败 ═══
+
+[1] 三角网格提取（Y-up → Z-up · 缩放）
+  PASS  非索引几何 → 1 个三角
+  PASS  Z-up 转换：世界(0,2,-3) → (0,3,2)
+  PASS  2× 缩放生效
+  PASS  索引几何 → 2 个三角
+
+[2] 二进制 STL 结构
+  PASS  字节数 = 84 + 50×n
+  PASS  uint32 三角数正确
+  PASS  法线计算正确（nz=1）
+  PASS  顶点小端写入
+  PASS  attribute byte count = 0
+
+[3] OBJ 结构
+  PASS  v 行数 = 3×n
+  PASS  f 行数 = n
+  PASS  对象名空格转下划线
+  PASS  面索引从 1 起
+
+[4] G-code 语义（真实切片 → 可切片器核验的输出）
+  PASS  含温度指令（M104/M109/M140/M190 带设定值）
+  PASS  相对挤出 M83 + 归位 G28
+  PASS  自动调平 G29 跟随设置
+  PASS  LAYER_COUNT 与切片一致
+  PASS  首末层标记存在
+  PASS  风扇首层关闭、第二层开启
+  PASS  挤出量守恒（ΣE ≈ 理论耗材长，±1%）
+  PASS  回抽/回填成对出现
+  PASS  坐标全部落在床内（0..256）
+  PASS  齿轮 Ø55 居中 → X 范围应跨约 128±40
+  PASS  收尾：关加热 + 松电机
+
+═══ 结果：24 通过 / 0 失败 ═══
+
+[1] 往返一致性：导出 → 解析 → 统计量必须对上
+  PASS  层数一致
+  PASS  成品高度一致（±1 层高）
+  PASS  挤出路径总长一致（±1%）
+  PASS  耗材长度一致（±1%）
+  PASS  挤出体积一致（±1%）
+  PASS  路径类型被保留（不是一律 infill）
+  PASS  识别出周界与实心层
+  PASS  读出喷嘴与热床温度
+  PASS  坐标居中回原点系（与切片同一坐标系）
+
+[2] 产出结构与 FXSlicer.slice() 同构（渲染层不必改一行）
+  PASS  顶层字段齐全
+  PASS  stats 字段齐全
+  PASS  层结构含 z / paths
+  PASS  路径结构含 pts / type / len / speed
+  PASS  路径点至少两个（单点无法成线）
+  PASS  路径长度与点序一致
+  PASS  每条路径保留真实 E 增量供回放记账
+
+[3] 切片器方言：绝对/相对 E、各家类型注释
+  PASS  PrusaSlicer 相对 E 解析正确（3 段各 0.5 = 1.5）
+  PASS  识别 External perimeter → perimeter
+  PASS  识别 Solid infill → solid
+  PASS  读出切片器名
+  PASS  读出自报耗材长度
+  PASS  Cura 绝对 E 解析正确（累计到 2.0）
+  PASS  识别 WALL-OUTER → perimeter
+  PASS  识别 FILL → infill
+  PASS  读出自报时长 3600s
+  PASS  读出自报耗材 2.5m → 2500mm
+  PASS  读出 Cura FLAVOR 固件声明
+  PASS  G92 E0 归零后不产生负增量
+  PASS  G91 相对坐标位移正确（10+10=20mm）
+
+[4] 空驶与回抽不计入挤出
+  PASS  挤出总长只算挤出段（20mm）
+  PASS  空驶长度单独统计
+  PASS  回抽/回填互相抵消，净耗材为 1.0
+  PASS  空驶把路径断开（不会连成一条）
+
+[5] 对账：与切片器自报数字并列，但不判谁对
+  PASS  往返数据无自报字段时对账表为空或仅含温度类
+  PASS  对账表列出时长与耗材两项
+  PASS  对账项含自报值与重算值
+  PASS  对账项给出相对差与是否吻合
+  PASS  对账项附带解释（差异不等于谁错）
+  PASS  耗材长度对账吻合（都来自 E 值）
+
+[6] 读不懂时如实报错，不给空结果
+  PASS  非 G-code 文本 → 抛错而非返回空
+  PASS  空文件 → 抛错
+  PASS  只有空驶没有挤出 → 抛错（不是有效打印件）
+  PASS  超大文件 → 明确报错而非卡死
+
+[7] 警告：如实说明近似与异常，不静默
+  PASS  缺 G28 时警告
+  PASS  含圆弧指令时如实说明按直线近似
+  PASS  超出打印床时警告
+  PASS  正常文件不产生无谓警告
+  PASS  中心原点机型不重复平移坐标
+
+[8] 挤出量来自 E 的真实增量，而非路径长估算
+  PASS  路径长相同
+  PASS  E 翻倍 → 体积翻倍（证明不是按路径长估算）
+  PASS  克重随材料密度变化
+
+[9] 增量解析与全量解析严格等价
+  PASS  公开 createIncrementalParser API
+  PASS  cura-marlin.gcode 保持重构前输出基线
+  PASS  cura-marlin.gcode 小 chunk 与全量解析严格等价
+  PASS  orca-klipper.gcode 保持重构前输出基线
+  PASS  orca-klipper.gcode 小 chunk 与全量解析严格等价
+  PASS  prusa-marlin.gcode 保持重构前输出基线
+  PASS  prusa-marlin.gcode 小 chunk 与全量解析严格等价
+  PASS  superslicer-rrf.gcode 保持重构前输出基线
+  PASS  superslicer-rrf.gcode 小 chunk 与全量解析严格等价
+  PASS  03-demo-turbine.gcode 保持重构前输出基线
+  PASS  03-demo-turbine.gcode 小 chunk 与全量解析严格等价
+  PASS  CRLF 跨 chunk 且 Unicode 代理对拆分时仍严格等价
+  PASS  UTF-8 多字节字符跨字节块解码后仍严格等价
+  PASS  Unicode 切片器声明未损坏
+
+═══ 结果：65 通过 / 0 失败 ═══
+
+[1] 标准 JSON 真机日志
+  PASS  读出任务时长
+  PASS  读出耗材长度与克重
+  PASS  读出完成层数与状态
+  PASS  读出温度遥测
+  PASS  保留任务、机型、固件与 G-code 责任链
+
+[2] 通用 CSV 真机日志
+  PASS  CSV 时长可由最后时间读出
+  PASS  CSV 最后一行任务汇总生效
+  PASS  CSV 遥测样本归一
+  PASS  CSV 保留一致的 G-code SHA-256
+  PASS  CSV 可建立文件级强绑定
+
+[3] 计划 / 实测对比
+  PASS  生成时长、长度、克重、层数四项
+  PASS  精确一致项标记为吻合
+  PASS  每项保留解释，差异不冒充结论
+  PASS  明显偏差被标记但仍保留两侧原值
+
+[4] 错误与限制
+  PASS  空日志明确报错
+  PASS  未知格式明确拒绝
+  PASS  CSV 不同行摘要冲突时拒绝解析
+
+═══ 结果：17 通过 / 0 失败 ═══
+
+[1] 稳健拟合
+  PASS  输出带版本与方法
+  PASS  恢复运动倍率
+  PASS  恢复固定开销
+  PASS  保留校准作用域
+  PASS  训练误差为零
+  PASS  四样本生成留一交叉验证
+  PASS  预测使用固定开销与倍率
+  PASS  重复计划时长的交叉验证不串用别的样本预测
+
+[2] 抗单点异常
+  PASS  单个暂停异常不摧毁主斜率
+  PASS  模型暴露异常造成的最大相对误差
+
+[3] G-code / 日志配对观测
+  PASS  从现有结构建立样本
+  PASS  沿用日志机型与固件
+  PASS  单任务展示原始倍率
+  PASS  单任务不冒充完整校准
+
+[4] 防御性边界
+  PASS  少于三组任务明确拒绝
+  PASS  计划时长无变化时拒绝拟合
+  PASS  无效配对任务明确拒绝
+
+═══ 结果：17 通过 / 0 失败 ═══
+
+[1] 示例与安全边界
+  PASS  仓库示例通过运行时白名单
+  PASS  合成 demonstration 模型可登记
+  PASS  合成模型默认不参与自动匹配
+  PASS  显式预览时才可选择 demonstration 模型
+
+[2] active 准入门槛
+  PASS  合成数据不能启用 active
+  PASS  少于五个 holdout 不能启用
+  PASS  holdout MAPE 超阈值不能启用
+  PASS  未知字段与脚本载荷被拒绝
+
+[3] 作用域、版本和持久化
+  PASS  真实 active bundle 导入成功
+  PASS  机型/固件/材料完全匹配
+  PASS  固件不同不误用模型
+  PASS  材料不同不误用模型
+  PASS  同 revision 不允许覆盖
+  PASS  更高 revision 原子替换
+  PASS  刷新后从 localStorage 恢复
+
+[4] 区间估算与漂移
+  PASS  校准估算应用固定开销与倍率
+  PASS  估算携带 holdout 不确定区间
+  PASS  少量观测不提前宣布稳定或漂移
+  PASS  五个吻合观测判为 stable
+  PASS  重复任务不会被累计为多个漂移样本
+  PASS  持续偏差触发 drift
+  PASS  漂移报告保留中位偏差与 P90
+  PASS  已漂移 active 模型停止后续自动匹配
+
+═══ 结果：23 通过 / 0 失败 ═══
+
+[1] 服务状态机与原子发布
+  PASS  内容摘要与 JSON 键顺序无关
+  PASS  候选进入 pending
+  PASS  提交事件记录主体与时间
+  PASS  同 bundle revision 不能重复提交
+  PASS  合成来源不能进入服务端审批
+  PASS  客户端不能绕过审批直接提交 active
+  PASS  审核后状态变为 approved
+  PASS  发布副本把 candidate 提升为 active
+  PASS  发布保留 SHA-256 摘要与审核主体
+  PASS  提交与审核形成两条审计事件
+  PASS  已审核提交不能二次审核
+  PASS  已发布 revision 不能倒退
+  PASS  更高 revision 原子替换公开目录
+  PASS  审核时重新执行 active holdout 门槛
+  PASS  拒绝记录不会进入公开目录
+  PASS  重启后发布版本与审计记录仍在
+
+[2] HTTP 鉴权与浏览器目录契约
+  PASS  公开目录无需密钥且初始为空
+  PASS  未配置 API_KEYS 时审批写接口关闭
+  PASS  未配置审核 key 时队列读取关闭
+  PASS  只配置 API_KEYS 时仍可提交候选
+  PASS  未配置 CALIBRATION_REVIEW_KEYS 时队列关闭
+  PASS  未配置 CALIBRATION_REVIEW_KEYS 时审核关闭
+  PASS  审核角色未配置不影响公开目录
+  PASS  无效身份不能提交候选
+  PASS  有效 API Key 可提交候选
+  PASS  响应只暴露 key 摘要标识
+  PASS  普通提交 key 不能读取审核队列
+  PASS  可分发 API key 不能读取审核队列
+  PASS  可分发 API key 不能调用审核接口
+  PASS  审核者可查看完整候选与审计队列
+  PASS  受信审核 key 同时位于 API_KEYS 时可提交候选
+  PASS  审核 key 通过路由后仍由 store 禁止自我审批
+  PASS  审核 API 发布候选
+  PASS  公开目录只返回 active 发布副本
+  PASS  healthz 披露发布数和写接口状态
+
+═══ 结果：35 通过 / 0 失败 ═══
+
+[1] 内置 Profile
+  PASS  内置 4 台机器
+  PASS  内置 4 种材料
+  PASS  PLA 已规范化为运行时温度字段
+  PASS  CoreXY 构建空间可读
+
+[2] 示例 bundle 与 JSON 安全边界
+  PASS  仓库示例通过运行时校验
+  PASS  未知字段/脚本载荷被拒绝
+  PASS  未知运动学被拒绝
+  PASS  危险温度范围被拒绝
+  PASS  畸形 machines 字段返回校验错误而不是抛异常
+  PASS  畸形 machines 字段给出稳定数组错误
+  PASS  社区 Profile 不能覆盖内置 ID
+  PASS  失败导入不会留下半个机型
+
+[3] 社区机器 / 材料注册与物理特征
+  PASS  导入 1 台社区机器
+  PASS  导入 1 种社区材料
+  PASS  社区标记保留
+  PASS  材料运行时字段生成
+  PASS  材料流量进入注册表
+  PASS  材料价格进入注册表
+  PASS  社区价格同步到成本分析口径
+  PASS  机器结构特征注册到物理模型
+  PASS  Profile 物理覆盖进入确定性机台
+  PASS  同一 machineId 的物理特征可复现
+
+═══ 结果：22 通过 / 0 失败 ═══
+
+[1] 数值基础（对照解析解）
+  PASS  Φ(0) = 0.5
+  PASS  Φ(1.96) ≈ 0.975
+  PASS  Φ(-1.96) ≈ 0.025
+  PASS  Φ 对称性 Φ(x)+Φ(-x)=1
+  PASS  lnΓ(1) = 0
+  PASS  lnΓ(5) = ln(24)
+  PASS  lnΓ(0.5) = ln(√π)
+  PASS  lnΓ(101) = ln(100!)
+  PASS  lnC(10,3) = ln(120)
+  PASS  lnC(52,5) = ln(2598960)
+  PASS  大数不溢出：lnC(5000,2500) 有限
+  PASS  越界组合数返回 -Inf
+
+[2] Wilson 置信区间（对照 R: binom::binom.confint(k, n, methods='wilson')）
+  PASS  Wilson(6,20) 点估计 0.30
+  PASS  Wilson(6,20) 下界 ≈ 0.1455
+  PASS  Wilson(6,20) 上界 ≈ 0.5190
+  PASS  Wilson(0,10) 下界为 0
+  PASS  Wilson(0,10) 上界 > 0（不宣称「绝不会坏」）
+  PASS  Wilson(0,10) 上界 ≈ 0.2775
+  PASS  Wilson(10,10) 上界为 1
+  PASS  Wilson(10,10) 下界 < 1（不宣称「必然坏」）
+  PASS  同样 30% 的失败率，n=1000 的区间远窄于 n=10
+  PASS  区间始终落在 [0,1]
+  PASS  n=0 时返回最宽区间而非 NaN
+
+[3] Fisher 精确检验（对照 R: fisher.test）
+  PASS  Fisher[[3,1],[1,3]] p = 34/70 = 0.4857
+  PASS  Fisher[[0,5],[5,0]] p = 2/252 = 0.007937
+  PASS  完全对称的表 p = 1
+  PASS  完全对称的表 OR = 1
+  PASS  p 值恒在 [0,1]
+  PASS  空表安全返回 p=1
+  PASS  含零格时 OR 仍为有限值
+  PASS  大样本 2×2 可计算且显著
+
+[4] 两组比率比较：样本量守卫优先于 p 值
+  PASS  样本量不足时不给显著性结论
+  PASS  样本量不足时仍给出区间（供判断证据强度）
+  PASS  真实差异被判为显著
+  PASS  差值方向正确
+  PASS  相同比率不显著
+  PASS  同样的比率差，小样本下不判显著
+
+[5] 分组排名：最差必须同时「排第一」且「统计显著」
+  PASS  识别出最差组
+  PASS  最差组带置信区间
+  PASS  最差组带 p 值且显著
+  PASS  对照组是「其余各组合并」而非总体
+  PASS  差异不显著时拒绝给出「最差」
+  PASS  但仍返回排序供参考
+  PASS  100% 失败率的 1 单样本不进排名
+  PASS  样本不足的组被单列
+  PASS  最差是真正有证据的那个
+  PASS  样本不足的组仍给出区间
+
+[6] 相关性：区间与显著性
+  PASS  完全正相关 r = 1
+  PASS  完全负相关 r = -1
+  PASS  样本不足返回 null
+  PASS  弱相关数据不判显著
+  PASS  相关系数带 95% 区间
+  PASS  区间落在 [-1,1]
+  PASS  强度描述不暗示因果
+
+[7] 偏相关：辛普森悖论必须被识破
+  PASS  不控制混杂时算出的是强正相关（假象）
+  PASS  控制混杂后符号翻转为负相关（真实关系）
+  PASS  偏相关记录了控制了哪些变量
+  PASS  偏相关记录了有效组数
+  PASS  方法说明写明是近似口径
+  PASS  单样本组被丢弃（不污染残差）
+  PASS  有效样本不足返回 null
+  PASS  非数值行被跳过
+
+[8] Mann-Kendall 趋势
+  PASS  严格递增 tau = 1
+  PASS  严格递增判为上升且显著
+  PASS  严格递减 tau = -1
+  PASS  严格递减判为下降
+  PASS  全等值：不报趋势且不崩
+  PASS  噪声横盘不判趋势
+  PASS  样本不足返回 null
+  PASS  并列值修正生效（方差变小 → |z| 变大）
+
+[9] 表述辅助：不制造不存在的精度
+  PASS  极小 p 值不写成 0
+  PASS  中等 p 值保留有效位
+  PASS  空值安全
+  PASS  比例区间格式可读
+  PASS  证据条目含 claim / method / n / p / ci
+
+═══ 结果：75 通过 / 0 失败 ═══
+
+[1] 合成数据生成（结构与确定性，不断言其内容含义）
+  PASS  默认生成 96 条
+  PASS  字段完整（12 列）
+  PASS  确定性（同种子同结果）
+  PASS  含失败样本（供归因分析）
+  PASS  失败行都有故障原因
+  PASS  成功行无故障原因
+  PASS  成本为正整数（分）
+  PASS  故障类型都在标准词表内
+  PASS  声明为合成数据（synthetic=true）
+  PASS  合成数据带生成器与种子（可复现）
+
+[2] 成本口径
+  PASS  1kg PLA + 1kWh + 1h = 69 + 0.6 + 0.12 元
+
+[3] CSV 解析
+  PASS  中文表头解析出 2 行
+  PASS  成本元 → 分（3.51 → 351）
+  PASS  带引号逗号字段正确切分
+  PASS  中文状态归一化 fail
+  PASS  数字字段为 number
+  PASS  缺少 status 列报错
+  PASS  未知状态行不会静默归为 success
+  PASS  非法非空数值行不会静默归零
+
+[4] CSV 导出回环
+  PASS  导出→再解析行数一致
+  PASS  关键字段回环无损
+
+[5] 聚合与统计
+  PASS  total = ok + fail
+  PASS  良率 + 失败率 = 1
+  PASS  groupBy 分组行数守恒
+  PASS  KPI 重点机台样本量达标
+  PASS  KPI 重点机台确实是失败率最高者
+  PASS  KPI 时间跨度按数据实算（不写死「近三周」）
+
+[6] 相关系数
+  PASS  完全正相关 r≈1
+  PASS  完全负相关 r≈-1
+  PASS  样本不足返回 null
+
+[7] 意图识别
+  PASS  机台故障
+  PASS  材料对比
+  PASS  层高相关性
+  PASS  成本趋势
+  PASS  失败归因
+  PASS  兜底 overview
+
+[8] 报告结构（与后端产物同构）
+  PASS  六类问题均产出完整报告
+  PASS  图表结构合法
+  PASS  引擎如实标注 local-rules（不冒充 AI）
+  PASS  空数据集安全返回
+  PASS  空数据集可信度为 insufficient-data
+
+[9] 统计守卫：最小样本量（防「1 单 1 失败 = 100% 故障率」登顶）
+  PASS  样本不足的机台不被评为最差
+  PASS  结论不指向 1 单样本的机台
+  PASS  图表仍展示样本不足的机台但标记 weak
+  PASS  样本不足的机台在报告中被列出
+  PASS  全员样本不足 → 拒绝排名
+  PASS  全员样本不足 → 可信度 insufficient-data
+  PASS  全员样本不足 → 结论明说样本不足
+
+[10] 已知效应识别（构造数据 → 引擎能否找出来）
+  PASS  识别出注入的高故障机台
+  PASS  结论中报出真实失败率 40%
+  PASS  结论中报出样本量
+  PASS  效应调转后结论随之调转
+
+[11] 诚实性：来源标记 / 未识别问题 / 机台 ID
+  PASS  报告携带 provenance
+  PASS  未匹配到分析维度时如实标注
+  PASS  未匹配时标题写明「未识别」
+  PASS  未匹配时列出支持的维度
+  PASS  匹配到维度时 intentMatched=true
+  PASS  机台 ID 取自当前机型（FX-500）
+  PASS  机台 ID 取自当前机型（FX-Δ260）
+  PASS  无机型信息时不冒充具体机台
+  PASS  仿真可产故障全部在标准词表内
+  PASS  词表覆盖运行中报警与完成时判废两个阶段
+  PASS  未知故障有独立取值，不并入任何具体故障
+  PASS  normalizeFault 不猜：无法归类返回「未知」
+
+[12] 计价口径可溯与可替换
+  PASS  计价口径带出处说明
+  PASS  替换计价口径后金额随之变化
+  PASS  未覆盖的字段沿用原值
+  PASS  未知材料落到兜底单价
+
+[13] 统计严谨性：结论必须带证据，不显著必须明说
+  PASS  显著差异 → 结论断言「显著高于」
+  PASS  显著差异 → 结论带 p 值
+  PASS  显著差异 → 结论带置信区间
+  PASS  显著差异 → 可信度不为 low
+  PASS  噪声差异 → 结论明说「未达统计显著」
+  PASS  噪声差异 → 可信度降为 low
+  PASS  噪声差异 → 不出现「显著高于」这类断言
+  PASS  噪声差异 → 仍提供 highlight 供排查
+  PASS  报告带 evidence 数组
+  PASS  evidence 含 claim / method / n / pValue
+  PASS  evidence 的 method 写明具体检验
+  PASS  空数据集也有 evidence 字段（哪怕为空）
+
+[14] 混杂因素：层高分析必须给出两个口径
+  PASS  同时给出未控制与已控制两个口径
+  PASS  结论以偏相关为主口径
+  PASS  偏相关识别出真实的负向关系
+  PASS  明确声明相关不等于因果
+  PASS  evidence 记录了两个口径
+  PASS  偏相关的 evidence 写明控制了哪些变量
+
+[15] KPI 与分析器口径一致（不再各自为政）
+  PASS  KPI 与分析器指向同一台机器
+  PASS  KPI 的 worstMachine 带置信区间
+  PASS  KPI 的 worstMachine 带显著性标记
+  PASS  样本不足的机台不进 KPI
+
+═══ 结果：90 通过 / 0 失败 ═══
+
+[1] 机台物理特征：确定性与结构性
+  PASS  同一机台编号 → 同一组物理特征
+  PASS  不同机台 → 不同物理特征
+  PASS  机型标签解析正确
+  PASS  封闭腔体由机型决定（不是随机）
+  PASS  封闭机型环境温度高于开放机型
+  PASS  48 台机器的特征全部落在声明区间内
+
+[2] 结果确定性：同样的机器跑同样的活，结果必须一致
+  PASS  两次运行状态一致
+  PASS  两次运行故障类型一致
+  PASS  两次运行耗材量一致
+  PASS  两次运行机时一致
+  PASS  负载峰值也逐位一致
+
+[3] 默认工艺在全机群都安全（磨损只是易感，不直接制造故障）
+  PASS  12 台机器跑标准 PLA 全部成功
+
+[4] 区分度：同样的坏工况，好机器扛得住、差机器扛不住
+  PASS  低温工况：干净热端跑通
+  PASS  低温工况：重度积碳堵料
+  PASS  高流量：咬合力强的机器不打滑
+  PASS  高流量：咬合力弱的机器断料
+  PASS  ABS：加热器健康的机器跑通
+  PASS  ABS：加热器功率不足 → 加热失败
+
+[5] 效应可调转：把物理特征对调，失败必须跟着换机器
+  PASS  A（积碳重）失败、B（干净）成功
+  PASS  特征对调后 A 成功、B 失败（结论跟着物理走，不跟着编号走）
+
+[6] 成品判废：翘边 / 悬垂塌陷在打印完成时评估
+  PASS  悬垂件不开支撑 → 悬垂塌陷
+  PASS  悬垂件开支撑 → 成功
+  PASS  判废发生在打印完成后（跑满了所有层）
+  PASS  ABS 床温不足 + 开放机型 → 翘边
+  PASS  翘边风险指数确实越线
+  PASS  床温从 60 提到 100 后翘边风险显著下降
+  PASS  封闭机型 + 正确床温 → ABS 不翘边
+  PASS  封闭机型的翘边风险低于开放机型（同样参数）
+
+[7] 物理证据自洽：故障类型必须与越线的机制对得上
+  PASS  堵料单：挤出负载指数越线
+  PASS  堵料单：送料打滑指数未越线（不是断料）
+  PASS  断料单：送料打滑指数越线
+  PASS  故障单仍保留遥测快照
+
+[8] 故障词表：仿真侧与分析侧单一真源
+  PASS  五类故障全部可由仿真产生
+  PASS  仿真故障名全部能归入标准词表
+  PASS  未知故障归为「未知」，不猜具体类型
+  PASS  成功单不产生故障类型
+  PASS  每类故障都注明了物理机理
+
+[9] 遥测贯通：仿真的物理量进入生产记录
+  PASS  机台编号取自实际机型（不写死）
+  PASS  生产记录挂上遥测
+  PASS  遥测含挤出负载峰值
+  PASS  遥测含机台物理特征（可追溯到是哪台机器的什么毛病）
+  PASS  遥测含本单工艺参数
+  PASS  标准 CSV 字段不受污染（遥测不进 CSV）
+
+[10] 机群数据集：可复现且带交互效应
+  PASS  排产参数解析可用
+  PASS  材料预设覆盖四种材料
+  PASS  normalizeFault 转发到数据层
+  PASS  同规模机群 → 同一组机台特征
+  PASS  同 seed → 同一份排产
+
+═══ 结果：48 通过 / 0 失败 ═══
+
+[1] 健康检查与引擎模式
+  PASS  healthz 200 且 ok:true
+  PASS  门禁生效：未配密钥时为规则引擎
+  PASS  healthz 报出 provider 与能力
+  PASS  healthz 的 engine 与报告的 engine 同源
+  PASS  附带模式原因说明
+
+[2] 静态托管 allowlist 与路径穿越
+  PASS  GET / 返回前端页面
+  PASS  GET /js/util.js 可达
+  PASS  公开 Profile 示例可达
+  PASS  公开校准包示例可达且标记为 demonstration
+  PASS  公开校准报告可达且保留 provenance
+  PASS  server/ 目录不可达
+  PASS  .env 不可达
+  PASS  编码路径穿越被拒
+  PASS  已移除的 doc 目录不可达
+
+[2b] React 构建产物严格映射
+  PASS  GET /react 映射到 React index
+  PASS  GET /react/ 映射到 React index
+  PASS  仅 /react/assets/* 映射构建资产
+  PASS  React 哈希资产使用 immutable 缓存
+  PASS  React 资产支持 HEAD 且不返回正文
+  PASS  磁盘 dist 路径不可直接访问
+  PASS  React 资产不泄露到根 /assets
+  PASS  React 非约定入口默认拒绝
+  PASS  React assets 目录不可列出
+  PASS  React assets 编码点路径被拒绝
+  PASS  React 非规范双斜杠路径被拒绝
+  PASS  React 构建产物缺失时明确返回 404
+
+[3] 数据源上传与校验
+  PASS  合法 CSV → 201 + datasourceId
+  PASS  返回解析行数 3
+  PASS  空 csv → 400
+  PASS  缺 status 列 → 400 且给出原因
+  PASS  非法 JSON → 400
+  PASS  合成来源穿过后端不丢失
+  PASS  报告继承合成标记
+  PASS  客户端不能把数据标成更真实（只能更谨慎）
+  PASS  未知来源但自称合成 → 保守标出
+
+[4] 分析任务：创建 → SSE 进度 → 结果（内置示例数据）
+  PASS  建任务 → 202 + taskId
+  PASS  返回引擎标识 server-rules
+  PASS  SSE Content-Type 正确
+  PASS  SSE 事件 ≥ 4（3 步 + done）
+  PASS  SSE 末事件为 done
+  PASS  事件 seq 单调递增
+  PASS  结果 → 200 报告
+  PASS  意图命中 machine_fault（UTF-8 中文）
+  PASS  报告结构完整（title/verdict/sections/chart）
+  PASS  结论指向数据集中真实存在的机台
+  PASS  报告带来源标记（内置数据集须标为合成）
+  PASS  报告带可信度字段
+  PASS  视口联动 highlight 存在
+  PASS  engine 如实标注 server-rules（不冒充 AI / InfiniSynapse）
+  PASS  终态任务 SSE 重放全部事件
+  PASS  轮询兜底：status=done + progress=1
+
+[5] 上传数据源上的分析（端到端）
+  PASS  上传数据可分析且行数=3
+  PASS  归因命中堵料
+
+[6] 分析入参校验
+  PASS  缺 question → 400
+  PASS  question 超长 → 400
+  PASS  数据源不存在 → 404
+  PASS  任务不存在 → 404
+  PASS  未知 API → 404 JSON
+
+[7] 知识库
+  PASS  上传知识文档 → 201 + knowledgeId
+  PASS  空文档 → 400
+
+[8] 分享页
+  PASS  生成分享 → 201 + publicUrl
+  PASS  分享页可打开且含报告标题
+  PASS  分享页含品牌与提问
+  PASS  无效 token → 404
+  PASS  不存在任务分享 → 404
+
+[9] 限流（独立实例，冷却 60s）
+  PASS  冷却期首次请求放行
+  PASS  冷却期内第二次 → 429
+
+[10] Provider 抽象：选择逻辑与能力标记
+  PASS  无任何配置 → 本地规则引擎
+  PASS  降级原因如实说明
+  PASS  InfiniSynapse 就绪 → 自动选它
+  PASS  仅 OpenAI 兼容就绪 → 自动选它
+  PASS  两者都就绪 → 按优先级选 InfiniSynapse
+  PASS  显式指定 local → 覆盖自动探测
+  PASS  指定 openai 但缺 model → 降级并说明原因
+  PASS  INFINI_MOCK=1 优先级最高
+  PASS  规则引擎不声称有 AI 能力
+  PASS  OpenAI provider 声称有 AI 能力
+
+[11] 云端与本地产物同构：数字由本地统计核负责
+  PASS  叙述采用 AI 的
+  PASS  图表来自本地统计核（云端不再无图表）
+  PASS  highlight 来自本地（云端也有视口联动）
+  PASS  evidence 来自本地（数字可追溯）
+  PASS  统计明细不被 AI 叙述覆盖掉
+  PASS  叙述出处与数字出处分开标注
+  PASS  AI 叙述失败时保留本地全部产物
+  PASS  AI 叙述失败时如实说明
+  PASS  JSON 提取能剥掉代码围栏
+  PASS  JSON 提取对非 JSON 返回 null
+  PASS  系统提示词禁止 LLM 自行计算
+  PASS  系统提示词要求区分显著与不显著
+  PASS  系统提示词禁止因果表述
+
+[12] 统计简报：token 成本与数据量解耦
+  PASS  简报显著小于原始 CSV
+  PASS  行数翻倍后简报大小基本不变
+  PASS  简报含置信区间
+  PASS  简报含显著性标注
+  PASS  简报含样本量守卫说明
+  PASS  简报明确禁止把相关当因果
+  PASS  简报结构化事实可复用
+  PASS  简报不含原始行数据（不泄漏逐条记录）
+
+[13] 结果缓存：同一问题不重复烧钱
+  PASS  同问题+同数据集+同 provider → 同 key
+  PASS  换 provider → 不同 key（不会串用别的引擎的结果）
+  PASS  换问题 → 不同 key
+  PASS  写入后可命中
+  PASS  超容量淘汰最久未用
+  PASS  过期条目不再命中
+
+[14] 知识检索（RAG 的 R）
+  PASS  中文 bigram 分词可用
+  PASS  英文数字按词切分
+  PASS  长文档被切成多个片段
+  PASS  检索命中相关片段
+  PASS  跨文档检索正确
+  PASS  无关问题不返回任何片段
+  PASS  空知识库安全返回
+  PASS  命中带分数便于排序与调试
+
+[15] 知识库接口：能力标记必须与实际 provider 一致
+  PASS  规则引擎下如实标注检索不生效
+  PASS  并说明为什么不生效
+  PASS  检索预览可用（用户能自证会检索到什么）
+  PASS  检索预览：无命中时明说
+  PASS  检索预览：空问题 → 400
+
+[16] 持久化：重启不再丢一切
+  PASS  重启后上传的数据源仍可用
+  PASS  重启后知识文档仍在
+  PASS  重启后分享页仍可打开（此前重启即失效）
+  PASS  持久化状态在 healthz 中可见
+  PASS  dataDir 为空时退回纯内存并如实标注
+
+[17] 文件存储层：原子写 / TTL / 容量淘汰 / 损坏容错
+  PASS  写入后可读
+  PASS  新实例能从盘上恢复
+  PASS  删除会落盘（不会复活）
+  PASS  超容量淘汰最旧的非 builtin 项
+  PASS  builtin 项豁免淘汰
+  PASS  过期记录读不到
+  PASS  过期记录不会在重启后复活
+  PASS  损坏的单条记录不影响其余加载
+  PASS  dataDir 为空时不落盘
+  PASS  关闭持久化后内存仍可用
+  PASS  id 中的路径穿越被消解
+
+[18] 成本闸门：额度用尽降级而不是罢工
+  PASS  初始有额度
+  PASS  单调用方额度用尽被拦下
+  PASS  拒绝理由指向自带 key 的出路
+  PASS  换一个调用方仍有额度（按人计费而非全局）
+  PASS  全局日上限兜底生效
+  PASS  取得第一个槽位
+  PASS  并发满时进入排队而不是报错
+  PASS  队列也满时才拒绝
+  PASS  释放后队列中的任务拿到槽位
+  PASS  全部释放后并发归零
+  PASS  用量跨重启保留（重启不等于重置额度）
+  PASS  不限额配置下永远放行
+
+[19] 鉴权：默认不挡路，配了 key 才生效
+  PASS  未配置 key 时鉴权关闭
+  PASS  关闭时按 IP 识别身份
+  PASS  关闭时不拦截
+  PASS  Bearer 头识别成功
+  PASS  X-API-Key 头同样识别
+  PASS  不同 key → 不同计费主体
+  PASS  完整 key 不出现在 caller 标识里
+  PASS  错误 key 不通过
+  PASS  requireAuth 下拦截未认证请求
+  PASS  普通 API key 不会隐式获得校准审核权
+  PASS  重叠审核 key 的匿名摘要一致以支持四眼校验
+  PASS  独立保管的审核 key 只获得审核角色
+  PASS  鉴权启用日志只记录数量且不泄露密钥
+  PASS  REQUIRE_AUTH=1 但无 key 时降级为不启用
+  PASS  常数时间比较对等长/不等长都可用
+
+[20] 额度用尽时的端到端行为：降级而非报错
+  PASS  建任务返回配额信息
+  PASS  规则引擎模式下 willUseAi 为 false
+  PASS  规则引擎模式下不返回配额（不该给用不上的限制）
+
+[21] /metrics：Prometheus 文本格式
+  PASS  /metrics 可访问
+  PASS  Content-Type 为 Prometheus 文本格式
+  PASS  含任务计数
+  PASS  含 HELP/TYPE 注释（Prometheus 规范）
+  PASS  含配额与存储指标
+
+[22] 分享页：可撤销 + 披露可信度与数据来源
+  PASS  创建分享返回撤销密钥与有效期
+  PASS  分享页披露可信度
+  PASS  分享页披露合成数据来源（分享出去的更要说清楚）
+  PASS  分享页引擎标注不冒充 AI
+  PASS  错误撤销密钥 → 403
+  PASS  撤销失败后分享页仍可访问
+  PASS  正确密钥可撤销
+  PASS  撤销后分享页立即失效
+
+[23] C# G-code 权威计算同源流式代理
+  PASS  权威代理透传上游状态码
+  PASS  权威代理透传 Content-Type
+  PASS  权威代理透传 trace headers
+  PASS  权威代理固定目标路径并保留 query
+  PASS  权威代理逐字节保留 raw body
+  PASS  Cookie/API key/Authorization 均不转发到 C#
+  PASS  客户端伪造的请求 ID 不透传，Node 生成新 trace ID
+  PASS  生产 G-code 请求体硬上限固定为 64 MiB
+  PASS  REQUIRE_AUTH=0 时保持匿名调用兼容
+  PASS  REQUIRE_AUTH=1 时匿名权威分析返回 401
+  PASS  身份守卫拒绝时不连接 sidecar
+  PASS  合法 X-API-Key 可调用权威分析
+  PASS  合法 Bearer 可调用权威分析
+  PASS  合法 API Key/Bearer 只用于 Node 守卫且不转发 sidecar
+  PASS  合法 Partner SSO Cookie 可调用权威分析
+  PASS  合法 SSO Cookie 只用于 Node 守卫且不转发 sidecar
+  PASS  并发权威分析复用既有冷却限流并返回 429
+  PASS  被限流请求不连接 sidecar
+  PASS  Content-Length 预检超限返回结构化 413
+  PASS  Content-Length 预检失败时不连接 C#
+  PASS  chunked 上传按实际字节计数并在超限时返回 413
+  PASS  未配置 sidecar 时返回结构化 503
+  PASS  新增代理不影响既有 healthz
+  PASS  C# sidecar 不可连接时返回结构化 502
+  PASS  sidecar 超时返回结构化 504
+  PASS  浏览器取消上传会中止 C# 上游请求
+  PASS  危险 authority target 配置被拒绝：ftp://127.0.0.1:8788
+  PASS  危险 authority target 配置被拒绝：http://user:password@127.0.0.1:8788
+  PASS  危险 authority target 配置被拒绝：http://127.0.0.1:8788/private/path
+  PASS  危险 authority target 配置被拒绝：https://example.com
+  PASS  远端 origin 仅在显式 opt-in 后接受
+
+═══ 结果：207 通过 / 0 失败 ═══
+  ✓ 异步创建经同源代理返回 202
+  ✓ Location 由 sidecar 透传
+  ✓ 创建请求保留 query 与原始字节
+  ✓ Idempotency-Key 透传
+  ✓ Node 使用内部密钥建立 sidecar 信任
+  ✓ Node 注入匿名化 tenant/owner 上下文
+  ✓ 浏览器伪造的内部上下文被覆盖
+  ✓ 浏览器凭据不泄露给 sidecar
+  ✓ 作业快照固定路径可读取
+  ✓ 同一调用方的 tenant/owner 在创建与读取间稳定
+  ✓ 不同调用方获得不同的匿名化 owner/tenant
+  ✓ SSE 类型与事件帧透传
+  ✓ Last-Event-ID 透传
+  ✓ 取消路由返回稳定终态
+  ✓ REQUIRE_AUTH 下匿名作业读取被拒绝
+  ✓ 独立回滚开关仅关闭异步创建
+  ✓ 非 SSE 作业代理超时返回结构化 504
+  ✓ 过短的 Node→C# 内部密钥在启动时拒绝
+
+═══ 结果：18 通过 / 0 失败 ═══
+Analytics authority proxy PASS: 16/16
+OpenAPI generated client is current: frontend\src\generated\forgex-api.ts
+OpenAPI contract OK: 9 operations, 29 schemas
+Partner SSO OK: state 校验、code 兑换、HttpOnly 会话、用户 Key 隔离、退出登录
+
+[Stage0-1] 认证优先级
+[Stage0-2] owner/tenant、去重、缓存与审计
+[Stage0-3] SSO 用户能力与文件责任链
+[Stage0-4] Delta、file:// 与源码可审计性
+Stage 0 hardening OK: auth/tenant/cache/metrics/SHA/Delta/file/NUL
+HTML ids: 78 | JS id refs: 60
+ALL REFS OK
+
+[ecosystem] Profile bundle
+  PASS  profiles/profile-bundle.schema.json 是有效 JSON
+  PASS  profiles/example-bundle.json 是有效 JSON
+  PASS  profiles/example-bundle.json 通过运行时白名单校验
+
+[ecosystem] Machine log contract
+  PASS  logs/machine-log.schema.json 是有效 JSON
+  PASS  logs/example-machine-log.json 是有效 JSON
+  PASS  logs/example-machine-log.json 满足 v1 最小契约
+
+[ecosystem] Dataset manifests
+  PASS  数据集 manifest schema 是有效 JSON
+  PASS  至少存在一个数据集 manifest
+  PASS  datasets/print_farm_400.manifest.json 元数据、来源与隐私声明完整
+  PASS  datasets/print_farm_400.manifest.json 的生成来源存在
+  PASS  datasets/print_farm_400.csv 存在且位于仓库内
+  PASS  datasets/print_farm_400.csv SHA-256 匹配
+  PASS  datasets/print_farm_400.csv 表头契约匹配
+  PASS  datasets/print_farm_400.csv 行数匹配
+  PASS  datasets/print_farm_400_telemetry.json 存在且位于仓库内
+  PASS  datasets/print_farm_400_telemetry.json SHA-256 匹配
+  PASS  datasets/print_farm_400_telemetry.json 是有效 JSON
+
+═══ 生态校验：17 通过 / 0 失败 ═══
+
+[P6 validation] Contracts
+  PASS  fixture manifest schema 是有效 JSON
+  PASS  fixture manifest 满足 v1 最小契约
+  PASS  fixture set 声明允许的 provenance
+  PASS  fixture set 带真实性边界
+
+[P6 validation] Fixture pairs
+  PASS  cura-marlin ID 唯一
+  PASS  cura-marlin 来源声明完整
+  PASS  cura-marlin G-code 位于仓库内
+  PASS  cura-marlin 真机日志位于仓库内
+  PASS  cura-marlin G-code SHA-256 匹配
+  PASS  cura-marlin 日志 SHA-256 匹配
+  PASS  cura-marlin G-code 与日志均可解析
+  PASS  cura-marlin 层数契约匹配
+  PASS  cura-marlin 耗材契约匹配
+  PASS  cura-marlin 路径类型契约匹配
+  PASS  cura-marlin 切片器声明匹配
+  PASS  cura-marlin 日志绑定同一 G-code 哈希
+  PASS  cura-marlin 机型与固件元数据匹配
+  PASS  prusa-marlin ID 唯一
+  PASS  prusa-marlin 来源声明完整
+  PASS  prusa-marlin G-code 位于仓库内
+  PASS  prusa-marlin 真机日志位于仓库内
+  PASS  prusa-marlin G-code SHA-256 匹配
+  PASS  prusa-marlin 日志 SHA-256 匹配
+  PASS  prusa-marlin G-code 与日志均可解析
+  PASS  prusa-marlin 层数契约匹配
+  PASS  prusa-marlin 耗材契约匹配
+  PASS  prusa-marlin 路径类型契约匹配
+  PASS  prusa-marlin 切片器声明匹配
+  PASS  prusa-marlin 日志绑定同一 G-code 哈希
+  PASS  prusa-marlin 机型与固件元数据匹配
+  PASS  orca-klipper ID 唯一
+  PASS  orca-klipper 来源声明完整
+  PASS  orca-klipper G-code 位于仓库内
+  PASS  orca-klipper 真机日志位于仓库内
+  PASS  orca-klipper G-code SHA-256 匹配
+  PASS  orca-klipper 日志 SHA-256 匹配
+  PASS  orca-klipper G-code 与日志均可解析
+  PASS  orca-klipper 层数契约匹配
+  PASS  orca-klipper 耗材契约匹配
+  PASS  orca-klipper 路径类型契约匹配
+  PASS  orca-klipper 切片器声明匹配
+  PASS  orca-klipper 日志绑定同一 G-code 哈希
+  PASS  orca-klipper 机型与固件元数据匹配
+  PASS  superslicer-rrf ID 唯一
+  PASS  superslicer-rrf 来源声明完整
+  PASS  superslicer-rrf G-code 位于仓库内
+  PASS  superslicer-rrf 真机日志位于仓库内
+  PASS  superslicer-rrf G-code SHA-256 匹配
+  PASS  superslicer-rrf 日志 SHA-256 匹配
+  PASS  superslicer-rrf G-code 与日志均可解析
+  PASS  superslicer-rrf 层数契约匹配
+  PASS  superslicer-rrf 耗材契约匹配
+  PASS  superslicer-rrf 路径类型契约匹配
+  PASS  superslicer-rrf 切片器声明匹配
+  PASS  superslicer-rrf 日志绑定同一 G-code 哈希
+  PASS  superslicer-rrf 机型与固件元数据匹配
+
+[P6 validation] Calibration
+  PASS  训练集至少三个不同时长的配对任务
+  PASS  至少保留一个未参与拟合的 holdout
+  PASS  校准模型参数有效
+  PASS  holdout 指标可计算
+  PASS  validation/time-calibration-report.json 与夹具及算法一致
+
+═══ P6 夹具校验：61 通过 / 0 失败 ═══
+Stage 0 golden baseline OK: 24 cases
+Stage 4 analytics golden OK: 4 CSV + 5 Wilson + 4 Fisher + 6 Pearson + 4 partial + 7 Mann-Kendall + 12 reports + 1 ranking + 5001 row limit + 400 dataset rows
+Stage 5 layer-plan golden OK: 4 cases
+
+[P7 calibration] Bundle contract
+  PASS  仓库示例通过运行时严格校验
+  PASS  schema 禁止 bundle 顶层未知字段
+  PASS  schema 禁止模型未知字段
+  PASS  schema 与运行时声明相同生命周期
+  PASS  校准算法固定为当前已实现的 Theil–Sen
+  PASS  示例明确标为合成兼容性数据
+  PASS  示例模型只能用于演示
+  PASS  示例说明不冒充生产模型
+
+[P7 calibration] Provenance and integrity
+  PASS  示例训练集指纹绑定 P6 fixture manifest
+  PASS  active 来源只允许匿名化或明确同意的真实数据
+  PASS  合成 demonstration 模型不会被默认自动匹配
+  PASS  演示模型仅能显式预览
+
+[P7 calibration] Browser integration
+  PASS  浏览器提供校准包文件入口
+  PASS  注册表先于 UI 加载
+  PASS  示例 bundle 从界面可访问
+  PASS  npm 主测试链包含校准运营门禁
+
+[P8 calibration] Review and distribution
+  PASS  服务端注册校准发布路由
+  PASS  候选提交要求已配置普通 API Key
+  PASS  审核队列与发布使用独立审核角色
+  PASS  候选审批执行四眼原则
+  PASS  批准时重新执行 active 准入校验
+  PASS  浏览器只拉取公开已审核目录
+  PASS  P8 浏览器回归覆盖提交审核与同步
+
+═══ P7/P8 校准门禁：23 通过 / 0 失败 ═══
+{
+  "result": "pass",
+  "schemaVersion": 1,
+  "checks": [
+    {
+      "version": 1,
+      "file": "migrations/0001_gcode_jobs.sql",
+      "sha256": "e89ee97a3844fee1f452d0234ca690639fc681f432900bbfce3980b2143c22b3",
+      "bytes": 3993
+    }
+  ]
+}
+{
+  "schemaVersion": 1,
+  "status": "pass",
+  "checks": [
+    {
+      "name": "node-image-pinned",
+      "pass": true,
+      "detail": "builder and runtime use node:22.13.1-alpine3.21"
+    },
+    {
+      "name": "api-images-pinned",
+      "pass": true,
+      "detail": "SDK and ASP.NET runtime tags are explicit"
+    },
+    {
+      "name": "multi-stage-builds",
+      "pass": true,
+      "detail": "both images have separate build and runtime stages"
+    },
+    {
+      "name": "nonroot-runtime-users",
+      "pass": true,
+      "detail": "runtime users are numeric and non-root"
+    },
+    {
+      "name": "no-copy-all",
+      "pass": true,
+      "detail": "runtime contexts use explicit COPY allowlists"
+    },
+    {
+      "name": "writable-data-owned",
+      "pass": true,
+      "detail": "persistent data roots are owned before dropping privileges"
+    },
+    {
+      "name": "image-healthchecks",
+      "pass": true,
+      "detail": "both runtime images define health checks"
+    },
+    {
+      "name": "compose-services",
+      "pass": true,
+      "detail": "gateway and authority are separate services"
+    },
+    {
+      "name": "compose-private-sidecar",
+      "pass": true,
+      "detail": "authority is exposed only to the compose network"
+    },
+    {
+      "name": "compose-trusted-boundary",
+      "pass": true,
+      "detail": "gateway and authority share a required internal secret"
+    },
+    {
+      "name": "compose-separate-volumes",
+      "pass": true,
+      "detail": "service data uses separate named volumes"
+    },
+    {
+      "name": "compose-hardening",
+      "pass": true,
+      "detail": "both services are read-only, capability-free and no-new-privileges"
+    },
+    {
+      "name": "compose-health-ordering",
+      "pass": true,
+      "detail": "gateway waits for the authority readiness probe"
+    },
+    {
+      "name": "dockerignore-sensitive-state",
+      "pass": true,
+      "detail": "build contexts exclude repositories, secrets, state and generated outputs"
+    },
+    {
+      "name": "secret-example-empty",
+      "pass": true,
+      "detail": "deployment example never contains a reusable secret"
+    },
+    {
+      "name": "runtime-smoke-contract",
+      "pass": true,
+      "detail": "runtime drill checks identity, restart, metrics and UI"
+    }
+  ]
+}
+
+[release] Version and metadata
+  PASS  package 与 lock 根版本一致
+  PASS  版本采用稳定 semver
+  PASS  README.md 徽章版本一致
+  PASS  .github/README.en.md 徽章版本一致
+  PASS  CHANGELOG 含当前版本
+
+[release] Browser cache contract
+  PASS  发现应用 CSS/JS 缓存键
+  PASS  应用 CSS/JS 缓存键全部跟随小版本
+
+[release] P6 validation contract
+  PASS  校准报告绑定 fixture manifest
+  PASS  报告保留 provenance
+  PASS  合成兼容性夹具不冒充真机精度
+  PASS  发布脚本包含完整验证入口
+
+[release] P7 calibration lifecycle
+  PASS  校准示例使用受控 bundle 格式
+  PASS  合成模型只能作为 demonstration
+  PASS  bundle schema 默认拒绝未知字段
+  PASS  主测试链包含校准注册表与运营门禁
+  PASS  注册表在 UI 之前加载
+  PASS  浏览器回归覆盖 P7 校准生命周期
+
+[release] P8 reviewed distribution
+  PASS  主测试链包含服务端校准审批契约
+  PASS  服务端组装公开校准目录
+  PASS  审批写接口强制 API Key
+  PASS  审批禁止提交者自批
+  PASS  浏览器启动时同步审核目录
+  PASS  浏览器回归覆盖服务端发布
+  PASS  CI 安装 Chromium、Firefox 与 WebKit
+  PASS  Playwright 配置声明三浏览器
+
+═══ 发布门禁：25 通过 / 0 失败 ═══
+OUTPUT_END
+
+===== dotnet-golden =====
+COMMAND: npm run dotnet:golden
+EXIT_STATUS: 0
+OUTPUT_BEGIN
+
+> forgex-insight@0.19.0 dotnet:golden
+> npm run dotnet:build && node tools/run-dotnet.js run --project backend/tests/ForgeX.GoldenDiff/ForgeX.GoldenDiff.csproj --configuration Release --no-build
+
+
+> forgex-insight@0.19.0 dotnet:build
+> npm run dotnet:restore && node tools/run-dotnet.js build backend/ForgeX.sln --configuration Release --no-restore -m:1 -nr:false
+
+
+> forgex-insight@0.19.0 dotnet:restore
+> node tools/run-dotnet.js restore backend/ForgeX.sln --configfile backend/NuGet.Config --disable-parallel -m:1 -nr:false
+
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  ForgeX.Domain -> E:\Projects\3dprint\backend\src\ForgeX.Domain\bin\Release\net10.0\ForgeX.Domain.dll
+  ForgeX.Application -> E:\Projects\3dprint\backend\src\ForgeX.Application\bin\Release\net10.0\ForgeX.Application.dll
+  ForgeX.Simulation -> E:\Projects\3dprint\backend\src\ForgeX.Simulation\bin\Release\net10.0\ForgeX.Simulation.dll
+  ForgeX.Infrastructure -> E:\Projects\3dprint\backend\src\ForgeX.Infrastructure\bin\Release\net10.0\ForgeX.Infrastructure.dll
+  ForgeX.Contracts -> E:\Projects\3dprint\backend\src\ForgeX.Contracts\bin\Release\net10.0\ForgeX.Contracts.dll
+  ForgeX.Analytics -> E:\Projects\3dprint\backend\src\ForgeX.Analytics\bin\Release\net10.0\ForgeX.Analytics.dll
+  ForgeX.Api -> E:\Projects\3dprint\backend\src\ForgeX.Api\bin\Release\net10.0\ForgeX.Api.dll
+  ForgeX.GoldenDiff -> E:\Projects\3dprint\backend\tests\ForgeX.GoldenDiff\bin\Release\net10.0\ForgeX.GoldenDiff.dll
+  ForgeX.JobGate -> E:\Projects\3dprint\backend\tests\ForgeX.JobGate\bin\Release\net10.0\ForgeX.JobGate.dll
+  ForgeX.PersistenceTool -> E:\Projects\3dprint\backend\tools\ForgeX.PersistenceTool\bin\Release\net10.0\ForgeX.PersistenceTool.dll
+  ForgeX.PersistenceGate -> E:\Projects\3dprint\backend\tests\ForgeX.PersistenceGate\bin\Release\net10.0\ForgeX.PersistenceGate.dll
+  ForgeX.AnalyticsGate -> E:\Projects\3dprint\backend\tests\ForgeX.AnalyticsGate\bin\Release\net10.0\ForgeX.AnalyticsGate.dll
+  ForgeX.GCodeBenchmark -> E:\Projects\3dprint\backend\tests\ForgeX.GCodeBenchmark\bin\Release\net10.0\ForgeX.GCodeBenchmark.dll
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:01.30
+[PASS] gcode-cura-marlin-pla-default: 43/43 fields
+[PASS] gcode-cura-marlin-petg-default: 43/43 fields
+[PASS] gcode-orca-klipper-pla-default: 51/51 fields
+[PASS] gcode-orca-klipper-petg-default: 51/51 fields
+[PASS] gcode-prusa-marlin-pla-default: 42/42 fields
+[PASS] gcode-prusa-marlin-petg-default: 42/42 fields
+[PASS] gcode-superslicer-rrf-pla-default: 60/60 fields
+[PASS] gcode-superslicer-rrf-petg-default: 60/60 fields
+[PASS] contract/malformed-input: stableCode=GCODE_NO_EXTRUSION_PATH
+[PASS] contract/pre-cancelled: OperationCanceledException observed before parsing.
+[PASS] contract/non-seekable-stream: canSeek=False; shaMatch=True; semanticMatch=True
+[PASS] contract/crlf-utf8-byte-boundary: maxReadBytes=1; shaMatch=True; semanticMatch=True
+[PASS] contract/profile-summary: valuesMatch=True; fingerprintShape=True; deterministic=True; materialSensitive=True
+[PASS] contract/profile-id-validation: stableCode=GCODE_INVALID_OPTIONS
+[PASS] contract/material-cost-risk: material=True; cost=0.0029825495255018097; risk=high/100; findings=GCODE_RISK_BED_TEMP_BELOW_PROFILE,GCODE_RISK_FLOW_EXCEEDS_PROFILE,GCODE_RISK_NOZZLE_TEMP_OUTSIDE_PROFILE,GCODE_RISK_SINGLE_LAYER,GCODE_RISK_SPEED_EXCEEDS_PROFILE
+[PASS] contract/layer-plan-invariants: sequential=True; sorted=True; pathCounts=True; extrusion=True; types=True; countHeight=True
+[PASS] contract/toolpath-visualization-invariants: layerAligned=True; contiguous=True; counts=True; payload=True; records=True; segments=8/8
+[PASS] contract/toolpath-visualization-budget: segments=3/10; stride=4; bytes=60
+[PASS] contract/layer-limit: stableCode=GCODE_MAX_LAYERS_EXCEEDED
+GoldenDiff: PASS — 392/392 fields, artifact=E:\Projects\3dprint\backend\artifacts\gcode-golden-diff.json
+OUTPUT_END
+
+===== dotnet-job-migration =====
+COMMAND: npm run dotnet:jobs
+EXIT_STATUS: 0
+OUTPUT_BEGIN
+
+> forgex-insight@0.19.0 dotnet:jobs
+> npm run dotnet:build && node tools/run-dotnet.js run --project backend/tests/ForgeX.JobGate/ForgeX.JobGate.csproj --configuration Release --no-build
+
+
+> forgex-insight@0.19.0 dotnet:build
+> npm run dotnet:restore && node tools/run-dotnet.js build backend/ForgeX.sln --configuration Release --no-restore -m:1 -nr:false
+
+
+> forgex-insight@0.19.0 dotnet:restore
+> node tools/run-dotnet.js restore backend/ForgeX.sln --configfile backend/NuGet.Config --disable-parallel -m:1 -nr:false
+
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  ForgeX.Domain -> E:\Projects\3dprint\backend\src\ForgeX.Domain\bin\Release\net10.0\ForgeX.Domain.dll
+  ForgeX.Application -> E:\Projects\3dprint\backend\src\ForgeX.Application\bin\Release\net10.0\ForgeX.Application.dll
+  ForgeX.Simulation -> E:\Projects\3dprint\backend\src\ForgeX.Simulation\bin\Release\net10.0\ForgeX.Simulation.dll
+  ForgeX.Infrastructure -> E:\Projects\3dprint\backend\src\ForgeX.Infrastructure\bin\Release\net10.0\ForgeX.Infrastructure.dll
+  ForgeX.Contracts -> E:\Projects\3dprint\backend\src\ForgeX.Contracts\bin\Release\net10.0\ForgeX.Contracts.dll
+  ForgeX.Analytics -> E:\Projects\3dprint\backend\src\ForgeX.Analytics\bin\Release\net10.0\ForgeX.Analytics.dll
+  ForgeX.Api -> E:\Projects\3dprint\backend\src\ForgeX.Api\bin\Release\net10.0\ForgeX.Api.dll
+  ForgeX.GoldenDiff -> E:\Projects\3dprint\backend\tests\ForgeX.GoldenDiff\bin\Release\net10.0\ForgeX.GoldenDiff.dll
+  ForgeX.JobGate -> E:\Projects\3dprint\backend\tests\ForgeX.JobGate\bin\Release\net10.0\ForgeX.JobGate.dll
+  ForgeX.PersistenceTool -> E:\Projects\3dprint\backend\tools\ForgeX.PersistenceTool\bin\Release\net10.0\ForgeX.PersistenceTool.dll
+  ForgeX.PersistenceGate -> E:\Projects\3dprint\backend\tests\ForgeX.PersistenceGate\bin\Release\net10.0\ForgeX.PersistenceGate.dll
+  ForgeX.AnalyticsGate -> E:\Projects\3dprint\backend\tests\ForgeX.AnalyticsGate\bin\Release\net10.0\ForgeX.AnalyticsGate.dll
+  ForgeX.GCodeBenchmark -> E:\Projects\3dprint\backend\tests\ForgeX.GCodeBenchmark\bin\Release\net10.0\ForgeX.GCodeBenchmark.dll
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:01.24
+G-code async job gate PASS: 20/20
+E:\Projects\3dprint\backend\artifacts\gcode-job-gate.json
+OUTPUT_END
+
+===== dotnet-16mib-benchmark =====
+COMMAND: npm run dotnet:gcode-benchmark
+EXIT_STATUS: 0
+OUTPUT_BEGIN
+
+> forgex-insight@0.19.0 dotnet:gcode-benchmark
+> npm run dotnet:build && node tools/run-dotnet.js run --project backend/tests/ForgeX.GCodeBenchmark/ForgeX.GCodeBenchmark.csproj --configuration Release --no-build
+
+
+> forgex-insight@0.19.0 dotnet:build
+> npm run dotnet:restore && node tools/run-dotnet.js build backend/ForgeX.sln --configuration Release --no-restore -m:1 -nr:false
+
+
+> forgex-insight@0.19.0 dotnet:restore
+> node tools/run-dotnet.js restore backend/ForgeX.sln --configfile backend/NuGet.Config --disable-parallel -m:1 -nr:false
+
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  ForgeX.Domain -> E:\Projects\3dprint\backend\src\ForgeX.Domain\bin\Release\net10.0\ForgeX.Domain.dll
+  ForgeX.Application -> E:\Projects\3dprint\backend\src\ForgeX.Application\bin\Release\net10.0\ForgeX.Application.dll
+  ForgeX.Simulation -> E:\Projects\3dprint\backend\src\ForgeX.Simulation\bin\Release\net10.0\ForgeX.Simulation.dll
+  ForgeX.Infrastructure -> E:\Projects\3dprint\backend\src\ForgeX.Infrastructure\bin\Release\net10.0\ForgeX.Infrastructure.dll
+  ForgeX.Contracts -> E:\Projects\3dprint\backend\src\ForgeX.Contracts\bin\Release\net10.0\ForgeX.Contracts.dll
+  ForgeX.Analytics -> E:\Projects\3dprint\backend\src\ForgeX.Analytics\bin\Release\net10.0\ForgeX.Analytics.dll
+  ForgeX.Api -> E:\Projects\3dprint\backend\src\ForgeX.Api\bin\Release\net10.0\ForgeX.Api.dll
+  ForgeX.GoldenDiff -> E:\Projects\3dprint\backend\tests\ForgeX.GoldenDiff\bin\Release\net10.0\ForgeX.GoldenDiff.dll
+  ForgeX.JobGate -> E:\Projects\3dprint\backend\tests\ForgeX.JobGate\bin\Release\net10.0\ForgeX.JobGate.dll
+  ForgeX.PersistenceTool -> E:\Projects\3dprint\backend\tools\ForgeX.PersistenceTool\bin\Release\net10.0\ForgeX.PersistenceTool.dll
+  ForgeX.PersistenceGate -> E:\Projects\3dprint\backend\tests\ForgeX.PersistenceGate\bin\Release\net10.0\ForgeX.PersistenceGate.dll
+  ForgeX.AnalyticsGate -> E:\Projects\3dprint\backend\tests\ForgeX.AnalyticsGate\bin\Release\net10.0\ForgeX.AnalyticsGate.dll
+  ForgeX.GCodeBenchmark -> E:\Projects\3dprint\backend\tests\ForgeX.GCodeBenchmark\bin\Release\net10.0\ForgeX.GCodeBenchmark.dll
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:01.25
+GCodeBenchmark: PASS — 16.00 MiB in 494.4 ms; firstProgress=24.6 ms; memoryDelta=30.96 MiB; result=2434451 bytes; cancellation=2.2 ms; toolpath=91181/729442 segments; layerPlan=5000/1462505 bytes in 17.3 ms
+E:\Projects\3dprint\backend\artifacts\gcode-stage5-benchmark.json
+OUTPUT_END
+
+===== openapi-runtime-sync-async =====
+COMMAND: npm run dotnet:openapi-runtime
+EXIT_STATUS: 0
+OUTPUT_BEGIN
+
+> forgex-insight@0.19.0 dotnet:openapi-runtime
+> node tools/verify-openapi-runtime.js
+
+OpenAPI runtime gate PASS: 9 paths
+canonicalSha256=7a95797e003c94dd1973d5a9c1276b8d13bb8bd012f9dbb1e5b820d9a3f7b0db
+engine=1.4.0 toolpath=1/1 stride=1 payloadBytes=20 layers=1 encoding=forgex-toolpath-f32le-v1 materialCostCny=0.00029825495255018095 risk=high/100
+jobId=2b06ed1e1a314d06b7d7cde4e2d56abf status=succeeded sse=terminal tenantIsolation=pass metrics=pass jsonLogs=pass
+OUTPUT_END
+
+===== react-gcode-chromium =====
+COMMAND: npm run test:e2e:chromium -- tests/e2e/react-stage2.spec.js --workers=1 --reporter=line
+EXIT_STATUS: 0
+OUTPUT_BEGIN
+
+> forgex-insight@0.19.0 test:e2e:chromium
+> playwright test --config config/playwright.config.js --project=chromium tests/e2e/react-stage2.spec.js --workers=1 --reporter=line
+
+cmd.exe : [WebServer] [plugin builtin:vite-reporter] 
+At line:16 char:640
++ ... entry.Value)"); $output=(& cmd.exe /d /s /c $entry.Value 2>&1 | Out-S ...
++                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([WebServer] [pl...vite-reporter] :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+[WebServer] - Using dynamic import() to code-split the application
+[WebServer] - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputO
+ptions.codeSplitting
+[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+
+
+Running 5 tests using 1 worker
+
+[1/5] [chromium] › tests\e2e\react-stage2.spec.js:42:3 › React Stage 2 › 加载、导航与匿名身份 Header
+[2/5] [chromium] › tests\e2e\react-stage2.spec.js:66:3 › React Stage 2 › Delta + PETG 解析 validation fixture，并与匹配真机日志 verified 对账
+[3/5] [chromium] › tests\e2e\react-stage2.spec.js:103:3 › React Stage 2 › 分析页显式标记来源，并同步呈现规则报告、图表与表格
+[4/5] [chromium] › tests\e2e\react-stage2.spec.js:122:3 › React Stage 2 › 校准治理页读取公开目录，并保持审核与分享边界可见
+[5/5] [chromium] › tests\e2e\react-stage2.spec.js:145:3 › React Stage 2 › 390px 移动端无页面级水平溢出
+  5 passed (8.2s)
+OUTPUT_END
+
+
+REOPEN_AUDIT: commands=13; zeroExitStatuses=13; status=PASS

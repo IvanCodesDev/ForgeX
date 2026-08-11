@@ -19,9 +19,25 @@ const AUTHORITY: AuthorityAnalysisResponse = {
     bedSizeMm: 256,
     coordinateOrigin: "corner",
     filamentDensityGPerCm3: 1.24,
+    materialPriceCnyPerKg: 0,
+    nozzleTemperatureMinC: 0,
+    nozzleTemperatureMaxC: 500,
+    bedTemperatureMinC: 0,
+    materialMaxSpeedMmPerSecond: 1000,
+    materialMaxFlowMm3PerSecond: 100,
     fingerprint: "f".repeat(64),
   },
-  parameters: { bedSizeMm: 256, coordinateOrigin: "corner", filamentDensityGPerCm3: 1.24 },
+  parameters: {
+    bedSizeMm: 256,
+    coordinateOrigin: "corner",
+    filamentDensityGPerCm3: 1.24,
+    materialPriceCnyPerKg: 0,
+    nozzleTemperatureMinC: 0,
+    nozzleTemperatureMaxC: 500,
+    bedTemperatureMinC: 0,
+    materialMaxSpeedMmPerSecond: 1000,
+    materialMaxFlowMm3PerSecond: 100,
+  },
   summary: {
     totalLayers: 2,
     heightMm: 0.4,
@@ -31,6 +47,25 @@ const AUTHORITY: AuthorityAnalysisResponse = {
     volumeCm3: 0.1,
     filamentLengthM: 0.4,
     filamentMassG: 0.124,
+  },
+  material: {
+    materialProfileId: "unspecified-material",
+    filamentDiameterMm: 1.75,
+    densityGPerCm3: 1.24,
+    volumeCm3: 0.1,
+    filamentLengthM: 0.4,
+    filamentMassG: 0.124,
+    priceCnyPerKg: 0,
+    materialCostCny: 0,
+  },
+  risk: {
+    level: "low",
+    score: 0,
+    nozzleTemperatureC: null,
+    bedTemperatureC: null,
+    maxExtrusionSpeedMmPerSecond: 5,
+    maxVolumetricFlowMm3PerSecond: 2,
+    findings: [],
   },
   bounds: { minX: 0, maxX: 10, minY: 1, maxY: 11 },
   layers: [
@@ -169,7 +204,7 @@ describe("G-code async authority job client", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      "https://node.example.test/api/v1/gcode/analyses?bedSizeMm=256&coordinateOrigin=corner&filamentDensityGPerCm3=1.24&machineProfileId=unspecified-machine&materialProfileId=unspecified-material"
+      "https://node.example.test/api/v1/gcode/analyses?bedSizeMm=256&coordinateOrigin=corner&filamentDensityGPerCm3=1.24&machineProfileId=unspecified-machine&materialProfileId=unspecified-material&materialPriceCnyPerKg=0&nozzleTemperatureMinC=0&nozzleTemperatureMaxC=500&bedTemperatureMinC=0&materialMaxSpeedMmPerSecond=1000&materialMaxFlowMm3PerSecond=100"
     );
     const creation = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const headers = new Headers(creation.headers);

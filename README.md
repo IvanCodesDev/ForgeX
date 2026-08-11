@@ -194,7 +194,7 @@ Node.js service :8787
 
 - **前端**：旧页面继续可用；React 已落地共享身份头、Profile 选择、G-code/日志对账、数据分析与校准治理等垂直切片，G-code 在 Worker 中解析；
 - **业务后端**：Node.js 原生 `http`，零运行时依赖，并只对白名单路由提供 C# 同源代理；
-- **G-code 计算边界**：.NET 10 sidecar 保留同步接口，并新增 `POST /api/v1/gcode/analyses`、作业快照、SSE 事件与幂等取消接口；同步与异步结果都返回机型/材料 Profile 标识、生效参数、确定性 SHA-256 Profile 指纹、最多 20,000 层的完整逐层计划，以及最多 100,000 段的 C# 有界二进制工具路径。React Worker 在显示采样前生成同结构逐层摘要，`shadow / dotnet` 会逐字段核验；`dotnet` 校验并按层解码 C# 工具路径给 Three.js，`browser / shadow` 保留原 Worker 几何作为回滚。Three.js 只负责显示，不参与权威计算；异步作业继续支持断线续传与轮询兜底。Node 会把已核验身份匿名化为稳定 `tenant/owner`，再通过独立内部密钥交给 C#，任务查询、SSE 与取消均按该边界过滤；
+- **G-code 计算边界**：.NET 10 sidecar 保留同步接口，并新增 `POST /api/v1/gcode/analyses`、作业快照、SSE 事件与幂等取消接口；同步与异步结果都返回机型/材料 Profile 标识、生效参数、确定性 SHA-256 Profile 指纹、最多 20,000 层的完整逐层计划，以及最多 100,000 段的 C# 有界二进制工具路径。引擎 1.4.0 还把材料价格、喷嘴温区、床温下限、最大速度和最大体积流量纳入 Profile v2 指纹，输出直接耗材成本与 low/medium/high 打印前风险；当前成本不包含尚无审计输入的能耗和机时。React Worker 在显示采样前生成同结构逐层摘要，`shadow / dotnet` 会逐字段核验；`dotnet` 校验并按层解码 C# 工具路径给 Three.js，同时采用 C# 成本与风险，`browser / shadow` 保留原 Worker 几何和主摘要作为回滚。Three.js 只负责显示，不参与权威计算；异步作业继续支持断线续传与轮询兜底。Node 会把已核验身份匿名化为稳定 `tenant/owner`，再通过独立内部密钥交给 C#，任务查询、SSE 与取消均按该边界过滤；
 - **契约边界**：`backend/src/ForgeX.Api/openapi/v1.json` 是 API 单一来源，构建前生成 TypeScript DTO、操作路径和路径参数函数；CI 通过源文件 SHA 与生成器复跑阻止前后端契约漂移；
 - **存储**：默认 `Persistence:Provider=file` 写入 `data/`，容器部署可挂载持久化卷；文件作业仓库提供逐条 SHA-256 的版本化备份、全量预检恢复和就绪探针。`backend/database/postgresql/` 已冻结 PostgreSQL v1 迁移、租户/归属键、事件表、幂等唯一约束与 RLS 策略，但本阶段未启用 PostgreSQL 运行时驱动，误配为 `postgresql` 会在启动时明确终止。
 - **可观测性**：C# 输出单行 JSON 请求日志，包含稳定路由模板、状态码、耗时与 trace ID；`/metrics` 提供有界标签的 Prometheus 文本指标，不把具体作业 ID 放入标签。
@@ -264,6 +264,8 @@ Stage 4 分析 Golden 位于 [`tests/golden/stage4-analytics-golden.json`](./tes
 Stage 5-B 逐层计划 Golden 位于 [`tests/golden/stage5-layer-plan-golden.json`](./tests/golden/stage5-layer-plan-golden.json)。默认 `npm test` 只读复算浏览器结果，`npm run dotnet:golden` 再以同一金样本核验 C# 的每层字段、20,000 层上限和聚合不变量；只有审阅有意变更后才运行更新命令。
 
 Stage 5-C 在同一 `dotnet:golden` 门禁增加 packed toolpath 的层切片、记录编码和硬预算探针；`dotnet:gcode-benchmark` 另用 16 MiB / 729,442 段夹具验证 100,000 段预算、结果体积、内存、首读进度和取消延迟。浏览器端会在权威切换前验证整个 payload，并只解码当前选中层。
+
+Stage 5-D 补齐材料、直接耗材成本与打印前风险权威契约：Golden 门禁验证成本公式、温度/速度/流量阈值及风险代码，作业门禁验证 Stage 5-C 持久化结果会以稳定 `gcode_result_contract_outdated` 降级而不会伪装成新契约。
 
 ## 部署
 

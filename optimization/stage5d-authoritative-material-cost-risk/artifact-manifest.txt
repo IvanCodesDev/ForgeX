@@ -1,0 +1,23 @@
+FORGEX STAGE 5-D ARTIFACT MANIFEST
+baselineCommit=7beb2c5761336d8575f6d5d5d005689fec4c2844
+branch=feature/react-ts-csharp-authority
+changedBranch=StreamingGCodeAnalyzer.Finish -> material estimate + BuildRiskAssessment
+changedFields=GCodeAnalysisResponse.material,GCodeAnalysisResponse.risk,GCodeProfileSummary.v2
+role.baseline.path=baseline/stage5c-selected-files.zip
+role.baseline.sha256=906c9a340aa7c93aa5203aca08047f0e543659e9575c0c8e6209947430816b8b
+role.baseline.bytes=108870
+role.modifiedArtifact.path=modified/stage5d-modified-files.zip
+role.modifiedArtifact.sha256=7b5ae5215f3faac63df29e62b267a62f6f21ff60355a71d7e8ddfa901cd59f6d
+role.modifiedArtifact.bytes=115272
+role.patch.path=patch/stage5d-authoritative-material-cost-risk.patch
+role.patch.sha256=15e4b02d37c3b65b66a54cb5384b27ca75eb3b7d39e06cf27054d0f611420b92
+role.patch.bytes=105314
+role.verificationRecord.path=verification/stage5d-verification-record.txt
+role.verificationRecord.sha256=45851c2d720fe1a81c0223ba9704996875aaac07f1731c10b43de8e34208998d
+role.verificationRecord.bytes=66626
+role.rollback.path=rollback/rollback-stage5d.ps1
+role.rollback.sha256=b7fcb7713a4bde81caa38deb09356f828a33b01d57d19334d96825535b182a1f
+role.rollback.bytes=2312
+role.reopenAudit.path=reopen/reopen-audit.txt
+role.reopenAudit.sha256=df0cf06fca9fa26f4d274a5565444769a42d366ec6e9fc677c35a4ddd763792c
+role.reopenAudit.bytes=350

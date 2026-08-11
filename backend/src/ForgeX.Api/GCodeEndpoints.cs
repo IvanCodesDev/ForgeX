@@ -11,6 +11,12 @@ internal static class GCodeEndpoints
     internal const long MaxGCodeBytes = 64L * 1024 * 1024;
     private const double DefaultBedSizeMm = 256;
     private const double DefaultDensityGPerCm3 = 1.24;
+    private const double DefaultMaterialPriceCnyPerKg = 0;
+    private const double DefaultNozzleTemperatureMinC = 0;
+    private const double DefaultNozzleTemperatureMaxC = 500;
+    private const double DefaultBedTemperatureMinC = 0;
+    private const double DefaultMaterialMaxSpeedMmPerSecond = 1000;
+    private const double DefaultMaterialMaxFlowMm3PerSecond = 100;
     private const string DefaultMachineProfileId = "unspecified-machine";
     private const string DefaultMaterialProfileId = "unspecified-material";
 
@@ -63,6 +69,10 @@ internal static class GCodeEndpoints
     {
         var visualization = result.Visualization ?? throw new InvalidOperationException(
             "The stored G-code result predates the required visualization contract.");
+        var material = result.Material ?? throw new InvalidOperationException(
+            "The stored G-code result predates the required material estimate contract.");
+        var risk = result.Risk ?? throw new InvalidOperationException(
+            "The stored G-code result predates the required risk assessment contract.");
         return new(
             "1.0",
             new GCodeEngineDto(result.EngineVersion, result.Source),
@@ -73,11 +83,23 @@ internal static class GCodeEndpoints
                 result.Profile.BedSizeMm,
                 result.Profile.CoordinateOrigin.ToString().ToLowerInvariant(),
                 result.Profile.FilamentDensityGPerCm3,
+                result.Profile.MaterialPriceCnyPerKg,
+                result.Profile.NozzleTemperatureMinC,
+                result.Profile.NozzleTemperatureMaxC,
+                result.Profile.BedTemperatureMinC,
+                result.Profile.MaterialMaxSpeedMmPerSecond,
+                result.Profile.MaterialMaxFlowMm3PerSecond,
                 result.Profile.Fingerprint),
             new GCodeAnalyzeParametersDto(
                 options.BedSizeMm,
                 options.CoordinateOrigin.ToString().ToLowerInvariant(),
-                options.MaterialDensityGPerCm3),
+                options.MaterialDensityGPerCm3,
+                options.MaterialPriceCnyPerKg,
+                options.NozzleTemperatureMinC,
+                options.NozzleTemperatureMaxC,
+                options.BedTemperatureMinC,
+                options.MaterialMaxSpeedMmPerSecond,
+                options.MaterialMaxFlowMm3PerSecond),
             new GCodeAnalysisSummaryDto(
                 result.TotalLayers,
                 result.HeightMm,
@@ -87,6 +109,30 @@ internal static class GCodeEndpoints
                 result.Statistics.VolumeCm3,
                 result.Statistics.FilamentLengthM,
                 result.Statistics.FilamentMassG),
+            new GCodeMaterialEstimateDto(
+                material.MaterialProfileId,
+                material.FilamentDiameterMm,
+                material.DensityGPerCm3,
+                material.VolumeCm3,
+                material.FilamentLengthM,
+                material.FilamentMassG,
+                material.PriceCnyPerKg,
+                material.MaterialCostCny),
+            new GCodeRiskAssessmentDto(
+                risk.Level,
+                risk.Score,
+                risk.NozzleTemperatureC,
+                risk.BedTemperatureC,
+                risk.MaxExtrusionSpeedMmPerSecond,
+                risk.MaxVolumetricFlowMm3PerSecond,
+                risk.Findings.Select(static finding => new GCodeRiskFindingDto(
+                    finding.Code,
+                    finding.Severity,
+                    finding.Message,
+                    finding.Observed,
+                    finding.Minimum,
+                    finding.Maximum,
+                    finding.Unit)).ToArray()),
             new GCodeBoundsDto(
                 result.Bounds.MinX,
                 result.Bounds.MaxX,
@@ -140,6 +186,62 @@ internal static class GCodeEndpoints
             validationErrors["filamentDensityGPerCm3"] = ["filamentDensityGPerCm3 must be greater than 0 and at most 20."];
         }
 
+        var materialPrice = ParseDouble(request, "materialPriceCnyPerKg", DefaultMaterialPriceCnyPerKg, validationErrors);
+        if (materialPrice is < 0 or > 5000)
+        {
+            validationErrors["materialPriceCnyPerKg"] = ["materialPriceCnyPerKg must be between 0 and 5000."];
+        }
+
+        var nozzleTemperatureMin = ParseDouble(
+            request,
+            "nozzleTemperatureMinC",
+            DefaultNozzleTemperatureMinC,
+            validationErrors);
+        var nozzleTemperatureMax = ParseDouble(
+            request,
+            "nozzleTemperatureMaxC",
+            DefaultNozzleTemperatureMaxC,
+            validationErrors);
+        if (nozzleTemperatureMin is < 0 or > 500 ||
+            nozzleTemperatureMax is < 0 or > 500 ||
+            nozzleTemperatureMax < nozzleTemperatureMin)
+        {
+            validationErrors["nozzleTemperatureRangeC"] =
+                ["nozzleTemperatureMinC and nozzleTemperatureMaxC must define an ordered range between 0 and 500."];
+        }
+
+        var bedTemperatureMin = ParseDouble(
+            request,
+            "bedTemperatureMinC",
+            DefaultBedTemperatureMinC,
+            validationErrors);
+        if (bedTemperatureMin is < 0 or > 200)
+        {
+            validationErrors["bedTemperatureMinC"] = ["bedTemperatureMinC must be between 0 and 200."];
+        }
+
+        var materialMaxSpeed = ParseDouble(
+            request,
+            "materialMaxSpeedMmPerSecond",
+            DefaultMaterialMaxSpeedMmPerSecond,
+            validationErrors);
+        if (materialMaxSpeed is < 5 or > 1000)
+        {
+            validationErrors["materialMaxSpeedMmPerSecond"] =
+                ["materialMaxSpeedMmPerSecond must be between 5 and 1000."];
+        }
+
+        var materialMaxFlow = ParseDouble(
+            request,
+            "materialMaxFlowMm3PerSecond",
+            DefaultMaterialMaxFlowMm3PerSecond,
+            validationErrors);
+        if (materialMaxFlow is < 0.2 or > 100)
+        {
+            validationErrors["materialMaxFlowMm3PerSecond"] =
+                ["materialMaxFlowMm3PerSecond must be between 0.2 and 100."];
+        }
+
         var originText = request.Query["coordinateOrigin"].ToString();
         var origin = CoordinateOrigin.Corner;
         if (!string.IsNullOrWhiteSpace(originText) &&
@@ -166,7 +268,13 @@ internal static class GCodeEndpoints
             MaterialDensityGPerCm3: density,
             MaxInputBytes: MaxGCodeBytes,
             MachineProfileId: machineProfileId,
-            MaterialProfileId: materialProfileId);
+            MaterialProfileId: materialProfileId,
+            MaterialPriceCnyPerKg: materialPrice,
+            NozzleTemperatureMinC: nozzleTemperatureMin,
+            NozzleTemperatureMaxC: nozzleTemperatureMax,
+            BedTemperatureMinC: bedTemperatureMin,
+            MaterialMaxSpeedMmPerSecond: materialMaxSpeed,
+            MaterialMaxFlowMm3PerSecond: materialMaxFlow);
         return validationErrors.Count == 0;
     }
 

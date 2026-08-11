@@ -278,6 +278,9 @@ internal static class GoldenDiffProgram
                 "profile-id-validation",
                 () => CheckProfileIdValidationAsync(analyzer, cancellationToken)),
             await RunProbeAsync(
+                "material-cost-risk",
+                () => CheckMaterialCostRiskAsync(analyzer, cancellationToken)),
+            await RunProbeAsync(
                 "layer-plan-invariants",
                 () => Task.FromResult(CheckLayerPlanInvariants(baseline))),
             await RunProbeAsync(
@@ -406,6 +409,12 @@ internal static class GoldenDiffProgram
         {
             MachineProfileId = "delta",
             MaterialProfileId = "PETG",
+            MaterialPriceCnyPerKg = 89,
+            NozzleTemperatureMinC = 230,
+            NozzleTemperatureMaxC = 255,
+            BedTemperatureMinC = 70,
+            MaterialMaxSpeedMmPerSecond = 200,
+            MaterialMaxFlowMm3PerSecond = 9,
         };
         var first = await AnalyzeFixtureAsync(analyzer, baselineFixture, options, cancellationToken);
         var second = await AnalyzeFixtureAsync(analyzer, baselineFixture, options, cancellationToken);
@@ -420,7 +429,13 @@ internal static class GoldenDiffProgram
             profile.MaterialProfileId == options.MaterialProfileId &&
             profile.BedSizeMm == options.BedSizeMm &&
             profile.CoordinateOrigin == options.CoordinateOrigin &&
-            profile.FilamentDensityGPerCm3 == options.MaterialDensityGPerCm3;
+            profile.FilamentDensityGPerCm3 == options.MaterialDensityGPerCm3 &&
+            profile.MaterialPriceCnyPerKg == options.MaterialPriceCnyPerKg &&
+            profile.NozzleTemperatureMinC == options.NozzleTemperatureMinC &&
+            profile.NozzleTemperatureMaxC == options.NozzleTemperatureMaxC &&
+            profile.BedTemperatureMinC == options.BedTemperatureMinC &&
+            profile.MaterialMaxSpeedMmPerSecond == options.MaterialMaxSpeedMmPerSecond &&
+            profile.MaterialMaxFlowMm3PerSecond == options.MaterialMaxFlowMm3PerSecond;
         var fingerprintShape = profile.Fingerprint.Length == 64 &&
             profile.Fingerprint.All(static character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
         var deterministic = profile.Fingerprint == second.Profile.Fingerprint;
@@ -456,6 +471,59 @@ internal static class GoldenDiffProgram
                 $"stableCode={exception.Code}",
                 StreamingGCodeAnalyzer.EngineVersion);
         }
+    }
+
+    private static async Task<ContractCheck> CheckMaterialCostRiskAsync(
+        StreamingGCodeAnalyzer analyzer,
+        CancellationToken cancellationToken)
+    {
+        var gcode = string.Join('\n',
+            "G90",
+            "M83",
+            "G28",
+            "M104 S250",
+            "M140 S40",
+            "G1 X0 Y0 Z0.2 F1200",
+            "G1 X100 Y0 E10 F18000",
+            string.Empty);
+        var options = new GCodeAnalysisOptions(
+            MaterialDensityGPerCm3: 1.24,
+            MaterialProfileId: "PLA",
+            MaterialPriceCnyPerKg: 100,
+            NozzleTemperatureMinC: 195,
+            NozzleTemperatureMaxC: 225,
+            BedTemperatureMinC: 55,
+            MaterialMaxSpeedMmPerSecond: 100,
+            MaterialMaxFlowMm3PerSecond: 5);
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(gcode), writable: false);
+        var result = await analyzer.AnalyzeAsync(stream, options, cancellationToken);
+        var material = result.Material;
+        var risk = result.Risk;
+        var expectedCost = result.Statistics.FilamentMassG * options.MaterialPriceCnyPerKg / 1000d;
+        var materialMatches = material is not null &&
+            material.MaterialProfileId == options.MaterialProfileId &&
+            material.DensityGPerCm3 == options.MaterialDensityGPerCm3 &&
+            material.VolumeCm3 == result.Statistics.VolumeCm3 &&
+            material.FilamentMassG == result.Statistics.FilamentMassG &&
+            Math.Abs(material.MaterialCostCny - expectedCost) <= 1e-12;
+        var riskCodes = risk?.Findings.Select(static finding => finding.Code).ToHashSet(StringComparer.Ordinal) ?? [];
+        var riskMatches = risk is
+            {
+                Level: "high",
+                NozzleTemperatureC: 250,
+                BedTemperatureC: 40,
+                MaxExtrusionSpeedMmPerSecond: > 100,
+                MaxVolumetricFlowMm3PerSecond: > 5,
+            } &&
+            riskCodes.Contains("GCODE_RISK_NOZZLE_TEMP_OUTSIDE_PROFILE") &&
+            riskCodes.Contains("GCODE_RISK_BED_TEMP_BELOW_PROFILE") &&
+            riskCodes.Contains("GCODE_RISK_SPEED_EXCEEDS_PROFILE") &&
+            riskCodes.Contains("GCODE_RISK_FLOW_EXCEEDS_PROFILE");
+        return new ContractCheck(
+            "material-cost-risk",
+            materialMatches && riskMatches,
+            $"material={materialMatches}; cost={material?.MaterialCostCny:R}; risk={risk?.Level}/{risk?.Score}; findings={string.Join(',', riskCodes.Order())}",
+            StreamingGCodeAnalyzer.EngineVersion);
     }
 
     private static ContractCheck CheckLayerPlanInvariants(GCodeAnalysisResult result)

@@ -97,9 +97,25 @@ const AUTHORITY: AuthorityAnalysisResponse = {
     bedSizeMm: 256,
     coordinateOrigin: "corner",
     filamentDensityGPerCm3: 1.24,
+    materialPriceCnyPerKg: 0,
+    nozzleTemperatureMinC: 0,
+    nozzleTemperatureMaxC: 500,
+    bedTemperatureMinC: 0,
+    materialMaxSpeedMmPerSecond: 1000,
+    materialMaxFlowMm3PerSecond: 100,
     fingerprint: "f".repeat(64),
   },
-  parameters: { bedSizeMm: 256, coordinateOrigin: "corner", filamentDensityGPerCm3: 1.24 },
+  parameters: {
+    bedSizeMm: 256,
+    coordinateOrigin: "corner",
+    filamentDensityGPerCm3: 1.24,
+    materialPriceCnyPerKg: 0,
+    nozzleTemperatureMinC: 0,
+    nozzleTemperatureMaxC: 500,
+    bedTemperatureMinC: 0,
+    materialMaxSpeedMmPerSecond: 1000,
+    materialMaxFlowMm3PerSecond: 100,
+  },
   summary: {
     totalLayers: 2,
     heightMm: 0.4,
@@ -109,6 +125,25 @@ const AUTHORITY: AuthorityAnalysisResponse = {
     volumeCm3: 0.1,
     filamentLengthM: 0.4,
     filamentMassG: 0.124,
+  },
+  material: {
+    materialProfileId: "unspecified-material",
+    filamentDiameterMm: 1.75,
+    densityGPerCm3: 1.24,
+    volumeCm3: 0.1,
+    filamentLengthM: 0.4,
+    filamentMassG: 0.124,
+    priceCnyPerKg: 0,
+    materialCostCny: 0,
+  },
+  risk: {
+    level: "low",
+    score: 0,
+    nozzleTemperatureC: null,
+    bedTemperatureC: null,
+    maxExtrusionSpeedMmPerSecond: 5,
+    maxVolumetricFlowMm3PerSecond: 2,
+    findings: [],
   },
   bounds: PREVIEW.bounds,
   layers: PREVIEW.layerSummaries,
@@ -239,6 +274,14 @@ describe("G-code authority adapter", () => {
       heightMm: PREVIEW.height,
       bounds: PREVIEW.bounds,
     });
+    expect(
+      selectEffectiveSummary("browser", "idle", PREVIEW, null, {
+        bedSize: 256,
+        densityG: 1.24,
+        origin: "corner",
+        materialPriceCnyPerKg: 80,
+      })
+    ).toMatchObject({ materialCostCny: (PREVIEW.stats.filamentG! * 80) / 1000, risk: null });
     expect(selectEffectiveSummary("shadow", "done", PREVIEW, changedAuthority)).toMatchObject({
       provenance: "browser-preview",
       totalLayers: PREVIEW.totalLayers,
@@ -261,6 +304,8 @@ describe("G-code authority adapter", () => {
       heightMm: 1.8,
       bounds: changedAuthority.bounds,
       sha256: changedAuthority.input.sha256,
+      materialCostCny: changedAuthority.material.materialCostCny,
+      risk: changedAuthority.risk,
     });
     expect(selectEffectiveSummary("dotnet", "done", null, changedAuthority)).toMatchObject({
       provenance: "dotnet-authority",
@@ -294,7 +339,7 @@ describe("G-code authority adapter", () => {
       )
     ).resolves.toEqual(AUTHORITY);
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://node.example.test/api/v1/gcode/analyze?bedSizeMm=256&coordinateOrigin=corner&filamentDensityGPerCm3=1.24&machineProfileId=unspecified-machine&materialProfileId=unspecified-material",
+      "https://node.example.test/api/v1/gcode/analyze?bedSizeMm=256&coordinateOrigin=corner&filamentDensityGPerCm3=1.24&machineProfileId=unspecified-machine&materialProfileId=unspecified-material&materialPriceCnyPerKg=0&nozzleTemperatureMinC=0&nozzleTemperatureMaxC=500&bedTemperatureMinC=0&materialMaxSpeedMmPerSecond=1000&materialMaxFlowMm3PerSecond=100",
       expect.objectContaining({ method: "POST", body: file, credentials: "same-origin", signal: controller.signal })
     );
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
@@ -310,6 +355,8 @@ describe("G-code authority adapter", () => {
     ["bed size", { ...AUTHORITY, parameters: { ...AUTHORITY.parameters, bedSizeMm: 300 } }],
     ["origin", { ...AUTHORITY, parameters: { ...AUTHORITY.parameters, coordinateOrigin: "center" } }],
     ["density", { ...AUTHORITY, parameters: { ...AUTHORITY.parameters, filamentDensityGPerCm3: 1.25 } }],
+    ["material cost", { ...AUTHORITY, material: { ...AUTHORITY.material, materialCostCny: 99 } }],
+    ["risk level", { ...AUTHORITY, risk: { ...AUTHORITY.risk, level: "unknown" } }],
     ["profile values", { ...AUTHORITY, profile: { ...AUTHORITY.profile, bedSizeMm: 300 } }],
     ["profile fingerprint", { ...AUTHORITY, profile: { ...AUTHORITY.profile, fingerprint: "invalid" } }],
     ["layer index", { ...AUTHORITY, layers: [{ ...AUTHORITY.layers[0], index: 1 }, AUTHORITY.layers[1]] }],

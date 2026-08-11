@@ -131,12 +131,13 @@ export function useProfileSelection(): ProfileSelectionController {
     () =>
       validation.options
         ? Object.freeze({
+            ...baselineOptions,
             ...validation.options,
             machineProfileId: machine.id,
             materialProfileId: material.id,
           })
         : null,
-    [machine.id, material.id, validation.options]
+    [baselineOptions, machine.id, material.id, validation.options]
   );
   const dirty =
     !validation.options ||

@@ -70,7 +70,13 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
   const visualizationLayerCount = authorityToolpathActive
     ? (authority.result?.visualization.layers.length ?? 0)
     : (result?.layers.length ?? 0);
-  const effectiveSummary = selectEffectiveSummary(authority.mode, authority.status, result, authority.result);
+  const effectiveSummary = selectEffectiveSummary(
+    authority.mode,
+    authority.status,
+    result,
+    authority.result,
+    submittedOptions
+  );
   const primaryWarnings =
     effectiveSummary?.provenance === "dotnet-authority"
       ? (authority.result?.warnings.map((warning) => `${warning.code} · ${warning.message}`) ?? [])
@@ -82,7 +88,13 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
       options.densityG !== submittedOptions.densityG ||
       options.origin !== submittedOptions.origin ||
       options.machineProfileId !== submittedOptions.machineProfileId ||
-      options.materialProfileId !== submittedOptions.materialProfileId)
+      options.materialProfileId !== submittedOptions.materialProfileId ||
+      options.materialPriceCnyPerKg !== submittedOptions.materialPriceCnyPerKg ||
+      options.nozzleTemperatureMinC !== submittedOptions.nozzleTemperatureMinC ||
+      options.nozzleTemperatureMaxC !== submittedOptions.nozzleTemperatureMaxC ||
+      options.bedTemperatureMinC !== submittedOptions.bedTemperatureMinC ||
+      options.materialMaxSpeedMmPerSecond !== submittedOptions.materialMaxSpeedMmPerSecond ||
+      options.materialMaxFlowMm3PerSecond !== submittedOptions.materialMaxFlowMm3PerSecond)
   );
 
   const reconciliationPlan = useMemo<GcodeReconciliationPlan | null>(() => {
@@ -261,6 +273,13 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
               </code>
             </p>
             <p>
+              <span>材料成本 / 风险</span>
+              <code>
+                ¥{number(authority.result.material.materialCostCny)} · {authority.result.risk.level.toUpperCase()} /{" "}
+                {authority.result.risk.score}
+              </code>
+            </p>
+            <p>
               <span>切换判定</span>
               <code>
                 {authority.mode === "dotnet"
@@ -407,6 +426,20 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
                 {effectiveSummary.filamentMassG == null ? "—" : `${number(effectiveSummary.filamentMassG)} g`}
               </small>
             </article>
+            <article>
+              <span>材料成本</span>
+              <strong>
+                {effectiveSummary.materialCostCny == null ? "—" : `¥${number(effectiveSummary.materialCostCny)}`}
+              </strong>
+              <small>
+                {effectiveSummary.provenance === "dotnet-authority" ? "C# Profile 权威估算" : "浏览器 Profile 预估"}
+              </small>
+            </article>
+            <article>
+              <span>打印前风险</span>
+              <strong>{effectiveSummary.risk ? effectiveSummary.risk.level.toUpperCase() : "等待 C#"}</strong>
+              <small>{effectiveSummary.risk ? `${effectiveSummary.risk.score} / 100` : "浏览器模式不作权威判定"}</small>
+            </article>
           </section>
 
           <div className="gcode-evidence">
@@ -426,6 +459,20 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
             <ul className="warning-list" aria-label={`${summaryLabel}警告`}>
               {primaryWarnings.map((warning, index) => (
                 <li key={`${index}-${warning}`}>{warning}</li>
+              ))}
+            </ul>
+          ) : null}
+          {effectiveSummary.risk?.findings.length ? (
+            <ul className="warning-list" aria-label="C# 权威打印前风险">
+              {effectiveSummary.risk.findings.map((finding) => (
+                <li key={finding.code}>
+                  {finding.severity.toUpperCase()} · {finding.code} · {finding.message}
+                  {finding.observed == null
+                    ? ""
+                    : `（观测 ${number(finding.observed)}${finding.unit ?? ""}${
+                        finding.minimum == null ? "" : `；下限 ${number(finding.minimum)}${finding.unit ?? ""}`
+                      }${finding.maximum == null ? "" : `；上限 ${number(finding.maximum)}${finding.unit ?? ""}`}）`}
+                </li>
               ))}
             </ul>
           ) : null}

@@ -124,15 +124,19 @@ public sealed partial class FileGCodeJobRepository : IGCodeJobRepository, IGCode
         // inside the explicit local-development scope instead of becoming globally visible.
         job = job with
         {
-            Options = job.Options.MaxLayers <= 0 ? job.Options with { MaxLayers = 20_000 } : job.Options,
+            Options = NormalizeOptions(job.Options),
             TenantId = string.IsNullOrWhiteSpace(job.TenantId) ? "tn_local" : job.TenantId,
             OwnerId = string.IsNullOrWhiteSpace(job.OwnerId) ? "ow_local" : job.OwnerId,
         };
 
-        // Stage 5-A completed results predate the required layer-plan contract. Preserve the
-        // record and its provenance, but expose a stable degraded terminal state instead of
-        // serializing an invalid Stage 5-B response or throwing from the snapshot endpoint.
-        if (job.Result is not null && (job.Result.Layers is null || job.Result.Visualization is null))
+        // Older completed results can predate the required layer-plan, visualization, material,
+        // or risk contracts. Preserve the record and provenance, but expose a stable degraded
+        // terminal state instead of serializing a partial authority response.
+        if (job.Result is not null &&
+            (job.Result.Layers is null ||
+             job.Result.Visualization is null ||
+             job.Result.Material is null ||
+             job.Result.Risk is null))
         {
             const string errorCode = "gcode_result_contract_outdated";
             var atUtc = job.FinishedAtUtc ?? job.CreatedAtUtc;
@@ -154,13 +158,26 @@ public sealed partial class FileGCodeJobRepository : IGCodeJobRepository, IGCode
                 Phase = "contract-upgrade",
                 Result = null,
                 ErrorCode = errorCode,
-                ErrorMessage = "The stored result predates the authoritative layer-plan contract; submit the G-code as a new job.",
+                ErrorMessage = "The stored result predates the authoritative material, risk, or visualization contract; submit the G-code as a new job.",
                 Events = events,
             };
         }
 
         return job;
     }
+
+    private static GCodeAnalysisOptions NormalizeOptions(GCodeAnalysisOptions options) => options with
+    {
+        MaxLayers = options.MaxLayers <= 0 ? 20_000 : options.MaxLayers,
+        MaxVisualizationSegments = options.MaxVisualizationSegments <= 0 ? 100_000 : options.MaxVisualizationSegments,
+        NozzleTemperatureMaxC = options.NozzleTemperatureMaxC <= 0 ? 500d : options.NozzleTemperatureMaxC,
+        MaterialMaxSpeedMmPerSecond = options.MaterialMaxSpeedMmPerSecond <= 0
+            ? 1000d
+            : options.MaterialMaxSpeedMmPerSecond,
+        MaterialMaxFlowMm3PerSecond = options.MaterialMaxFlowMm3PerSecond <= 0
+            ? 100d
+            : options.MaterialMaxFlowMm3PerSecond,
+    };
 
     private async Task WriteAsync(GCodeJobRecord job, CancellationToken cancellationToken)
     {
