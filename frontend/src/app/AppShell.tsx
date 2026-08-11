@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
+import { IdentityHeader } from "../features/identity/IdentityHeader";
 import type { RuntimeMode } from "./runtime/runtime-mode";
 
 interface AppShellProps {
@@ -19,9 +20,12 @@ export function AppShell({ runtimeMode }: AppShellProps) {
             <small>INDUSTRIAL WORKBENCH</small>
           </span>
         </a>
-        <div className={`runtime-pill runtime-${runtimeMode.kind}`}>
-          <span aria-hidden="true" />
-          {runtimeMode.kind === "remote" ? "服务接入" : "离线预览"}
+        <div className="topbar-actions">
+          <div className={`runtime-pill runtime-${runtimeMode.kind}`}>
+            <span aria-hidden="true" />
+            <span className="runtime-label">{runtimeMode.kind === "remote" ? "服务接入" : "离线预览"}</span>
+          </div>
+          <IdentityHeader />
         </div>
       </header>
       <aside className="sidebar" aria-label="主导航">
@@ -30,7 +34,10 @@ export function AppShell({ runtimeMode }: AppShellProps) {
           <NavLink to="/" end>
             迁移总览
           </NavLink>
+          <NavLink to="/simulator">过程仿真</NavLink>
           <NavLink to="/gcode">G-code 切片</NavLink>
+          <NavLink to="/analytics">数据分析</NavLink>
+          <NavLink to="/governance">校准治理</NavLink>
           <NavLink to="/architecture">架构边界</NavLink>
         </nav>
         <div className="legacy-note">

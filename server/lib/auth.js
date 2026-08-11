@@ -28,12 +28,15 @@ function safeEqual(a, b) {
 class Auth {
   /**
    * @param cfg.apiKeys      逗号分隔的合法 key 列表；为空则不启用鉴权
+   * @param cfg.calibrationReviewKeys 逗号分隔的校准审核 key；不从 apiKeys 隐式继承
    * @param cfg.requireAuth  为 true 时未携带合法 key 直接 401（默认 false：只用于识别身份）
    */
   constructor(cfg, log) {
     this.keys = (cfg.apiKeys || "").split(",").map((s) => s.trim()).filter(Boolean);
+    this.reviewKeys = (cfg.calibrationReviewKeys || "").split(",").map((s) => s.trim()).filter(Boolean);
     this.required = !!cfg.requireAuth;
     this.enabled = this.keys.length > 0;
+    this.reviewEnabled = this.reviewKeys.length > 0;
     this.log = log;
     if (this.required && !this.enabled) {
       // 配置矛盾必须响亮地说出来，否则会以为自己受保护、实际大门敞开
@@ -41,6 +44,7 @@ class Auth {
       this.required = false;
     }
     if (this.enabled) this.log.info("auth enabled", { keys: this.keys.length, required: this.required });
+    if (this.reviewEnabled) this.log.info("calibration review auth enabled", { keys: this.reviewKeys.length });
   }
 
   /** 从请求里取出 key：Authorization: Bearer xxx 或 X-API-Key */
@@ -57,16 +61,32 @@ class Auth {
    */
   identify(req, ip) {
     const key = this.keyOf(req);
-    if (this.enabled && key) {
-      for (const k of this.keys) {
-        if (safeEqual(k, key)) {
-          // 只用摘要前 8 位标识身份，完整 key 绝不进日志或响应
-          const keyId = crypto.createHash("sha256").update(k).digest("hex").slice(0, 8);
-          return { authenticated: true, caller: "key:" + keyId, keyId };
-        }
-      }
-    }
+    const matched = this._match(this.keys, key);
+    if (matched) return { authenticated: true, caller: "key:" + matched.keyId, keyId: matched.keyId };
     return { authenticated: false, caller: "ip:" + ip, keyId: null };
+  }
+
+  /**
+   * 识别校准审核角色。审核表独立于普通 API key 表，调用方不会因持有普通 key
+   * 自动获得审核权。返回的 keyId 与 identify() 使用同一摘要算法，以便存储层
+   * 对两表重叠的 key 继续执行四眼原则。
+   */
+  identifyReviewer(req) {
+    const matched = this._match(this.reviewKeys, this.keyOf(req));
+    return matched || { authenticated: false, keyId: null };
+  }
+
+  _match(keys, candidate) {
+    if (!candidate || keys.length === 0) return null;
+    let matchedKey = null;
+    // 不在首次命中时提前退出，避免 key 在列表中的位置影响比较次数。
+    for (const configured of keys) {
+      if (safeEqual(configured, candidate)) matchedKey = configured;
+    }
+    if (!matchedKey) return null;
+    // 只用摘要前 8 位标识身份，完整 key 绝不进日志或响应。
+    const keyId = crypto.createHash("sha256").update(matchedKey).digest("hex").slice(0, 8);
+    return { authenticated: true, keyId };
   }
 
   /** requireAuth 模式下的守卫；返回 null 表示放行，否则返回错误对象 */

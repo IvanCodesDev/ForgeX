@@ -5,10 +5,47 @@
    也不该把测试数据写进仓库的 data/（P4 已经因为这个踩过一次坑）。 */
 "use strict";
 
+const childProcess = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { createApp } = require("../../server/index");
+
+const rootDir = path.resolve(__dirname, "../..");
+
+/**
+ * E2E 不复用开发者磁盘上可能过期的 dist/react。环境值显式锁定，
+ * 避免 .env.local 或 CI 机器密钥把回归测试偶然切到 C# / SSO / 客户端凭据路径。
+ */
+function buildReactFixture() {
+  const npmCli = process.env.npm_execpath;
+  const command = npmCli ? process.execPath : process.platform === "win32" ? "npm.cmd" : "npm";
+  const args = npmCli ? [npmCli, "run", "frontend:build"] : ["run", "frontend:build"];
+  const result = childProcess.spawnSync(command, args, {
+    cwd: rootDir,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      VITE_API_BASE: "",
+      VITE_NODE_API_KEY: "",
+      VITE_NODE_BEARER: "",
+      VITE_GCODE_AUTHORITY: "browser",
+      VITE_REACT_SIMULATOR_ENABLED: "1",
+      VITE_REACT_GCODE_ENABLED: "1",
+      VITE_REACT_PROFILE_SELECTOR_ENABLED: "1",
+      VITE_REACT_MACHINE_LOG_ENABLED: "1",
+      VITE_REACT_ANALYTICS_ENABLED: "1",
+      VITE_REACT_GOVERNANCE_ENABLED: "1",
+    },
+  });
+
+  if (result.error) throw result.error;
+  if (result.status !== 0) process.exit(result.status || 1);
+  const entry = path.join(rootDir, "dist", "react", "index.html");
+  if (!fs.existsSync(entry)) throw new Error("React E2E build missing: " + entry);
+}
+
+buildReactFixture();
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "forgex-e2e-"));
 
@@ -22,6 +59,11 @@ const app = createApp({
   logLevel: "error",
   probeProvider: false,
   apiKeys: "e2e-calibration-submitter,e2e-calibration-reviewer",
+  calibrationReviewKeys: "e2e-calibration-reviewer",
+  requireAuth: false,
+  infiniPartnerClientId: "",
+  infiniPartnerClientSecret: "",
+  gcodeAuthorityUrl: "",
 });
 
 app.server.listen(8899, "127.0.0.1", () => {

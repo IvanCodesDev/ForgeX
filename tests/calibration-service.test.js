@@ -174,6 +174,8 @@ async function main() {
   console.log("\n[2] HTTP 鉴权与浏览器目录契约");
   const noKeyApp = createApp({
     dataDir: tmpDir(),
+    apiKeys: "",
+    calibrationReviewKeys: "",
     forceMock: true,
     probeProvider: false,
     rateLimitMs: 0,
@@ -187,12 +189,51 @@ async function main() {
     note: "write disabled",
   });
   check("未配置 API_KEYS 时审批写接口关闭", disabledWrite.status === 503, disabledWrite.text);
+  const disabledQueue = await request(noKeyBase, "/api/calibrations/submissions", "GET");
+  check("未配置审核 key 时队列读取关闭", disabledQueue.status === 503, disabledQueue.text);
   await noKeyApp.close();
+
+  const submitOnlyApp = createApp({
+    dataDir: tmpDir(),
+    apiKeys: "p8-submit-only",
+    calibrationReviewKeys: "",
+    forceMock: true,
+    probeProvider: false,
+    rateLimitMs: 0,
+    logLevel: "error",
+  });
+  const submitOnlyBase = "http://127.0.0.1:" + (await listen(submitOnlyApp));
+  const submitWithoutReviewRole = await request(
+    submitOnlyBase,
+    "/api/calibrations/submissions",
+    "POST",
+    { bundle: candidate("api-submit-only", 1), note: "Submission remains available without reviewers" },
+    "p8-submit-only"
+  );
+  check("只配置 API_KEYS 时仍可提交候选", submitWithoutReviewRole.status === 201, submitWithoutReviewRole.text);
+  const queueWithoutReviewRole = await request(submitOnlyBase, "/api/calibrations/submissions", "GET", null, "p8-submit-only");
+  check("未配置 CALIBRATION_REVIEW_KEYS 时队列关闭", queueWithoutReviewRole.status === 503, queueWithoutReviewRole.text);
+  const reviewWithoutReviewRole = await request(
+    submitOnlyBase,
+    "/api/calibrations/api-submit-only/revisions/1/review",
+    "POST",
+    { decision: "approve", reason: "A general API key must not review this candidate." },
+    "p8-submit-only"
+  );
+  check("未配置 CALIBRATION_REVIEW_KEYS 时审核关闭", reviewWithoutReviewRole.status === 503, reviewWithoutReviewRole.text);
+  const publicWithoutReviewRole = await request(submitOnlyBase, "/api/calibrations", "GET");
+  check(
+    "审核角色未配置不影响公开目录",
+    publicWithoutReviewRole.status === 200 && publicWithoutReviewRole.json.items.length === 0,
+    publicWithoutReviewRole.text
+  );
+  await submitOnlyApp.close();
 
   const apiDir = tmpDir();
   const app = createApp({
     dataDir: apiDir,
-    apiKeys: "p8-submitter,p8-reviewer",
+    apiKeys: "p8-submitter,p8-distributor,p8-reviewer",
+    calibrationReviewKeys: "p8-reviewer",
     forceMock: true,
     probeProvider: false,
     rateLimitMs: 0,
@@ -213,16 +254,39 @@ async function main() {
   );
   check("有效 API Key 可提交候选", submitted.status === 201 && submitted.json.status === "pending", submitted.text);
   check("响应只暴露 key 摘要标识", submitted.json.submittedBy && !submitted.text.includes("p8-submitter"), submitted.text);
-  const queue = await request(base, "/api/calibrations/submissions", "GET", null, "p8-reviewer");
-  check("审核者可查看完整候选与审计队列", queue.status === 200 && queue.json.submissions.length === 1);
-  const selfReview = await request(
+
+  const ordinaryQueue = await request(base, "/api/calibrations/submissions", "GET", null, "p8-submitter");
+  check("普通提交 key 不能读取审核队列", ordinaryQueue.status === 403, ordinaryQueue.text);
+  const distributorQueue = await request(base, "/api/calibrations/submissions", "GET", null, "p8-distributor");
+  check("可分发 API key 不能读取审核队列", distributorQueue.status === 403, distributorQueue.text);
+  const distributorReview = await request(
     base,
     "/api/calibrations/api-p8/revisions/1/review",
     "POST",
-    { decision: "approve", reason: "Submitter must not approve the same candidate." },
-    "p8-submitter"
+    { decision: "approve", reason: "A distributable key must not approve candidates." },
+    "p8-distributor"
   );
-  check("四眼原则禁止提交者自我审批", selfReview.status === 409, selfReview.text);
+  check("可分发 API key 不能调用审核接口", distributorReview.status === 403, distributorReview.text);
+
+  const queue = await request(base, "/api/calibrations/submissions", "GET", null, "p8-reviewer");
+  check("审核者可查看完整候选与审计队列", queue.status === 200 && queue.json.submissions.length === 1);
+
+  const selfSubmitted = await request(
+    base,
+    "/api/calibrations/submissions",
+    "POST",
+    { bundle: candidate("api-self-review", 1), note: "Reviewer-authored candidate for four-eyes regression" },
+    "p8-reviewer"
+  );
+  check("受信审核 key 同时位于 API_KEYS 时可提交候选", selfSubmitted.status === 201, selfSubmitted.text);
+  const selfReview = await request(
+    base,
+    "/api/calibrations/api-self-review/revisions/1/review",
+    "POST",
+    { decision: "approve", reason: "Submitter must not approve the same candidate." },
+    "p8-reviewer"
+  );
+  check("审核 key 通过路由后仍由 store 禁止自我审批", selfReview.status === 409, selfReview.text);
   const review = await request(
     base,
     "/api/calibrations/api-p8/revisions/1/review",

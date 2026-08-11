@@ -92,6 +92,16 @@ console.log("\n[3] CSV 解析");
   check("数字字段为 number", typeof out.rows[0].duration_min === "number" && out.rows[0].duration_min === 95);
   const bad = D.parseCsv("a,b\n1,2");
   check("缺少 status 列报错", bad.rows.length === 0 && bad.errors.length > 0, JSON.stringify(bad.errors));
+  const dirty = D.parseCsv([
+    "machine_id,status,duration_min,cost_fen",
+    "M-1,running,20,100",
+    "M-2,success,12oops,80",
+    "M-3,success,21,90",
+  ].join("\n"));
+  check("未知状态行不会静默归为 success", dirty.rows.length === 1 && dirty.rows[0].machine_id === "M-3",
+    JSON.stringify(dirty));
+  check("非法非空数值行不会静默归零", dirty.errors.some((e) => /第 3 行.*duration_min/.test(e)),
+    JSON.stringify(dirty.errors));
 }
 
 console.log("\n[4] CSV 导出回环");

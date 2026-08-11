@@ -4,8 +4,8 @@
 
 [![CI](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml/badge.svg)](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml)
 ![Version](https://img.shields.io/badge/version-0.19.0-2563eb)
-![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-16a34a)
-![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-0f172a)
+![Node](https://img.shields.io/badge/Node.js-%E2%89%A522.13-16a34a)
+![Node service dependencies](https://img.shields.io/badge/Node_service_runtime_dependencies-0-0f172a)
 [![License](https://img.shields.io/badge/license-Apache--2.0-f97316)](./LICENSE)
 
 **简体中文** · [English](./.github/README.en.md)
@@ -112,23 +112,42 @@
 
 ## 快速开始
 
-### 只体验前端仿真
+### 只体验现有前端仿真
 
 直接打开 `index.html`。无需安装依赖，也无需联网。
 
-### 启动完整服务
+### 启动 React 开发工作台
+
+需要 Node.js 22.13 或更高版本。首次检出仓库后安装锁定的开发与前端工作区依赖：
 
 ```bash
-node server/index.js
-# 或
+npm ci
+```
+
+分别启动 Node 服务和 Vite：
+
+```bash
+# 终端 1：同源 API、身份、数据与 G-code 代理
+npm start
+
+# 终端 2：React + TypeScript 开发服务器
+npm run frontend:dev
+```
+
+开发页面由 Vite 输出在 [http://127.0.0.1:5173](http://127.0.0.1:5173)，API 请求代理到 `127.0.0.1:8787`。
+
+### 构建并启动完整服务
+
+```bash
+npm run frontend:build
 npm start
 ```
 
-访问 [http://127.0.0.1:8787](http://127.0.0.1:8787)。
+访问 [http://127.0.0.1:8787](http://127.0.0.1:8787) 使用原 JavaScript 工作台，或访问 [http://127.0.0.1:8787/react/](http://127.0.0.1:8787/react/) 使用 React 工作台。
 
 完整服务额外提供数据持久化、真机日志与数据源接口、分析任务、分享页、知识检索、校准审核、健康检查和可选 AI 叙述。
 
-> 需要 Node.js 18 或更高版本。项目运行时没有 npm 依赖；ESLint、Prettier 与 Playwright 仅用于开发和测试。
+> Node 服务端本身仍不依赖第三方运行时包；React 构建、类型检查、单元测试和端到端测试使用根工作区锁定的 npm 依赖。
 
 ## AI 如何参与
 
@@ -151,9 +170,12 @@ npm start
 Browser
 ├─ /             现有 JavaScript 工作台（迁移期稳定基线）
 └─ /react/       React + TypeScript 新工作台
-   ├─ Web Worker 增量解析、原始字节 SHA-256、即时预览
-   ├─ Three.js 分层路径抽样与交互
-   └─ browser / shadow / dotnet 三态权威切换
+   ├─ 共享 Header：导航、运行模式与 SSO/API/匿名/离线身份状态
+   ├─ #/simulator：浏览器即时仿真、参数比较、事件时间线与非权威来源标记
+   ├─ #/gcode：机器/材料 Profile、Worker 解析、Three.js 路径与 SHA-256 日志对账
+   ├─ #/analytics：本地数据分析、规则报告、图表、证据表与导出
+   ├─ #/governance：公开校准目录、浏览器只读治理边界与已有分享查询
+   └─ G-code 分析支持 browser / shadow / dotnet 三种模式
              │ 同源 raw-body 流式代理
              ▼
 Node.js service :8787
@@ -167,22 +189,60 @@ Node.js service :8787
                               └─ JS/C# GoldenDiff 门禁
 ```
 
-- **前端**：旧页面继续可用；新页面采用 React、TypeScript、Vite 与 Three.js，G-code 在 Worker 中解析；
+- **前端**：旧页面继续可用；React 已落地共享身份头、Profile 选择、G-code/日志对账、数据分析与校准治理等垂直切片，G-code 在 Worker 中解析；
 - **业务后端**：Node.js 原生 `http`，零运行时依赖，并只对白名单路由提供 C# 同源代理；
-- **权威计算**：.NET 10、零外部 NuGet；默认仅监听 `127.0.0.1:8788`，不直接暴露公网；
+- **G-code 计算边界**：.NET 10 sidecar 已实现流式 G-code 摘要与 JS/C# 黄金差异门禁，仅在显式选择 `shadow` 或 `dotnet` 时参与该路由；默认 `browser` 模式不代表整个仿真核心已迁入 C#；
 - **存储**：默认写入 `data/`，容器部署可挂载持久化卷。
+
+### React Stage 2 当前范围
+
+| 切片             | 已落地行为                                                                                            | 回滚/边界                                                                 |
+| ---------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 共享壳与身份     | Header 显示运行模式、当前身份和 AI 能力范围；离线模式不发起身份请求                                   | 身份优先级为 SSO、允许分发的浏览器 API 凭据、匿名；旧工作台仍保留         |
+| 浏览器即时仿真   | 在 `#/simulator` 编辑核心工艺参数，通过 Worker 运行即时预览并展示阶段进度、摘要和事件时间线           | 明确标记为“浏览器即时预览（非权威）”；独立开关关闭时只回退该路由          |
+| Profile + G-code | 选择内置机器/材料 Profile，可导入受限 JSON；Worker 解析 G-code 并显示逐层 3D 路径                     | Profile、G-code 和日志分别由独立开关回退；旧 DOM 流程未在此路由中重复绑定 |
+| 真机日志对账     | 仅当声明的 G-code SHA-256 通过强摘要校验时生成对比；不匹配时保留证据但不输出差异指标                  | 更换 G-code 会清除旧日志绑定                                              |
+| 数据分析         | 导入本地 CSV，显式标记真实/合成来源，同步生成 KPI、本地统计规则、SVG 图表、可访问表格与 JSON/CSV 导出 | 当前是本地确定性分析，不把 AI 叙述当作统计结果                            |
+| 校准治理         | 读取公开校准目录、展示审核边界并查询已有分享                                                          | 浏览器固定只读；审核仅由配置 `CALIBRATION_REVIEW_KEYS` 的受信后台执行     |
+
+`#/simulator` 迁入的是可复现的浏览器即时预览子集；模型导入、完整高级参数和其他旧页面仍以 `/` 作为可回滚基线。该页面不把浏览器估算表述为 C# 权威分析或真机实测。
+
+### React 功能开关
+
+以 [`frontend/.env.example`](./frontend/.env.example) 为模板配置 Vite。下列 React 切片开关在未设置时默认启用，显式设为 `0` 可单独回退：
+
+| 环境变量                              | 作用                                                               |
+| ------------------------------------- | ------------------------------------------------------------------ |
+| `VITE_REACT_SIMULATOR_ENABLED`        | 启用 `#/simulator` 即时仿真；`0` 时只显示该功能已回退              |
+| `VITE_REACT_GCODE_ENABLED`            | 启用 `#/gcode` React 垂直切片；`0` 时显示迁移占位/旧入口           |
+| `VITE_REACT_PROFILE_SELECTOR_ENABLED` | 启用机器/材料 Profile 选择和受限 JSON 导入；`0` 时回到基础参数输入 |
+| `VITE_REACT_MACHINE_LOG_ENABLED`      | 启用真机日志 SHA-256 对账；`0` 只回退日志面板                      |
+| `VITE_REACT_ANALYTICS_ENABLED`        | 启用 `#/analytics` 本地分析路由；`0` 时显示该功能已回退            |
+| `VITE_REACT_GOVERNANCE_ENABLED`       | 启用 `#/governance` 校准治理路由；`0` 时显示该功能已回退           |
+
+`VITE_GCODE_AUTHORITY` 不是页面开关，而是 G-code 分析模式：`browser` 为默认浏览器结果，`shadow` 与 C# 双跑但不切换主结果，`dotnet` 才使用 C# 返回作为该路由结果。`VITE_API_BASE=offline` 可强制离线演示；`VITE_NODE_API_KEY` 与 `VITE_NODE_BEARER` 会进入浏览器产物，只能放置允许分发的客户端凭据，校准审核密钥只允许配置在服务端 `CALIBRATION_REVIEW_KEYS`。
 
 ## 验证
 
 ```bash
-npm run check       # ESLint + Prettier + 完整单元/契约/发布测试
-npm run frontend:build:offline  # 生成可由 file:// 打开的 React 单文件包
-npm run dotnet:golden           # 构建 .NET 10 核心并执行 JS/C# 字段级黄金差异
-npm run test:e2e    # Chromium 全量 + Firefox/WebKit 关键流程
-npm run demo:check  # 演示素材与真实导入链校验
+npm run check                 # ESLint + Prettier + React 类型/单测 + Node 契约/发布测试
+npm run frontend:build        # 生成由 Node 在 /react/ 提供的生产包
+npm run frontend:build:offline # 生成可由 file:// 打开的 React 单文件包
+npm run dotnet:golden         # 构建 .NET 10 G-code 核心并执行 JS/C# 字段级黄金差异
+npm run test:e2e              # Chromium 全量 + Firefox/WebKit 关键流程
+npm run demo:check            # 演示素材与真实导入链校验
 ```
 
-测试覆盖切片、导出、G-code、真机日志、时间校准、Profile、调平、仿真状态机、统计核、生产洞察、Partner SSO、服务端接口和三浏览器关键流程。
+只快速回归当前 React Stage 2 主流程时，可运行：
+
+```bash
+npm run frontend:typecheck
+npm run frontend:test
+npm run test:e2e:chromium -- tests/e2e/react-stage2.spec.js
+npm run test:e2e:chromium -- tests/e2e/react-stage3-simulator.spec.js
+```
+
+测试覆盖切片、导出、G-code、真机日志、时间校准、Profile、调平、仿真状态机、统计核、生产洞察、Partner SSO、服务端接口，以及 React 身份 Header、即时仿真零 API 请求与参数响应、Delta + PETG G-code/日志对账、分析来源、校准治理边界和移动端溢出检查。
 
 ## 部署
 

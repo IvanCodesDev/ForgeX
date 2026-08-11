@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("assert");
-const { PartnerSSO, publicPath } = require("../server/services/partner-sso");
+const { PartnerSSO, publicPath, safeReturnPath } = require("../server/services/partner-sso");
 const { InfiniClient } = require("../server/services/infini");
 
 function response() {
@@ -56,6 +56,10 @@ const log = { info() {}, warn() {} };
   const sso = new PartnerSSO(cfg, log, fakeFetch);
   assert.strictEqual(sso.enabled, true);
   assert.strictEqual(publicPath(cfg.publicBase), "/projects/forgex/");
+  assert.strictEqual(safeReturnPath("/react"), "/react/");
+  assert.strictEqual(safeReturnPath("/react/"), "/react/");
+  assert.strictEqual(safeReturnPath("https://evil.example/"), "/");
+  assert.strictEqual(safeReturnPath("//evil.example/react/"), "/");
   const userClient = new InfiniClient(
     { infiniKey: "sk-global", mode: "infinisynapse", modeReason: "global" },
     log
@@ -101,6 +105,29 @@ const log = { info() {}, warn() {} };
   sso.logout({ headers: { cookie: sessionCookie } }, logoutRes);
   assert.strictEqual(JSON.parse(logoutRes.body).ok, true);
   assert.strictEqual(sso.identity({ headers: { cookie: sessionCookie } }), null);
+
+  const reactLoginRes = response();
+  await sso.begin({ url: "/api/auth/infini/login?returnTo=%2Freact%2F", headers: {} }, reactLoginRes);
+  const reactOauthCookie = reactLoginRes.headers["Set-Cookie"].split(";")[0];
+  const reactCreated = JSON.parse(calls[2].options.body);
+  assert.strictEqual(reactCreated.cancelUrl, "https://example.com/projects/forgex/react/?login=cancelled");
+  const reactCallbackRes = response();
+  await sso.callback(
+    {
+      url: "/api/auth/infini/callback?code=ac_react&state=" + reactCreated.state,
+      headers: { cookie: reactOauthCookie },
+    },
+    reactCallbackRes
+  );
+  assert.strictEqual(reactCallbackRes.headers.Location, "https://example.com/projects/forgex/react/?login=success");
+
+  const unsafeLoginRes = response();
+  await sso.begin(
+    { url: "/api/auth/infini/login?returnTo=https%3A%2F%2Fevil.example%2F", headers: {} },
+    unsafeLoginRes
+  );
+  const unsafeCreated = JSON.parse(calls[4].options.body);
+  assert.strictEqual(unsafeCreated.cancelUrl, "https://example.com/projects/forgex/?login=cancelled");
 
   await assert.rejects(
     () => sso.callback({ url: "/api/auth/infini/callback?code=bad&state=bad", headers: {} }, response()),

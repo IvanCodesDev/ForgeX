@@ -1,8 +1,24 @@
-import * as THREE from "three";
+import {
+  AxesHelper,
+  BufferGeometry,
+  Color,
+  Float32BufferAttribute,
+  GridHelper,
+  Line,
+  LineBasicMaterial,
+  LineSegments,
+  Mesh,
+  PerspectiveCamera,
+  Scene,
+  SRGBColorSpace,
+  WebGLRenderer,
+  type ColorRepresentation,
+  type Material,
+} from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { GcodeBounds, PreviewLayer } from "../features/gcode/gcode-types";
 
-const COLORS: Readonly<Record<string, THREE.ColorRepresentation>> = {
+const COLORS: Readonly<Record<string, ColorRepresentation>> = {
   perimeter: 0xe7ebf1,
   solid: 0xff642e,
   infill: 0x768195,
@@ -11,32 +27,32 @@ const COLORS: Readonly<Record<string, THREE.ColorRepresentation>> = {
 };
 
 export class ViewerEngine {
-  private readonly renderer: THREE.WebGLRenderer;
-  private readonly scene = new THREE.Scene();
-  private readonly camera = new THREE.PerspectiveCamera(42, 1, 0.1, 5000);
+  private readonly renderer: WebGLRenderer;
+  private readonly scene = new Scene();
+  private readonly camera = new PerspectiveCamera(42, 1, 0.1, 5000);
   private readonly controls: OrbitControls;
   private readonly resizeObserver: ResizeObserver;
-  private layerObject: THREE.LineSegments | null = null;
+  private layerObject: LineSegments | null = null;
   private disposed = false;
 
   public constructor(private readonly canvas: HTMLCanvasElement) {
-    this.renderer = new THREE.WebGLRenderer({
+    this.renderer = new WebGLRenderer({
       canvas,
       antialias: true,
       alpha: true,
       powerPreference: "high-performance",
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.outputColorSpace = SRGBColorSpace;
     this.camera.position.set(180, 160, 180);
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = false;
     this.controls.addEventListener("change", this.render);
 
-    const grid = new THREE.GridHelper(280, 14, 0x3e4858, 0x242b36);
+    const grid = new GridHelper(280, 14, 0x3e4858, 0x242b36);
     grid.position.y = -0.03;
     this.scene.add(grid);
-    this.scene.add(new THREE.AxesHelper(28));
+    this.scene.add(new AxesHelper(28));
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas.parentElement ?? canvas);
@@ -55,7 +71,7 @@ export class ViewerEngine {
     const positions: number[] = [];
     const colors: number[] = [];
     for (const path of layer.paths) {
-      const color = new THREE.Color(COLORS[path.type] ?? 0xaab3c1);
+      const color = new Color(COLORS[path.type] ?? 0xaab3c1);
       for (let index = 1; index < path.points.length; index++) {
         const before = path.points[index - 1];
         const current = path.points[index];
@@ -67,12 +83,12 @@ export class ViewerEngine {
       }
     }
 
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
     geometry.computeBoundingSphere();
-    const material = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.94 });
-    this.layerObject = new THREE.LineSegments(geometry, material);
+    const material = new LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.94 });
+    this.layerObject = new LineSegments(geometry, material);
     this.scene.add(this.layerObject);
 
     const span = Math.max(40, bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
@@ -93,7 +109,7 @@ export class ViewerEngine {
     this.controls.dispose();
     this.disposeLayer();
     this.scene.traverse((object) => {
-      if (object instanceof THREE.Line || object instanceof THREE.Mesh) {
+      if (object instanceof Line || object instanceof Mesh) {
         object.geometry.dispose();
         this.disposeMaterial(object.material);
       }
@@ -124,7 +140,7 @@ export class ViewerEngine {
     this.layerObject = null;
   }
 
-  private disposeMaterial(material: THREE.Material | readonly THREE.Material[]): void {
+  private disposeMaterial(material: Material | readonly Material[]): void {
     const materials = Array.isArray(material) ? material : [material];
     for (const item of materials) item.dispose();
   }

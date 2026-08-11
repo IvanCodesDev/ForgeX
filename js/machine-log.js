@@ -142,9 +142,21 @@
     });
     var samples = objects.map(normalizeSample);
     var last = objects[objects.length - 1];
+    var declaredDigests = [];
+    objects.forEach(function (obj) {
+      var declared = firstText(at(obj, ["gcode_sha256", "gcode_sha", "gcode_hash"])).toLowerCase();
+      if (declared && declaredDigests.indexOf(declared) < 0) declaredDigests.push(declared);
+    });
+    if (declaredDigests.length > 1)
+      throw new Error("CSV 真机日志中的 gcode_sha256 在不同行之间不一致");
     return normalize({
       format: "generic-machine-log-csv",
       job: {
+        job_id: at(last, ["job_id", "job"]),
+        machine_id: at(last, ["machine_id", "machine", "device_id"]),
+        firmware: at(last, ["firmware", "firmware_version"]),
+        slicer: at(last, ["slicer", "slicer_version"]),
+        gcode_sha256: declaredDigests[0] || "",
         duration_s: at(last, ["duration_s", "duration_sec", "elapsed_s", "time_s"]),
         filament_mm: at(last, ["filament_mm", "filament_used_mm"]),
         filament_g: at(last, ["filament_g", "filament_used_g"]),

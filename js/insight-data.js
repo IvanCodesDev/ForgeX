@@ -196,6 +196,9 @@
     energy_kwh: ["energy_kwh", "能耗", "电量"],
   };
   var NUM_FIELDS = { layer_height_mm: 1, duration_min: 1, filament_g: 1, cost_fen: 1, energy_kwh: 1 };
+  var STRICT_NUMBER = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+  var SUCCESS_STATUS = { success: 1, succeeded: 1, ok: 1, complete: 1, completed: 1, "成功": 1, "完成": 1 };
+  var FAIL_STATUS = { fail: 1, failed: 1, failure: 1, error: 1, "失败": 1, "故障": 1 };
 
   /** 单行 CSV 切分（支持双引号包裹与转义），无引号时按逗号直切 */
   D.splitCsvLine = function (line) {
@@ -244,18 +247,41 @@
     var rows = [];
     for (var i = 1; i < lines.length; i++) {
       var cells = D.splitCsvLine(lines[i]);
-      var row = {};
+      var row = {}, rowErrors = [];
       for (var ci = 0; ci < cells.length; ci++) {
         var f = map[ci];
         if (!f) continue;
         var v = cells[ci].trim();
-        if (f === "cost_cny") { row.cost_fen = Math.round(parseFloat(v || "0") * 100) || 0; continue; }
-        if (NUM_FIELDS[f]) { row[f] = parseFloat(v || "0") || 0; continue; }
+        if (f === "cost_cny" || NUM_FIELDS[f]) {
+          if (v === "") {
+            if (f === "cost_cny") row.cost_fen = 0;
+            else row[f] = 0;
+            continue;
+          }
+          if (!STRICT_NUMBER.test(v)) {
+            rowErrors.push(f + " 不是有效数值（" + v + "）");
+            continue;
+          }
+          var numeric = Number(v);
+          if (!isFinite(numeric)) {
+            rowErrors.push(f + " 超出有限数值范围（" + v + "）");
+            continue;
+          }
+          if (f === "cost_cny") row.cost_fen = Math.round(numeric * 100);
+          else row[f] = numeric;
+          continue;
+        }
         row[f] = v;
       }
       // 状态归一化
       var st = String(row.status || "").toLowerCase();
-      row.status = (st === "fail" || st === "failed" || st === "失败" || st === "故障") ? "fail" : "success";
+      if (FAIL_STATUS[st]) row.status = "fail";
+      else if (SUCCESS_STATUS[st]) row.status = "success";
+      else rowErrors.push("status 取值无效（" + (st || "空") + "）");
+      if (rowErrors.length) {
+        errors.push("第 " + (i + 1) + " 行：" + rowErrors.join("；"));
+        continue;
+      }
       if (row.status !== "fail") row.fail_reason = "";
       rows.push(row);
     }

@@ -180,18 +180,22 @@
     if (bundle.version !== 1) errors.push("version 必须是 1");
     if (!Array.isArray(bundle.machines)) errors.push("machines 必须是数组");
     if (!Array.isArray(bundle.materials)) errors.push("materials 必须是数组");
+    // 畸形 JSON 也必须返回结构化校验错误，不能在随后调用 .forEach 时抛 TypeError。
+    // 这条边界同时保护 legacy 页面和 React typed adapter。
+    var machineList = Array.isArray(bundle.machines) ? bundle.machines : [];
+    var materialList = Array.isArray(bundle.materials) ? bundle.materials : [];
     var ids = {};
-    (bundle.machines || []).forEach(function (m, i) {
+    machineList.forEach(function (m, i) {
       errors.push.apply(errors, P.validateMachine(m, "machines[" + i + "]"));
       if (m && ids["machine:" + m.id]) errors.push("machine id 重复：" + m.id);
       if (m) ids["machine:" + m.id] = true;
     });
-    (bundle.materials || []).forEach(function (m, i) {
+    materialList.forEach(function (m, i) {
       errors.push.apply(errors, P.validateMaterial(m, "materials[" + i + "]"));
       if (m && ids["material:" + m.id]) errors.push("material id 重复：" + m.id);
       if (m) ids["material:" + m.id] = true;
     });
-    if (!(bundle.machines || []).length && !(bundle.materials || []).length)
+    if (!machineList.length && !materialList.length)
       errors.push("bundle 至少要包含一个 machine 或 material");
     return { ok: errors.length === 0, errors: errors };
   };

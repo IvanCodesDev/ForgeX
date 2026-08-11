@@ -15,6 +15,7 @@ const completed = [
   "G-code SHA-256 运行时绑定",
   "Delta 中心原点与 file:// 启动修复",
   "24 组版本化黄金样例",
+  "React 身份、即时仿真、Profile、G-code、真机日志、数据分析与校准治理竖切片",
 ];
 
 export function OverviewPage({ adapter, runtimeMode, featureFlags }: OverviewPageProps) {
@@ -35,16 +36,21 @@ export function OverviewPage({ adapter, runtimeMode, featureFlags }: OverviewPag
   return (
     <div className="page-stack">
       <section className="hero-panel">
-        <p className="eyebrow">REACT + TYPESCRIPT MIGRATION / STAGE 1</p>
-        <h1>权威计算留在服务端，交互体验迁入现代前端。</h1>
+        <p className="eyebrow">REACT + TYPESCRIPT MIGRATION / STAGE 2</p>
+        <h1>主用户流程按可回滚竖切片迁入 React。</h1>
         <p className="hero-copy">
-          当前骨架以严格类型、运行模式检测和可替换 API Adapter 为边界；旧实现仍可运行，首个业务切片将从 G-code
-          导入与摘要开始。
+          Header 身份、Profile
+          参数、浏览器即时仿真、G-code/真机日志强摘要对账、本地可审计分析与服务端校准治理已接入；旧实现仍作为发布回滚基线。
         </p>
         <div className="hero-meta">
           <span>Runtime：{runtimeMode.kind}</span>
           <span>API：{runtimeMode.apiBase === "" ? "same-origin" : (runtimeMode.apiBase ?? "disabled")}</span>
           <span>Feature：gcode-react {featureFlags.gcodeReact ? "on" : "off"}</span>
+          <span>Simulator：{featureFlags.simulatorReact ? "on" : "off"}</span>
+          <span>Profile：{featureFlags.profileSelectorReact ? "on" : "off"}</span>
+          <span>Machine log：{featureFlags.machineLogReact ? "on" : "off"}</span>
+          <span>Analytics：{featureFlags.analyticsReact ? "on" : "off"}</span>
+          <span>Governance：{featureFlags.governanceReact ? "on" : "off"}</span>
         </div>
       </section>
 

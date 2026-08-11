@@ -109,7 +109,16 @@ check(
 
 console.log("\n[P8 calibration] Review and distribution");
 check("服务端注册校准发布路由", /routes\/calibration/.test(serverIndex));
-check("写接口要求已配置 API Key", /auth\.enabled/.test(serverRoute) && /校准审批需要有效 API Key/.test(serverRoute));
+check(
+  "候选提交要求已配置普通 API Key",
+  /auth\.enabled/.test(serverRoute) && /校准候选提交需要有效 API Key/.test(serverRoute)
+);
+check(
+  "审核队列与发布使用独立审核角色",
+  /auth\.reviewEnabled/.test(serverRoute) &&
+    /identifyReviewer/.test(serverRoute) &&
+    /CALIBRATION_REVIEW_KEYS/.test(serverRoute)
+);
 check("候选审批执行四眼原则", /提交者不能审批自己/.test(serverService));
 check(
   "批准时重新执行 active 准入校验",

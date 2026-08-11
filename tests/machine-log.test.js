@@ -53,15 +53,18 @@ check(
 );
 
 console.log("\n[2] 通用 CSV 真机日志");
+const csvSha = "b".repeat(64);
 const csv = [
-  "time_s,nozzle_c,bed_c,filament_mm,filament_g,completed_layers,status",
-  "0,25,25,,,,running",
-  "120,210,60,300,0.9,2,success",
+  "time_s,nozzle_c,bed_c,filament_mm,filament_g,completed_layers,status,gcode_sha256",
+  `0,25,25,,,,running,${csvSha}`,
+  `120,210,60,300,0.9,2,success,${csvSha}`,
 ].join("\n");
 const csvLog = Log.parse(csv, { name: "machine.csv" });
 check("CSV 时长可由最后时间读出", csvLog.actualTimeSec === 120);
 check("CSV 最后一行任务汇总生效", csvLog.filamentMm === 300 && csvLog.completedLayers === 2);
 check("CSV 遥测样本归一", csvLog.samples.length === 2 && csvLog.samples[1].bedC === 60);
+check("CSV 保留一致的 G-code SHA-256", csvLog.gcodeSha256 === csvSha, csvLog.gcodeSha256);
+check("CSV 可建立文件级强绑定", Log.verifyGcodeBinding({ sha256: csvSha }, csvLog).verified);
 
 console.log("\n[3] 计划 / 实测对比");
 const planned = {
@@ -98,6 +101,17 @@ try {
   err = e;
 }
 check("未知格式明确拒绝", !!err && /不支持/.test(err.message));
+err = null;
+try {
+  Log.parse([
+    "time_s,status,gcode_sha256",
+    `0,running,${"c".repeat(64)}`,
+    `1,success,${"d".repeat(64)}`,
+  ].join("\n"));
+} catch (e) {
+  err = e;
+}
+check("CSV 不同行摘要冲突时拒绝解析", !!err && /不一致/.test(err.message));
 
 console.log(`\n═══ 结果：${passed} 通过 / ${failed} 失败 ═══`);
 process.exit(failed ? 1 : 0);

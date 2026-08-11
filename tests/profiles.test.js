@@ -59,6 +59,25 @@ const badRange = example();
 badRange.materials[0].nozzle.default = 900;
 check("危险温度范围被拒绝", !Profiles.validateBundle(badRange).ok);
 
+let malformedResult = null;
+let malformedError = null;
+try {
+  malformedResult = Profiles.validateBundle({
+    format: "forgex-profile-bundle",
+    version: 1,
+    machines: {},
+    materials: [],
+  });
+} catch (e) {
+  malformedError = e;
+}
+check("畸形 machines 字段返回校验错误而不是抛异常", !malformedError && malformedResult && !malformedResult.ok);
+check(
+  "畸形 machines 字段给出稳定数组错误",
+  malformedResult && malformedResult.errors.some((e) => /machines 必须是数组/.test(e)),
+  malformedResult ? malformedResult.errors.join("；") : String(malformedError)
+);
+
 const override = example();
 override.materials[0].id = "PLA";
 let overrideError = null;

@@ -33,6 +33,19 @@ function publicPath(publicBase) {
   }
 }
 
+// 登录完成后只允许回到本站已发布的两个入口。返回路径相对于 PUBLIC_BASE，
+// 不接受协议、主机、反斜杠、查询串或任意开放重定向目标。
+function safeReturnPath(value) {
+  const raw = String(value || "").trim();
+  if (raw === "/react" || raw === "/react/") return "/react/";
+  return "/";
+}
+
+function loginResultUrl(base, returnPath, result) {
+  const path = safeReturnPath(returnPath);
+  return base + path + "?login=" + encodeURIComponent(result);
+}
+
 class PartnerSSO {
   constructor(cfg, log, fetchImpl) {
     this.cfg = cfg;
@@ -83,12 +96,14 @@ class PartnerSSO {
     if (!this.enabled) throw new HttpError(503, "InfiniSynapse 登录尚未配置");
     const state = crypto.randomBytes(24).toString("hex");
     const browserNonce = crypto.randomBytes(24).toString("hex");
-    this.pending.set(browserNonce, { state, createdAt: Date.now() });
+    const requestUrl = new URL(req.url || "/api/auth/infini/login", "http://local");
+    const returnPath = safeReturnPath(requestUrl.searchParams.get("returnTo"));
+    this.pending.set(browserNonce, { state, returnPath, createdAt: Date.now() });
 
     const base = this.cfg.publicBase.replace(/\/$/, "");
     const data = await this._post("/auth/partner/sessions", {
       returnUrl: base + "/api/auth/infini/callback",
-      cancelUrl: base + "/?login=cancelled",
+      cancelUrl: loginResultUrl(base, returnPath, "cancelled"),
       state,
       metadata: { source: "forgex-insight", integration: "partner-sso-b" },
     });
@@ -140,7 +155,7 @@ class PartnerSSO {
 
     const base = this.cfg.publicBase.replace(/\/$/, "");
     res.writeHead(302, {
-      Location: base + "/?login=success",
+      Location: loginResultUrl(base, pending.returnPath, "success"),
       "Cache-Control": "no-store",
       "Set-Cookie": [
         this._cookie("fx_session", token, Math.floor(this.cfg.loginSessionTtlMs / 1000)),
@@ -197,4 +212,4 @@ function register(router, ctx) {
   router.add("POST", /^\/api\/auth\/infini\/logout$/, (req, res) => sso.logout(req, res));
 }
 
-module.exports = { PartnerSSO, register, safeEqual, cookies, publicPath };
+module.exports = { PartnerSSO, register, safeEqual, cookies, publicPath, safeReturnPath };

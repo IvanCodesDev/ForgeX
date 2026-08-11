@@ -1,9 +1,15 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type DragEvent } from "react";
-import { GcodeViewer } from "./GcodeViewer";
+import { lazy, Suspense, useEffect, useMemo, useState, type ChangeEvent, type DragEvent } from "react";
+import type { FeatureFlags } from "../../app/runtime/feature-flags";
+import { MachineLogPanel } from "../machine-logs/MachineLogPanel";
+import type { GcodeReconciliationPlan } from "../machine-logs/machine-log-types";
+import { ProfileSelector } from "../profiles/ProfileSelector";
+import { useProfileSelection } from "../profiles/useProfileSelection";
 import { selectEffectiveSummary } from "./gcode-authority";
 import type { GcodeParseOptions } from "./gcode-types";
 import { useGcodeAuthority } from "./useGcodeAuthority";
 import { useGcodeWorker } from "./useGcodeWorker";
+
+const GcodeViewer = lazy(() => import("./GcodeViewer").then((module) => ({ default: module.GcodeViewer })));
 
 function number(value: number, digits = 2): string {
   return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: digits }).format(value);
@@ -15,8 +21,13 @@ function duration(seconds: number): string {
   return hours ? `${hours} 小时 ${minutes} 分` : `${minutes} 分钟`;
 }
 
-export function GcodePage() {
+export interface GcodePageProps {
+  readonly featureFlags: Pick<FeatureFlags, "machineLogReact" | "profileSelectorReact">;
+}
+
+export function GcodePage({ featureFlags }: GcodePageProps) {
   const { state, parseFile, cancel, reset } = useGcodeWorker();
+  const profile = useProfileSelection();
   const [file, setFile] = useState<File | null>(null);
   const [bedSize, setBedSize] = useState(256);
   const [densityG, setDensityG] = useState(1.24);
@@ -27,8 +38,13 @@ export function GcodePage() {
     origin: "corner",
   });
   const [selectedLayer, setSelectedLayer] = useState(0);
+  const [gcodeRevision, setGcodeRevision] = useState(0);
 
-  const options = useMemo<GcodeParseOptions>(() => ({ bedSize, densityG, origin }), [bedSize, densityG, origin]);
+  const fallbackOptions = useMemo<GcodeParseOptions>(
+    () => ({ bedSize, densityG, origin }),
+    [bedSize, densityG, origin]
+  );
+  const options = featureFlags.profileSelectorReact ? profile.value.options : fallbackOptions;
   const result = state.result;
   const authority = useGcodeAuthority(file, submittedOptions, result);
   const layer = result?.layers[selectedLayer] ?? null;
@@ -37,6 +53,40 @@ export function GcodePage() {
     effectiveSummary?.provenance === "dotnet-authority"
       ? (authority.result?.warnings.map((warning) => `${warning.code} · ${warning.message}`) ?? [])
       : (result?.warnings ?? []);
+  const hasUnsubmittedOptions = Boolean(
+    file &&
+    options &&
+    (options.bedSize !== submittedOptions.bedSize ||
+      options.densityG !== submittedOptions.densityG ||
+      options.origin !== submittedOptions.origin)
+  );
+
+  const reconciliationPlan = useMemo<GcodeReconciliationPlan | null>(() => {
+    if (!result || !effectiveSummary) return null;
+    if (authority.mode === "dotnet" && effectiveSummary.provenance !== "dotnet-authority") return null;
+    if (effectiveSummary.sha256 !== result.sha256) return null;
+    return {
+      gcodeSha256: result.sha256,
+      provenance: effectiveSummary.provenance,
+      engineVersion:
+        effectiveSummary.provenance === "dotnet-authority"
+          ? (authority.result?.engine.version ?? "unknown")
+          : "legacy-browser-preview",
+      totalLayers: effectiveSummary.totalLayers,
+      estimatedTimeSec: effectiveSummary.estimatedTimeSeconds,
+      filamentMm: effectiveSummary.filamentLengthM * 1000,
+      filamentG: effectiveSummary.filamentMassG,
+    };
+  }, [authority.mode, authority.result?.engine.version, effectiveSummary, result]);
+
+  const machineLogDisabledReason = (() => {
+    if (!result) return "请先完成 G-code 原始字节摘要与解析";
+    if (authority.mode === "dotnet" && effectiveSummary?.provenance !== "dotnet-authority") {
+      return "等待 C# 权威结果与浏览器原始摘要交叉核验";
+    }
+    if (effectiveSummary?.sha256 !== result.sha256) return "C# 与浏览器原始摘要不一致";
+    return "对账计划尚未就绪";
+  })();
 
   const summaryLabel = (() => {
     if (effectiveSummary?.provenance === "dotnet-authority") return "C# 权威结果";
@@ -52,7 +102,8 @@ export function GcodePage() {
   useEffect(() => setSelectedLayer(0), [result]);
 
   const acceptFile = (next: File | null) => {
-    if (!next) return;
+    if (!next || !options) return;
+    setGcodeRevision((current) => current + 1);
     setFile(next);
     setSubmittedOptions(options);
     void parseFile(next, options);
@@ -69,7 +120,8 @@ export function GcodePage() {
   };
 
   const reparseCurrentFile = () => {
-    if (!file) return;
+    if (!file || !options) return;
+    setGcodeRevision((current) => current + 1);
     setSubmittedOptions(options);
     void parseFile(file, options);
   };
@@ -184,38 +236,51 @@ export function GcodePage() {
           <h1>G-code 权威摘要前的即时预览</h1>
           <p className="muted">原始字节在 Worker 中计算 SHA-256 并解析；主线程只接收受限的分层路径数据。</p>
         </div>
-        <div className="gcode-options">
-          <label>
-            平台尺寸（mm）
-            <input
-              type="number"
-              min="80"
-              max="1000"
-              value={bedSize}
-              onChange={(event) => setBedSize(Number(event.target.value))}
-            />
-          </label>
-          <label>
-            材料密度（g/cm³）
-            <input
-              type="number"
-              min="0.5"
-              max="3"
-              step="0.01"
-              value={densityG}
-              onChange={(event) => setDensityG(Number(event.target.value))}
-            />
-          </label>
-          <label>
-            坐标原点
-            <select value={origin} onChange={(event) => setOrigin(event.target.value as GcodeParseOptions["origin"])}>
-              <option value="corner">床角</option>
-              <option value="center">床心（Delta）</option>
-            </select>
-          </label>
-        </div>
-        <label className="gcode-drop" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
-          <input type="file" accept=".gcode,.gco,.gc,text/plain" onChange={onInput} />
+        {featureFlags.profileSelectorReact ? (
+          <ProfileSelector value={profile.value} actions={profile.actions} />
+        ) : (
+          <div className="gcode-options">
+            <label>
+              平台尺寸（mm）
+              <input
+                type="number"
+                min="50"
+                max="2000"
+                value={bedSize}
+                onChange={(event) => setBedSize(Number(event.target.value))}
+              />
+            </label>
+            <label>
+              材料密度（g/cm³）
+              <input
+                type="number"
+                min="0.2"
+                max="5"
+                step="0.01"
+                value={densityG}
+                onChange={(event) => setDensityG(Number(event.target.value))}
+              />
+            </label>
+            <label>
+              坐标原点
+              <select value={origin} onChange={(event) => setOrigin(event.target.value as GcodeParseOptions["origin"])}>
+                <option value="corner">床角</option>
+                <option value="center">床心（Delta）</option>
+              </select>
+            </label>
+          </div>
+        )}
+        {hasUnsubmittedOptions ? (
+          <p className="profile-pending-note" role="status">
+            当前结果仍使用上次提交的参数；点击“按当前参数重新解析”后更新。
+          </p>
+        ) : null}
+        <label
+          className={`gcode-drop${options ? "" : " gcode-drop-disabled"}`}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={onDrop}
+        >
+          <input type="file" accept=".gcode,.gco,.gc,text/plain" disabled={!options} onChange={onInput} />
           <strong>{file ? file.name : "选择或拖入 G-code"}</strong>
           <span>{file ? `${number(file.size / 1024, 1)} KB` : "最大 64 MB · .gcode / .gco / .gc"}</span>
         </label>
@@ -295,6 +360,14 @@ export function GcodePage() {
         </>
       ) : null}
 
+      {featureFlags.machineLogReact ? (
+        <MachineLogPanel
+          plan={reconciliationPlan}
+          gcodeRevision={gcodeRevision}
+          disabledReason={machineLogDisabledReason}
+        />
+      ) : null}
+
       {result ? (
         <section className="panel gcode-result">
           <div className="viewer-toolbar">
@@ -315,7 +388,15 @@ export function GcodePage() {
               />
             </label>
           </div>
-          <GcodeViewer layer={layer} bounds={effectiveSummary?.bounds ?? result.bounds} />
+          <Suspense
+            fallback={
+              <div className="gcode-viewer gcode-viewer-loading" role="status">
+                正在加载 Three.js 路径视口…
+              </div>
+            }
+          >
+            <GcodeViewer layer={layer} bounds={effectiveSummary?.bounds ?? result.bounds} />
+          </Suspense>
           <div className="gcode-evidence">
             <p>
               <span>浏览器抽样层</span>
@@ -333,13 +414,14 @@ export function GcodePage() {
             </p>
           </div>
           <div className="result-actions">
-            <button className="reset-button" type="button" onClick={reparseCurrentFile}>
+            <button className="reset-button" type="button" disabled={!options} onClick={reparseCurrentFile}>
               按当前参数重新解析
             </button>
             <button
               className="reset-button"
               type="button"
               onClick={() => {
+                setGcodeRevision((current) => current + 1);
                 setFile(null);
                 reset();
               }}

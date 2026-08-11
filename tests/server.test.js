@@ -696,6 +696,40 @@ console.log("\n[19] 鉴权：默认不挡路，配了 key 才生效");
   check("错误 key 不通过", bad.authenticated === false);
   check("requireAuth 下拦截未认证请求", on.guard(bad) && on.guard(bad).status === 401);
 
+  const authLogs = [];
+  const roleLog = {
+    info(message, fields) { authLogs.push(JSON.stringify({ message, fields })); },
+    warn(message, fields) { authLogs.push(JSON.stringify({ message, fields })); },
+    error(message, fields) { authLogs.push(JSON.stringify({ message, fields })); },
+  };
+  const roles = new Auth(
+    {
+      apiKeys: "general-key,overlap-review-key",
+      calibrationReviewKeys: "overlap-review-key,separate-review-key",
+      requireAuth: false,
+    },
+    roleLog
+  );
+  const generalReview = roles.identifyReviewer({ headers: { "x-api-key": "general-key" } });
+  check("普通 API key 不会隐式获得校准审核权", generalReview.authenticated === false);
+  const overlapApi = roles.identify({ headers: { "x-api-key": "overlap-review-key" } }, "1.1.1.1");
+  const overlapReview = roles.identifyReviewer({ headers: { "x-api-key": "overlap-review-key" } });
+  check(
+    "重叠审核 key 的匿名摘要一致以支持四眼校验",
+    overlapApi.authenticated && overlapReview.authenticated && overlapApi.keyId === overlapReview.keyId
+  );
+  const separateApi = roles.identify({ headers: { "x-api-key": "separate-review-key" } }, "1.1.1.1");
+  const separateReview = roles.identifyReviewer({ headers: { "x-api-key": "separate-review-key" } });
+  check("独立保管的审核 key 只获得审核角色", !separateApi.authenticated && separateReview.authenticated);
+  const emittedAuthLogs = authLogs.join("\n");
+  check(
+    "鉴权启用日志只记录数量且不泄露密钥",
+    !emittedAuthLogs.includes("general-key") &&
+      !emittedAuthLogs.includes("overlap-review-key") &&
+      !emittedAuthLogs.includes("separate-review-key"),
+    emittedAuthLogs
+  );
+
   // 配置矛盾必须被响亮地纠正，否则会以为自己受保护
   const contradictory = new Auth({ apiKeys: "", requireAuth: true }, quiet);
   check("REQUIRE_AUTH=1 但无 key 时降级为不启用", contradictory.required === false);

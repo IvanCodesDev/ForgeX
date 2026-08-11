@@ -118,6 +118,11 @@ function getConfig(overrides) {
       apiKeys: env.API_KEYS || "",
       requireAuth: env.REQUIRE_AUTH === "1",
 
+      // ── 校准审核角色 ─────────────────────────
+      // 与普通 API key 显式分离。可配置为 API_KEYS 的受信子集，也可使用
+      // 独立保管的审核 key；无论哪种方式，普通 API key 都不会隐式获得审核权。
+      calibrationReviewKeys: env.CALIBRATION_REVIEW_KEYS || "",
+
       // ── C# G-code 权威计算 sidecar ────────────
       // 默认关闭；生产建议同机 loopback。代理固定到 /api/v1/gcode/analyze，
       // 不接受目标路径，也不把浏览器凭据传给 sidecar。

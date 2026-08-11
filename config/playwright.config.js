@@ -56,12 +56,13 @@ module.exports = defineConfig({
   ],
 
   webServer: {
-    // 用规则引擎 + 临时数据目录：E2E 不该依赖任何外部密钥，也不该污染仓库
+    // serve.js 会先以 browser authority 和全部 Stage 2 开关构建 dist/react，
+    // 再启动规则引擎 + 临时数据目录；既不依赖 C# sidecar，也不污染仓库数据。
     command: "node tests/e2e/serve.js",
     cwd: path.resolve(__dirname, ".."),
     url: "http://127.0.0.1:8899/healthz",
     reuseExistingServer: false,
-    timeout: 30_000,
+    timeout: 120_000,
     stdout: "ignore",
     stderr: "pipe",
   },
