@@ -19,7 +19,7 @@ test.describe("React Stage 3-B async authority", () => {
     const links = { status: base, events: `${base}/events`, cancel: `${base}/cancel` };
     const authority = {
       schemaVersion: "1.0",
-      engine: { version: "1.1.0", source: "gcode-import" },
+      engine: { version: "1.2.0", source: "gcode-import" },
       input: { sha256: SHA256, bytesRead: 350, linesRead: 18 },
       profile: {
         machineProfileId: "corexy",
@@ -41,8 +41,30 @@ test.describe("React Stage 3-B async authority", () => {
         filamentMassG: 0.017895,
       },
       bounds: { minX: -108, maxX: -8, minY: -108, maxY: -8 },
+      layers: [
+        {
+          index: 0,
+          zMm: 0.2,
+          pathCount: 1,
+          extrusionLengthMm: 400,
+          travelLengthMm: 14.142135623730951,
+          timeSeconds: 20.14142135623731,
+          filamentLengthMm: 4,
+          pathTypeCounts: { perimeter: 1 },
+        },
+        {
+          index: 1,
+          zMm: 0.4,
+          pathCount: 1,
+          extrusionLengthMm: 320,
+          travelLengthMm: 0,
+          timeSeconds: 16,
+          filamentLengthMm: 2,
+          pathTypeCounts: { infill: 1 },
+        },
+      ],
       claims: {},
-      pathTypeCounts: { perimeter: 4, infill: 4 },
+      pathTypeCounts: { perimeter: 1, infill: 1 },
       warnings: [],
     };
 
@@ -110,6 +132,7 @@ test.describe("React Stage 3-B async authority", () => {
     await expect(page.getByText(SHA256, { exact: true })).toBeVisible();
     await expect(page.getByText("C# 引擎权威口径", { exact: true })).toBeVisible();
     await expect(page.getByText("corexy / PLA", { exact: true })).toBeVisible();
+    await expect(page.getByText("2 layers match", { exact: true })).toBeVisible();
     expect(creationCount).toBe(1);
     expect(sseCount).toBe(1);
   });

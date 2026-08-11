@@ -23,9 +23,12 @@ export interface AuthorityDiff {
   readonly inputMatches: boolean;
   readonly parametersMatch: boolean;
   readonly profileMatches: boolean;
+  readonly layerPlanMatches: boolean;
+  readonly layerMismatchCount: number;
   readonly sha256Matches: boolean;
   readonly pass: boolean;
   readonly fields: readonly AuthorityDiffField[];
+  readonly layerFields: readonly AuthorityDiffField[];
 }
 
 export const DEFAULT_MACHINE_PROFILE_ID = "unspecified-machine";
@@ -137,6 +140,18 @@ function requireFinite(record: Record<string, unknown>, key: string): number {
   return value;
 }
 
+function requireNonNegativeInteger(record: Record<string, unknown>, key: string, label = key): number {
+  const value = requireFinite(record, key);
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`C# 权威结果字段 ${label} 类型无效`);
+  return value;
+}
+
+function requireNonNegativeFinite(record: Record<string, unknown>, key: string, label = key): number {
+  const value = requireFinite(record, key);
+  if (value < 0) throw new Error(`C# 权威结果字段 ${label} 类型无效`);
+  return value;
+}
+
 export function parseAuthorityResponse(value: unknown): AuthorityAnalysisResponse {
   const root = requireRecord(value, "root");
   const engine = requireRecord(root.engine, "engine");
@@ -145,6 +160,9 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
   const parameters = requireRecord(root.parameters, "parameters");
   const summary = requireRecord(root.summary, "summary");
   const bounds = requireRecord(root.bounds, "bounds");
+  if (!Array.isArray(root.layers) || root.layers.length > 20_000) {
+    throw new Error("C# 权威结果字段 layers 结构无效");
+  }
   const claims = requireRecord(root.claims, "claims");
   const pathTypeCounts = requireRecord(root.pathTypeCounts, "pathTypeCounts");
   const warnings = Array.isArray(root.warnings) ? root.warnings : [];
@@ -162,6 +180,41 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
   if (!/^[a-f0-9]{64}$/.test(fingerprint)) {
     throw new Error("C# 权威结果契约不一致：profile.fingerprint 无效");
   }
+  const totalLayers = requireNonNegativeInteger(summary, "totalLayers");
+  if (root.layers.length !== totalLayers) {
+    throw new Error(`C# 权威结果契约不一致：layers.length=${root.layers.length}, totalLayers=${totalLayers}`);
+  }
+  const layers = root.layers.map((value, index) => {
+    const layer = requireRecord(value, `layers[${index}]`);
+    const actualIndex = requireNonNegativeInteger(layer, "index", `layers[${index}].index`);
+    if (actualIndex !== index) {
+      throw new Error(`C# 权威结果契约不一致：layers[${index}].index=${actualIndex}`);
+    }
+    const pathCount = requireNonNegativeInteger(layer, "pathCount", `layers[${index}].pathCount`);
+    const rawPathTypeCounts = requireRecord(layer.pathTypeCounts, `layers[${index}].pathTypeCounts`);
+    const pathTypeCounts = Object.fromEntries(
+      Object.entries(rawPathTypeCounts).map(([key, count]) => {
+        if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) {
+          throw new Error(`C# 权威结果字段 layers[${index}].pathTypeCounts.${key} 类型无效`);
+        }
+        return [key, count];
+      })
+    );
+    const countedPaths = Object.values(pathTypeCounts).reduce((sum, count) => sum + count, 0);
+    if (countedPaths !== pathCount) {
+      throw new Error(`C# 权威结果契约不一致：layers[${index}] pathTypeCounts=${countedPaths}, pathCount=${pathCount}`);
+    }
+    return {
+      index: actualIndex,
+      zMm: requireFinite(layer, "zMm"),
+      pathCount,
+      extrusionLengthMm: requireNonNegativeFinite(layer, "extrusionLengthMm", `layers[${index}].extrusionLengthMm`),
+      travelLengthMm: requireNonNegativeFinite(layer, "travelLengthMm", `layers[${index}].travelLengthMm`),
+      timeSeconds: requireNonNegativeFinite(layer, "timeSeconds", `layers[${index}].timeSeconds`),
+      filamentLengthMm: requireNonNegativeFinite(layer, "filamentLengthMm", `layers[${index}].filamentLengthMm`),
+      pathTypeCounts,
+    };
+  });
   return {
     schemaVersion,
     engine: { version: requireString(engine, "version"), source: requireString(engine, "source") },
@@ -184,7 +237,7 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
       filamentDensityGPerCm3: requireFinite(parameters, "filamentDensityGPerCm3"),
     },
     summary: {
-      totalLayers: requireFinite(summary, "totalLayers"),
+      totalLayers,
       heightMm: requireFinite(summary, "heightMm"),
       extrusionLengthMm: requireFinite(summary, "extrusionLengthMm"),
       travelLengthMm: requireFinite(summary, "travelLengthMm"),
@@ -199,6 +252,7 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
       minY: requireFinite(bounds, "minY"),
       maxY: requireFinite(bounds, "maxY"),
     },
+    layers,
     claims: Object.fromEntries(
       Object.entries(claims).filter((entry): entry is [string, string] => typeof entry[1] === "string")
     ),
@@ -283,6 +337,19 @@ export async function requestAuthorityAnalysis(
   return assertAuthorityContract(parseAuthorityResponse(await response.json()), file, options);
 }
 
+function compareNumber(field: string, previewValue: number, authorityValue: number, exact = false): AuthorityDiffField {
+  const absoluteDelta = Math.abs(previewValue - authorityValue);
+  const limit = exact ? 0 : Math.max(0.000001, Math.abs(previewValue) * 0.000001);
+  return {
+    field,
+    preview: previewValue,
+    authority: authorityValue,
+    absoluteDelta,
+    limit,
+    pass: absoluteDelta <= limit,
+  };
+}
+
 export function compareAuthority(
   preview: GcodePreviewResult,
   authority: AuthorityAnalysisResponse,
@@ -302,18 +369,58 @@ export function compareAuthority(
     ["stats.filamentM", preview.stats.filamentM, authority.summary.filamentLengthM],
     ["stats.filamentG", preview.stats.filamentG ?? 0, authority.summary.filamentMassG],
   ];
-  const fields = pairs.map(([field, previewValue, authorityValue]) => {
-    const absoluteDelta = Math.abs(previewValue - authorityValue);
-    const limit = Math.max(0.000001, Math.abs(previewValue) * 0.000001);
-    return {
-      field,
-      preview: previewValue,
-      authority: authorityValue,
-      absoluteDelta,
-      limit,
-      pass: absoluteDelta <= limit,
-    };
-  });
+  const fields = pairs.map(([field, previewValue, authorityValue]) =>
+    compareNumber(field, previewValue, authorityValue)
+  );
+  const layerFields: AuthorityDiffField[] = [];
+  let layerMismatchCount = 0;
+  if (preview.layerSummaries.length !== authority.layers.length) {
+    layerMismatchCount += Math.abs(preview.layerSummaries.length - authority.layers.length);
+    layerFields.push(compareNumber("layers.length", preview.layerSummaries.length, authority.layers.length, true));
+  }
+  const comparedLayers = Math.min(preview.layerSummaries.length, authority.layers.length);
+  for (let index = 0; index < comparedLayers; index += 1) {
+    const previewLayer = preview.layerSummaries[index];
+    const authorityLayer = authority.layers[index];
+    if (!previewLayer || !authorityLayer) continue;
+    const comparisons = [
+      compareNumber(`layers[${index}].index`, previewLayer.index, authorityLayer.index, true),
+      compareNumber(`layers[${index}].zMm`, previewLayer.zMm, authorityLayer.zMm),
+      compareNumber(`layers[${index}].pathCount`, previewLayer.pathCount, authorityLayer.pathCount, true),
+      compareNumber(
+        `layers[${index}].extrusionLengthMm`,
+        previewLayer.extrusionLengthMm,
+        authorityLayer.extrusionLengthMm
+      ),
+      compareNumber(`layers[${index}].travelLengthMm`, previewLayer.travelLengthMm, authorityLayer.travelLengthMm),
+      compareNumber(`layers[${index}].timeSeconds`, previewLayer.timeSeconds, authorityLayer.timeSeconds),
+      compareNumber(
+        `layers[${index}].filamentLengthMm`,
+        previewLayer.filamentLengthMm,
+        authorityLayer.filamentLengthMm
+      ),
+    ];
+    const pathTypes = new Set([
+      ...Object.keys(previewLayer.pathTypeCounts),
+      ...Object.keys(authorityLayer.pathTypeCounts),
+    ]);
+    for (const pathType of pathTypes) {
+      comparisons.push(
+        compareNumber(
+          `layers[${index}].pathTypeCounts.${pathType}`,
+          previewLayer.pathTypeCounts[pathType] ?? 0,
+          authorityLayer.pathTypeCounts[pathType] ?? 0,
+          true
+        )
+      );
+    }
+    const failures = comparisons.filter((field) => !field.pass);
+    if (failures.length > 0) {
+      layerMismatchCount += 1;
+      layerFields.push(...failures.slice(0, Math.max(0, 64 - layerFields.length)));
+    }
+  }
+  const layerPlanMatches = layerMismatchCount === 0;
   const engineMatches = authority.engine.version.trim().length > 0 && authority.engine.source === "gcode-import";
   const contractMatches = authority.schemaVersion === "1.0";
   const sha256Matches = preview.sha256 === authority.input.sha256;
@@ -338,14 +445,18 @@ export function compareAuthority(
     inputMatches,
     parametersMatch,
     profileMatches,
+    layerPlanMatches,
+    layerMismatchCount,
     sha256Matches,
     fields,
+    layerFields,
     pass:
       engineMatches &&
       contractMatches &&
       inputMatches &&
       parametersMatch &&
       profileMatches &&
+      layerPlanMatches &&
       sha256Matches &&
       fields.every((field) => field.pass),
   };

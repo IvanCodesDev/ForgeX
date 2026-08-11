@@ -16,9 +16,13 @@ internal static class GoldenDiffProgram
         {
             var repositoryRoot = GoldenRepository.LocateRoot();
             var goldenPath = Path.Combine(repositoryRoot, "tests", "golden", "stage0-golden.json");
+            var layerPlanGoldenPath = Path.Combine(repositoryRoot, "tests", "golden", "stage5-layer-plan-golden.json");
             var artifactPath = Path.Combine(repositoryRoot, "backend", "artifacts", "gcode-golden-diff.json");
             var (goldenCases, goldenSha256) = await GoldenRepository.ReadCasesAsync(
                 goldenPath,
+                cancellationToken);
+            var (layerPlanCases, layerPlanGoldenSha256) = await GoldenRepository.ReadLayerPlanCasesAsync(
+                layerPlanGoldenPath,
                 cancellationToken);
 
             var analyzer = new StreamingGCodeAnalyzer();
@@ -48,6 +52,11 @@ internal static class GoldenDiffProgram
                     fields.AddRange(GoldenComparator.Compare(
                         goldenCase,
                         ToView(result),
+                        result.EngineVersion));
+                    fields.AddRange(GoldenComparator.CompareLayerPlan(
+                        goldenCase,
+                        FindLayerPlanCase(goldenCase, layerPlanCases),
+                        result,
                         result.EngineVersion));
 
                     contractBaseline ??= result;
@@ -110,6 +119,9 @@ internal static class GoldenDiffProgram
                 GoldenPath: Path.GetRelativePath(repositoryRoot, goldenPath).Replace('\\', '/'),
                 GoldenSha256: goldenSha256,
                 GoldenCaseCount: goldenCases.Count,
+                LayerPlanGoldenPath: Path.GetRelativePath(repositoryRoot, layerPlanGoldenPath).Replace('\\', '/'),
+                LayerPlanGoldenSha256: layerPlanGoldenSha256,
+                LayerPlanGoldenCaseCount: layerPlanCases.Count,
                 FieldCount: fields.Count,
                 PassedFieldCount: passedFieldCount,
                 FailedFieldCount: fields.Count - passedFieldCount,
@@ -150,6 +162,22 @@ internal static class GoldenDiffProgram
             BedSizeMm: goldenCase.BedSizeMm,
             CoordinateOrigin: ParseOrigin(goldenCase.CoordinateOrigin),
             MaterialDensityGPerCm3: goldenCase.MaterialDensityGPerCm3);
+
+    private static LayerPlanGoldenCase FindLayerPlanCase(
+        GoldenCase goldenCase,
+        IReadOnlyList<LayerPlanGoldenCase> layerPlanCases)
+    {
+        var matches = layerPlanCases
+            .Where(layerCase =>
+                string.Equals(layerCase.InputPath, goldenCase.InputPath, StringComparison.Ordinal)
+                && string.Equals(layerCase.CoordinateOrigin, goldenCase.CoordinateOrigin, StringComparison.Ordinal)
+                && layerCase.BedSizeMm == goldenCase.BedSizeMm)
+            .ToArray();
+        return matches.Length == 1
+            ? matches[0]
+            : throw new InvalidDataException(
+                $"Expected exactly one layer-plan Golden case for {goldenCase.Id}; found {matches.Length}.");
+    }
 
     private static CoordinateOrigin ParseOrigin(string value) =>
         value switch
@@ -248,6 +276,12 @@ internal static class GoldenDiffProgram
             await RunProbeAsync(
                 "profile-id-validation",
                 () => CheckProfileIdValidationAsync(analyzer, cancellationToken)),
+            await RunProbeAsync(
+                "layer-plan-invariants",
+                () => Task.FromResult(CheckLayerPlanInvariants(baseline))),
+            await RunProbeAsync(
+                "layer-limit",
+                () => CheckLayerLimitAsync(analyzer, cancellationToken)),
         };
         return checks;
     }
@@ -411,6 +445,54 @@ internal static class GoldenDiffProgram
             var pass = exception.Code == "GCODE_INVALID_OPTIONS";
             return new ContractCheck(
                 "profile-id-validation",
+                pass,
+                $"stableCode={exception.Code}",
+                StreamingGCodeAnalyzer.EngineVersion);
+        }
+    }
+
+    private static ContractCheck CheckLayerPlanInvariants(GCodeAnalysisResult result)
+    {
+        var sequential = result.Layers.Select(static layer => layer.Index).SequenceEqual(Enumerable.Range(0, result.Layers.Count));
+        var sorted = result.Layers.Zip(result.Layers.Skip(1), static (left, right) => left.ZMm < right.ZMm).All(static value => value);
+        var pathCountsMatch = result.Layers.All(static layer => layer.PathCount == layer.PathTypeCounts.Values.Sum());
+        var extrusionMatches = Math.Abs(result.Layers.Sum(static layer => layer.ExtrusionLengthMm) - result.Statistics.ExtrusionLengthMm) <= 1e-9;
+        var aggregateTypes = result.Layers
+            .SelectMany(static layer => layer.PathTypeCounts)
+            .GroupBy(static entry => entry.Key, StringComparer.Ordinal)
+            .ToDictionary(static group => group.Key, static group => group.Sum(static entry => entry.Value), StringComparer.Ordinal);
+        var typesMatch = aggregateTypes.Count == result.PathTypeCounts.Count &&
+            aggregateTypes.All(entry => result.PathTypeCounts.GetValueOrDefault(entry.Key) == entry.Value);
+        var countAndHeightMatch = result.Layers.Count == result.TotalLayers &&
+            Math.Abs(result.Layers[^1].ZMm - result.HeightMm) <= 1e-9;
+        var pass = sequential && sorted && pathCountsMatch && extrusionMatches && typesMatch && countAndHeightMatch;
+        return new ContractCheck(
+            "layer-plan-invariants",
+            pass,
+            $"sequential={sequential}; sorted={sorted}; pathCounts={pathCountsMatch}; extrusion={extrusionMatches}; types={typesMatch}; countHeight={countAndHeightMatch}",
+            StreamingGCodeAnalyzer.EngineVersion);
+    }
+
+    private static async Task<ContractCheck> CheckLayerLimitAsync(
+        StreamingGCodeAnalyzer analyzer,
+        CancellationToken cancellationToken)
+    {
+        var bytes = Encoding.UTF8.GetBytes(
+            "G90\nM82\nG1 X0 Y0 Z0.2 F1200\nG1 X10 Y10 E1 F900\nG1 Z0.4\nG1 X20 Y20 E2 F900\n");
+        await using var stream = new MemoryStream(bytes, writable: false);
+        try
+        {
+            await analyzer.AnalyzeAsync(
+                stream,
+                new GCodeAnalysisOptions(MaxLayers: 1),
+                cancellationToken);
+            return ContractFailure("layer-limit", "Layer limit unexpectedly accepted a second extrusion layer.");
+        }
+        catch (GCodeAnalysisException exception)
+        {
+            var pass = exception.Code == "GCODE_MAX_LAYERS_EXCEEDED";
+            return new ContractCheck(
+                "layer-limit",
                 pass,
                 $"stableCode={exception.Code}",
                 StreamingGCodeAnalyzer.EngineVersion);

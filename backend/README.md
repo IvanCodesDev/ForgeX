@@ -36,7 +36,9 @@ GET  /openapi/v1.json
 POST /api/v1/gcode/analyze
 ```
 
-The G-code endpoint accepts the raw `application/x-gcode` body. The first slice returns an authoritative summary only; the React Worker remains responsible for immediate 3D preview geometry.
+The G-code endpoint accepts the raw `application/x-gcode` body. It returns an authoritative summary
+and a bounded per-layer plan; the React Worker remains responsible for immediate, display-only 3D
+preview geometry.
 
 ## Stage 5-A G-code Profile authority
 
@@ -47,8 +49,35 @@ those identifiers to the effective bed size, coordinate origin, and filament den
 plus a deterministic lowercase SHA-256 fingerprint. Async idempotency includes this fingerprint, so
 the same bytes with different Profile inputs are distinct jobs. GoldenDiff verifies determinism,
 material sensitivity, invalid-ID rejection, malformed input, cancellation, non-seekable streams, and
-UTF-8/CRLF boundaries. The G-code engine contract version is `1.1.0`; the outer response schema
+UTF-8/CRLF boundaries. The outer response schema
 remains `1.0` because the OpenAPI schema is the negotiated source for generated clients.
+
+## Stage 5-B authoritative layer plan
+
+The same synchronous and asynchronous result now includes `layers` with stable zero-based indices,
+Z, path count, extrusion/travel/time/filament totals, and per-path-type counts. Analysis rejects a
+fixture above 20,000 layers with stable code `GCODE_MAX_LAYERS_EXCEEDED`; the OpenAPI response also
+publishes `maxItems: 20000`. The React Worker derives its complete layer summaries before applying
+the separate geometry sampling budget, then `shadow`/`dotnet` compare every layer and path-type
+count. Sampled Three.js geometry remains a visualization detail and cannot change the comparison.
+
+`tests/golden/stage5-layer-plan-golden.json` is generated from the reviewed browser parser for four
+fixture/origin combinations. `ForgeX.GoldenDiff` consumes that exact artifact and compares all
+layer fields against C#, in addition to invariant and limit probes. The default validator is
+read-only; regenerate only after reviewing an intentional contract change:
+
+```text
+node tools/validate-stage5-layer-plan-golden.js
+npm run dotnet:golden
+npm run gcode:layer-golden:update   # reviewed update only
+```
+
+The G-code engine contract version is `1.2.0`.
+New asynchronous idempotency fingerprints use `forgex-gcode-job/2`. A completed Stage 5-A file-job
+record without `layers` is reopened as a stable `degraded / gcode_result_contract_outdated` terminal
+snapshot rather than an invalid response; its input and provenance remain stored, and resubmission
+with a new idempotency key produces a Stage 5-B result. Missing persisted `MaxLayers` values migrate
+to 20,000 on read.
 
 The API writes JSON console logs with a bounded route template, status, elapsed milliseconds, and
 trace ID. `/metrics` emits Prometheus text with bounded method/route/status labels, request duration

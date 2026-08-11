@@ -89,6 +89,15 @@ internal static class GCodeEndpoints
                 result.Bounds.MaxX,
                 result.Bounds.MinY,
                 result.Bounds.MaxY),
+            result.Layers.Select(static layer => new GCodeLayerSummaryDto(
+                layer.Index,
+                layer.ZMm,
+                layer.PathCount,
+                layer.ExtrusionLengthMm,
+                layer.TravelLengthMm,
+                layer.TimeSeconds,
+                layer.FilamentLengthMm,
+                layer.PathTypeCounts)).ToArray(),
             result.Claims,
             result.PathTypeCounts,
             [.. result.Warnings

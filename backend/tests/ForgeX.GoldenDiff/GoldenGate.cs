@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ForgeX.Domain;
 
 namespace ForgeX.GoldenDiff;
 
@@ -14,6 +15,27 @@ internal sealed record GoldenCase(
     double NumericAbsoluteTolerance,
     double NumericRelativeTolerance,
     JsonElement Expected);
+
+internal sealed record LayerPlanGoldenCase(
+    string Id,
+    string InputPath,
+    string InputSha256,
+    double BedSizeMm,
+    string CoordinateOrigin,
+    double MaterialDensityGPerCm3,
+    double NumericAbsoluteTolerance,
+    double NumericRelativeTolerance,
+    IReadOnlyList<LayerPlanGoldenLayer> Layers);
+
+internal sealed record LayerPlanGoldenLayer(
+    int Index,
+    double ZMm,
+    long PathCount,
+    double ExtrusionLengthMm,
+    double TravelLengthMm,
+    double TimeSeconds,
+    double FilamentLengthMm,
+    IReadOnlyDictionary<string, long> PathTypeCounts);
 
 internal sealed record ActualAnalysisView(
     string Sha256,
@@ -60,6 +82,9 @@ internal sealed record GoldenDiffReport(
     string GoldenPath,
     string GoldenSha256,
     int GoldenCaseCount,
+    string LayerPlanGoldenPath,
+    string LayerPlanGoldenSha256,
+    int LayerPlanGoldenCaseCount,
     int FieldCount,
     int PassedFieldCount,
     int FailedFieldCount,
@@ -71,6 +96,7 @@ internal sealed record GoldenDiffReport(
 internal static class GoldenRepository
 {
     public const int RequiredGCodeCaseCount = 8;
+    public const int RequiredLayerPlanCaseCount = 4;
 
     public static string LocateRoot()
     {
@@ -128,6 +154,43 @@ internal static class GoldenRepository
         return (cases, goldenSha256);
     }
 
+    public static async Task<(IReadOnlyList<LayerPlanGoldenCase> Cases, string GoldenSha256)> ReadLayerPlanCasesAsync(
+        string goldenPath,
+        CancellationToken cancellationToken)
+    {
+        var bytes = await File.ReadAllBytesAsync(goldenPath, cancellationToken);
+        var goldenSha256 = Convert.ToHexStringLower(SHA256.HashData(bytes));
+        using var document = JsonDocument.Parse(bytes);
+        var root = document.RootElement;
+
+        if (RequiredString(root, "format") != "forgex-stage5-layer-plan-golden"
+            || root.GetProperty("schemaVersion").GetInt32() != 1)
+        {
+            throw new InvalidDataException("Unsupported Stage 5 layer-plan Golden format or schema version.");
+        }
+
+        var cases = root.GetProperty("cases")
+            .EnumerateArray()
+            .Select(ReadLayerPlanCase)
+            .ToArray();
+        if (cases.Length != RequiredLayerPlanCaseCount
+            || root.GetProperty("caseCount").GetInt32() != RequiredLayerPlanCaseCount)
+        {
+            throw new InvalidDataException(
+                $"Layer-plan Golden file must contain exactly {RequiredLayerPlanCaseCount} cases; found {cases.Length}.");
+        }
+
+        var duplicateId = cases
+            .GroupBy(item => item.Id, StringComparer.Ordinal)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicateId is not null)
+        {
+            throw new InvalidDataException($"Duplicate layer-plan Golden case id: {duplicateId.Key}");
+        }
+
+        return (cases, goldenSha256);
+    }
+
     public static string ResolveFixture(string repositoryRoot, GoldenCase goldenCase)
     {
         var root = Path.GetFullPath(repositoryRoot)
@@ -174,6 +237,34 @@ internal static class GoldenRepository
             tolerance.GetProperty("numericRel").GetDouble(),
             item.GetProperty("expected").Clone());
     }
+
+    private static LayerPlanGoldenCase ReadLayerPlanCase(JsonElement item) =>
+        new(
+            RequiredString(item, "id"),
+            RequiredString(item, "inputPath"),
+            RequiredString(item, "inputSha256"),
+            item.GetProperty("bedSizeMm").GetDouble(),
+            RequiredString(item, "coordinateOrigin"),
+            item.GetProperty("materialDensityGPerCm3").GetDouble(),
+            item.GetProperty("numericAbsoluteTolerance").GetDouble(),
+            item.GetProperty("numericRelativeTolerance").GetDouble(),
+            [.. item.GetProperty("layers").EnumerateArray().Select(ReadLayerPlanLayer)]);
+
+    private static LayerPlanGoldenLayer ReadLayerPlanLayer(JsonElement item) =>
+        new(
+            item.GetProperty("index").GetInt32(),
+            item.GetProperty("zMm").GetDouble(),
+            item.GetProperty("pathCount").GetInt64(),
+            item.GetProperty("extrusionLengthMm").GetDouble(),
+            item.GetProperty("travelLengthMm").GetDouble(),
+            item.GetProperty("timeSeconds").GetDouble(),
+            item.GetProperty("filamentLengthMm").GetDouble(),
+            item.GetProperty("pathTypeCounts")
+                .EnumerateObject()
+                .ToDictionary(
+                    property => property.Name,
+                    property => property.Value.GetInt64(),
+                    StringComparer.Ordinal));
 
     private static string RequiredString(JsonElement value, string propertyName)
     {
@@ -273,6 +364,61 @@ internal static class GoldenComparator
             actual.PathTypes,
             actual.Sha256,
             engineVersion);
+
+        return fields;
+    }
+
+    public static IReadOnlyList<FieldDiff> CompareLayerPlan(
+        GoldenCase targetCase,
+        LayerPlanGoldenCase layerPlanCase,
+        GCodeAnalysisResult actual,
+        string engineVersion)
+    {
+        var fields = new List<FieldDiff>();
+        var toleranceCase = targetCase with
+        {
+            NumericAbsoluteTolerance = layerPlanCase.NumericAbsoluteTolerance,
+            NumericRelativeTolerance = layerPlanCase.NumericRelativeTolerance,
+        };
+
+        AddExact(fields, toleranceCase, "layerPlan.inputSha256", layerPlanCase.InputSha256, actual.Sha256, actual.Sha256, engineVersion);
+        AddInteger(fields, toleranceCase, "layerPlan.length", layerPlanCase.Layers.Count, actual.Layers.Count, actual.Sha256, engineVersion);
+
+        var commonLayerCount = Math.Min(layerPlanCase.Layers.Count, actual.Layers.Count);
+        for (var index = 0; index < commonLayerCount; index++)
+        {
+            var expected = layerPlanCase.Layers[index];
+            var observed = actual.Layers[index];
+            var prefix = $"layerPlan.layers[{index}]";
+            AddInteger(fields, toleranceCase, $"{prefix}.index", expected.Index, observed.Index, actual.Sha256, engineVersion);
+            AddNumber(fields, toleranceCase, $"{prefix}.zMm", expected.ZMm, observed.ZMm, actual.Sha256, engineVersion);
+            AddInteger(fields, toleranceCase, $"{prefix}.pathCount", expected.PathCount, observed.PathCount, actual.Sha256, engineVersion);
+            AddNumber(fields, toleranceCase, $"{prefix}.extrusionLengthMm", expected.ExtrusionLengthMm, observed.ExtrusionLengthMm, actual.Sha256, engineVersion);
+            AddNumber(fields, toleranceCase, $"{prefix}.travelLengthMm", expected.TravelLengthMm, observed.TravelLengthMm, actual.Sha256, engineVersion);
+            AddNumber(fields, toleranceCase, $"{prefix}.timeSeconds", expected.TimeSeconds, observed.TimeSeconds, actual.Sha256, engineVersion);
+            AddNumber(fields, toleranceCase, $"{prefix}.filamentLengthMm", expected.FilamentLengthMm, observed.FilamentLengthMm, actual.Sha256, engineVersion);
+
+            AddStringSet(
+                fields,
+                toleranceCase,
+                $"{prefix}.pathTypeCounts.$keys",
+                expected.PathTypeCounts.Keys,
+                observed.PathTypeCounts.Keys,
+                actual.Sha256,
+                engineVersion);
+            foreach (var pathType in expected.PathTypeCounts.Keys.Order(StringComparer.Ordinal))
+            {
+                var present = observed.PathTypeCounts.TryGetValue(pathType, out var count);
+                AddInteger(
+                    fields,
+                    toleranceCase,
+                    $"{prefix}.pathTypeCounts.{pathType}",
+                    expected.PathTypeCounts[pathType],
+                    present ? count : int.MinValue,
+                    actual.Sha256,
+                    engineVersion);
+            }
+        }
 
         return fields;
     }
@@ -426,8 +572,8 @@ internal static class GoldenComparator
         List<FieldDiff> fields,
         GoldenCase goldenCase,
         string field,
-        int expected,
-        int actual,
+        long expected,
+        long actual,
         string inputSha256,
         string engineVersion)
     {

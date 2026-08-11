@@ -39,6 +39,28 @@ const PREVIEW: GcodePreviewResult = {
   coordinateOrigin: "corner",
   warnings: [],
   claims: {},
+  layerSummaries: [
+    {
+      index: 0,
+      zMm: 0.2,
+      pathCount: 1,
+      extrusionLengthMm: 6,
+      travelLengthMm: 1,
+      timeSeconds: 1,
+      filamentLengthMm: 240,
+      pathTypeCounts: { perimeter: 1 },
+    },
+    {
+      index: 1,
+      zMm: 0.4,
+      pathCount: 1,
+      extrusionLengthMm: 4,
+      travelLengthMm: 2,
+      timeSeconds: 1,
+      filamentLengthMm: 160,
+      pathTypeCounts: { infill: 1 },
+    },
+  ],
   layers: [],
   layerSegmentOffsets: [0],
   sourceSegments: 0,
@@ -70,8 +92,9 @@ const AUTHORITY: AuthorityAnalysisResponse = {
     filamentMassG: 0.124,
   },
   bounds: PREVIEW.bounds,
+  layers: PREVIEW.layerSummaries,
   claims: {},
-  pathTypeCounts: { perimeter: 1 },
+  pathTypeCounts: { perimeter: 1, infill: 1 },
   warnings: [],
 };
 
@@ -93,6 +116,7 @@ describe("G-code authority adapter", () => {
       inputMatches: true,
       parametersMatch: true,
       profileMatches: true,
+      layerPlanMatches: true,
       sha256Matches: true,
     });
     const changed: AuthorityAnalysisResponse = {
@@ -104,6 +128,25 @@ describe("G-code authority adapter", () => {
     expect(diff.pass).toBe(false);
     expect(diff.sha256Matches).toBe(false);
     expect(diff.fields.find((field) => field.field === "totalLayers")?.pass).toBe(false);
+  });
+
+  it("reports bounded field evidence when one authoritative layer drifts", () => {
+    const changed: AuthorityAnalysisResponse = {
+      ...AUTHORITY,
+      layers: [
+        { ...AUTHORITY.layers[0]!, extrusionLengthMm: AUTHORITY.layers[0]!.extrusionLengthMm + 0.5 },
+        AUTHORITY.layers[1]!,
+      ],
+    };
+
+    expect(compareAuthority(PREVIEW, changed)).toMatchObject({
+      pass: false,
+      layerPlanMatches: false,
+      layerMismatchCount: 1,
+    });
+    expect(compareAuthority(PREVIEW, changed).layerFields).toEqual([
+      expect.objectContaining({ field: "layers[0].extrusionLengthMm", pass: false }),
+    ]);
   });
 
   it("fails comparison when the contract, byte count, or submitted parameters drift", () => {
@@ -223,6 +266,7 @@ describe("G-code authority adapter", () => {
     ["density", { ...AUTHORITY, parameters: { ...AUTHORITY.parameters, filamentDensityGPerCm3: 1.25 } }],
     ["profile values", { ...AUTHORITY, profile: { ...AUTHORITY.profile, bedSizeMm: 300 } }],
     ["profile fingerprint", { ...AUTHORITY, profile: { ...AUTHORITY.profile, fingerprint: "invalid" } }],
+    ["layer index", { ...AUTHORITY, layers: [{ ...AUTHORITY.layers[0], index: 1 }, AUTHORITY.layers[1]] }],
     ["engine version", { ...AUTHORITY, engine: { ...AUTHORITY.engine, version: "" } }],
     ["engine source", { ...AUTHORITY, engine: { ...AUTHORITY.engine, source: "unexpected-route" } }],
   ])("rejects a %s contract mismatch", async (_label, responseBody) => {

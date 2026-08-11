@@ -21,7 +21,8 @@ public sealed record GCodeAnalysisOptions(
     long MaxLines = 4_000_000L,
     int MaxLineLength = 1_048_576,
     string MachineProfileId = "unspecified-machine",
-    string MaterialProfileId = "unspecified-material")
+    string MaterialProfileId = "unspecified-material",
+    int MaxLayers = 20_000)
 {
     /// <summary>Compatibility alias used by the streaming implementation.</summary>
     public long MaxBytes => MaxInputBytes;

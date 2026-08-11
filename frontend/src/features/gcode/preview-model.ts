@@ -1,4 +1,11 @@
-import type { GcodePreviewResult, LegacyGcodeResult, LegacyPath, PreviewLayer, PreviewPath } from "./gcode-types";
+import type {
+  GcodeLayerSummary,
+  GcodePreviewResult,
+  LegacyGcodeResult,
+  LegacyPath,
+  PreviewLayer,
+  PreviewPath,
+} from "./gcode-types";
 
 export interface PreviewBudget {
   readonly maxSegments: number;
@@ -20,6 +27,27 @@ export interface PreviewResultInput {
   readonly sha256: string;
   readonly parsed: LegacyGcodeResult;
   readonly preview: BuiltPreview;
+}
+
+export function buildLayerSummaries(parsed: LegacyGcodeResult): readonly GcodeLayerSummary[] {
+  return parsed.layers.map((layer, index) => {
+    const pathTypeCounts: Record<string, number> = {};
+    let filamentLengthMm = 0;
+    for (const path of layer.paths) {
+      pathTypeCounts[path.type] = (pathTypeCounts[path.type] ?? 0) + 1;
+      filamentLengthMm += path.filamentMm;
+    }
+    return {
+      index,
+      zMm: layer.z,
+      pathCount: layer.paths.length,
+      extrusionLengthMm: layer.extLen,
+      travelLengthMm: layer.travelLen,
+      timeSeconds: layer.timeSec,
+      filamentLengthMm,
+      pathTypeCounts,
+    };
+  });
 }
 
 function normalizeLimit(value: number): number {
@@ -138,6 +166,7 @@ export function composePreviewResult(input: PreviewResultInput): GcodePreviewRes
     warnings: parsed.warnings,
     claims: parsed.claims,
     layers: preview.layers,
+    layerSummaries: buildLayerSummaries(parsed),
     layerSegmentOffsets: preview.layerSegmentOffsets,
     sourceSegments: preview.sourceSegments,
     previewSegments: preview.segments,

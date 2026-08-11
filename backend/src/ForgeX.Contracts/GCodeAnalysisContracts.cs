@@ -8,6 +8,7 @@ public sealed record GCodeAnalysisResponse(
     GCodeAnalyzeParametersDto Parameters,
     GCodeAnalysisSummaryDto Summary,
     GCodeBoundsDto Bounds,
+    IReadOnlyList<GCodeLayerSummaryDto> Layers,
     IReadOnlyDictionary<string, string> Claims,
     IReadOnlyDictionary<string, long> PathTypeCounts,
     IReadOnlyList<GCodeWarningDto> Warnings);
@@ -40,5 +41,15 @@ public sealed record GCodeAnalysisSummaryDto(
     double FilamentMassG);
 
 public sealed record GCodeBoundsDto(double MinX, double MaxX, double MinY, double MaxY);
+
+public sealed record GCodeLayerSummaryDto(
+    int Index,
+    double ZMm,
+    long PathCount,
+    double ExtrusionLengthMm,
+    double TravelLengthMm,
+    double TimeSeconds,
+    double FilamentLengthMm,
+    IReadOnlyDictionary<string, long> PathTypeCounts);
 
 public sealed record GCodeWarningDto(string Code, string Message);

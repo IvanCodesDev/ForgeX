@@ -1,0 +1,189 @@
+{
+  "format": "forgex-stage5-layer-plan-golden",
+  "schemaVersion": 1,
+  "generator": "tools/validate-stage5-layer-plan-golden.js",
+  "updatePolicy": "Only regenerate after reviewing an intentional JS/C# layer-plan contract change.",
+  "caseCount": 4,
+  "cases": [
+    {
+      "id": "layer-plan-cura-marlin-corner",
+      "inputPath": "validation/fixtures/cura-marlin.gcode",
+      "inputSha256": "0881cfdac2ef41f6df48f7f5e0f47fd632dcddec8238955ce3a59a6bd754cf07",
+      "bedSizeMm": 256,
+      "coordinateOrigin": "corner",
+      "materialDensityGPerCm3": 1.24,
+      "numericAbsoluteTolerance": 0.000001,
+      "numericRelativeTolerance": 0.000001,
+      "layers": [
+        {
+          "index": 0,
+          "zMm": 0.2,
+          "pathCount": 1,
+          "extrusionLengthMm": 400,
+          "travelLengthMm": 14.142135623730951,
+          "timeSeconds": 20.14142135623731,
+          "filamentLengthMm": 4,
+          "pathTypeCounts": {
+            "perimeter": 1
+          }
+        },
+        {
+          "index": 1,
+          "zMm": 0.4,
+          "pathCount": 1,
+          "extrusionLengthMm": 320,
+          "travelLengthMm": 0,
+          "timeSeconds": 16,
+          "filamentLengthMm": 2,
+          "pathTypeCounts": {
+            "infill": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "layer-plan-orca-klipper-corner",
+      "inputPath": "validation/fixtures/orca-klipper.gcode",
+      "inputSha256": "bc39cbac84e164415eb9902586f52cf186c1116bc270260958a2b8694dc13324",
+      "bedSizeMm": 256,
+      "coordinateOrigin": "corner",
+      "materialDensityGPerCm3": 1.24,
+      "numericAbsoluteTolerance": 0.000001,
+      "numericRelativeTolerance": 0.000001,
+      "layers": [
+        {
+          "index": 0,
+          "zMm": 0.2,
+          "pathCount": 1,
+          "extrusionLengthMm": 320,
+          "travelLengthMm": 7.0710678118654755,
+          "timeSeconds": 64.07071067811866,
+          "filamentLengthMm": 3.2,
+          "pathTypeCounts": {
+            "perimeter": 1
+          }
+        },
+        {
+          "index": 1,
+          "zMm": 0.4,
+          "pathCount": 1,
+          "extrusionLengthMm": 280,
+          "travelLengthMm": 7.0710678118654755,
+          "timeSeconds": 56.07071067811866,
+          "filamentLengthMm": 3.2,
+          "pathTypeCounts": {
+            "infill": 1
+          }
+        },
+        {
+          "index": 2,
+          "zMm": 0.6,
+          "pathCount": 1,
+          "extrusionLengthMm": 240,
+          "travelLengthMm": 0,
+          "timeSeconds": 48,
+          "filamentLengthMm": 3.2,
+          "pathTypeCounts": {
+            "solid": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "layer-plan-prusa-marlin-corner",
+      "inputPath": "validation/fixtures/prusa-marlin.gcode",
+      "inputSha256": "079510b978079066a4a4328cd583bf375508a7706eb8031dafe5c4d903e4828c",
+      "bedSizeMm": 220,
+      "coordinateOrigin": "corner",
+      "materialDensityGPerCm3": 1.24,
+      "numericAbsoluteTolerance": 0.000001,
+      "numericRelativeTolerance": 0.000001,
+      "layers": [
+        {
+          "index": 0,
+          "zMm": 0.2,
+          "pathCount": 1,
+          "extrusionLengthMm": 400,
+          "travelLengthMm": 14.142135623730951,
+          "timeSeconds": 40.23570226039551,
+          "filamentLengthMm": 3.6,
+          "pathTypeCounts": {
+            "perimeter": 1
+          }
+        },
+        {
+          "index": 1,
+          "zMm": 0.4,
+          "pathCount": 1,
+          "extrusionLengthMm": 320,
+          "travelLengthMm": 0,
+          "timeSeconds": 32,
+          "filamentLengthMm": 3.6,
+          "pathTypeCounts": {
+            "solid": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "layer-plan-superslicer-rrf-corner",
+      "inputPath": "validation/fixtures/superslicer-rrf.gcode",
+      "inputSha256": "1c652a1ff1802277cf54500764c4b78e2436c8a2a9bbaf62825ffa467cf4fac0",
+      "bedSizeMm": 500,
+      "coordinateOrigin": "corner",
+      "materialDensityGPerCm3": 1.24,
+      "numericAbsoluteTolerance": 0.000001,
+      "numericRelativeTolerance": 0.000001,
+      "layers": [
+        {
+          "index": 0,
+          "zMm": 0.2,
+          "pathCount": 1,
+          "extrusionLengthMm": 480,
+          "travelLengthMm": 7.0710678118654755,
+          "timeSeconds": 120.08838834764832,
+          "filamentLengthMm": 3.2,
+          "pathTypeCounts": {
+            "perimeter": 1
+          }
+        },
+        {
+          "index": 1,
+          "zMm": 0.4,
+          "pathCount": 1,
+          "extrusionLengthMm": 440,
+          "travelLengthMm": 7.0710678118654755,
+          "timeSeconds": 110.08838834764832,
+          "filamentLengthMm": 3.2,
+          "pathTypeCounts": {
+            "perimeter": 1
+          }
+        },
+        {
+          "index": 2,
+          "zMm": 0.6,
+          "pathCount": 1,
+          "extrusionLengthMm": 400,
+          "travelLengthMm": 7.0710678118654755,
+          "timeSeconds": 100.08838834764832,
+          "filamentLengthMm": 3.2,
+          "pathTypeCounts": {
+            "solid": 1
+          }
+        },
+        {
+          "index": 3,
+          "zMm": 0.8,
+          "pathCount": 1,
+          "extrusionLengthMm": 360,
+          "travelLengthMm": 0,
+          "timeSeconds": 90,
+          "filamentLengthMm": 3.2,
+          "pathTypeCounts": {
+            "solid": 1
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,159 @@
+{
+    "format":  "forgex-stage-verification-record",
+    "schemaVersion":  1,
+    "stage":  "5-B",
+    "title":  "Authoritative G-code layer-plan contract",
+    "generatedAtUtc":  "2026-08-11T09:37:45.7439099+00:00",
+    "baseline":  {
+                     "commit":  "3173b702b287734eff454dd025a54a872099646c",
+                     "branch":  "feature/react-ts-csharp-authority",
+                     "archive":  "E:\\Projects\\3dprint\\optimization\\stage5b-authoritative-layer-plan\\baseline-3173b70.zip",
+                     "archiveSha256":  "c836b6a32abbe85c56c633370b7cfca79589ff176ece56657f2a232863afa6a7",
+                     "command":  "git show 3173b702:backend/src/ForgeX.Simulation/StreamingGCodeAnalyzer.cs | Select-String EngineVersion; count GCodeLayerSummaryDto references",
+                     "input":  "baseline commit 3173b702b287734eff454dd025a54a872099646c",
+                     "literalOutput":  "public const string EngineVersion = \"1.1.0\"; baselineLayerDtoReferences=0",
+                     "exitStatus":  0
+                 },
+    "modifiedBehavior":  {
+                             "changedBranchOrField":  "GCodeAnalysisResponse.layers and browser/C# layer-plan comparison gate",
+                             "engineVersion":  "1.2.0",
+                             "command":  "POST /api/v1/gcode/analyze",
+                             "input":  "validation/fixtures/cura-marlin.gcode; bed=256; origin=corner; density=1.24; machine=corexy; material=PLA",
+                             "literalOutput":  "{\"schema\":\"1.0\",\"engine\":\"1.2.0\",\"layers\":2,\"firstIndex\":0,\"firstPaths\":1,\"secondZ\":0.4,\"totalLayers\":2,\"openapiMaxItems\":20000,\"sha256\":\"0881cfdac2ef41f6df48f7f5e0f47fd632dcddec8238955ce3a59a6bd754cf07\"}",
+                             "exitStatus":  0
+                         },
+    "commands":  [
+                     {
+                         "name":  "complete-quality-gate",
+                         "command":  "npm run check",
+                         "input":  "OpenAPI, lint, formatting, TypeScript, all frontend tests, Node regressions and read-only goldens",
+                         "literalOutput":  [
+                                               "OpenAPI generated client is current: frontend\\src\\generated\\forgex-api.ts",
+                                               "Test Files  32 passed (32)",
+                                               "Tests  163 passed (163)",
+                                               "Stage 5 layer-plan golden OK: 4 cases",
+                                               "Exit code: 0"
+                                           ],
+                         "exitStatus":  0
+                     },
+                     {
+                         "name":  "targeted-layer-plan-frontend",
+                         "command":  "npm test --workspace @forgex/frontend -- --run six Stage 5-B suites",
+                         "input":  "authority, preview model, job client, generated OpenAPI, authority hook and Worker hook",
+                         "literalOutput":  [
+                                               "Test Files  6 passed (6)",
+                                               "Tests  39 passed (39)"
+                                           ],
+                         "exitStatus":  0
+                     },
+                     {
+                         "name":  "frontend-production-build",
+                         "command":  "npm run build --workspace @forgex/frontend",
+                         "input":  "React TypeScript production bundle",
+                         "literalOutput":  [
+                                               "81 modules transformed",
+                                               "GcodePage-Cb3Y2MmV.js 65.29 kB",
+                                               "built in 207ms",
+                                               "Exit code: 0"
+                                           ],
+                         "exitStatus":  0
+                     },
+                     {
+                         "name":  "dotnet-release-build",
+                         "command":  ".\\.dotnet\\dotnet.exe build backend/ForgeX.sln --configuration Release --no-restore --disable-build-servers -m:1",
+                         "input":  "all 13 projects in backend/ForgeX.sln",
+                         "literalOutput":  [
+                                               "ForgeX.Api -\u003e backend\\src\\ForgeX.Api\\bin\\Release\\net10.0\\ForgeX.Api.dll",
+                                               "ForgeX.GCodeBenchmark -\u003e backend\\tests\\ForgeX.GCodeBenchmark\\bin\\Release\\net10.0\\ForgeX.GCodeBenchmark.dll",
+                                               "0 warnings; 0 errors"
+                                           ],
+                         "exitStatus":  0
+                     },
+                     {
+                         "name":  "cross-engine-layer-golden",
+                         "command":  ".\\.dotnet\\dotnet.exe run --project backend/tests/ForgeX.GoldenDiff/ForgeX.GoldenDiff.csproj --configuration Release --no-build",
+                         "input":  "8 Stage 0 cases plus 4 JS-generated Stage 5 layer-plan cases and 8 contract probes",
+                         "literalOutput":  [
+                                               "[PASS] contract/layer-plan-invariants: sequential=True; sorted=True; pathCounts=True; extrusion=True; types=True; countHeight=True",
+                                               "[PASS] contract/layer-limit: stableCode=GCODE_MAX_LAYERS_EXCEEDED",
+                                               "GoldenDiff: PASS — 392/392 fields"
+                                           ],
+                         "exitStatus":  0
+                     },
+                     {
+                         "name":  "persisted-job-compatibility",
+                         "command":  ".\\.dotnet\\dotnet.exe run --project backend/tests/ForgeX.JobGate/ForgeX.JobGate.csproj --configuration Release --no-build",
+                         "input":  "content store, idempotency, ownership, missing MaxLayers and Stage 5-A result without layers",
+                         "literalOutput":  "G-code async job gate PASS: 18/18",
+                         "exitStatus":  0
+                     },
+                     {
+                         "name":  "stream-and-layer-benchmark",
+                         "command":  ".\\.dotnet\\dotnet.exe run --project backend/tests/ForgeX.GCodeBenchmark/ForgeX.GCodeBenchmark.csproj --configuration Release --no-build",
+                         "input":  "16 MiB stream/cancellation fixture and separate 5,000-layer result-size fixture",
+                         "literalOutput":  "GCodeBenchmark: PASS — 16.00 MiB in 504.6 ms; firstProgress=9.3 ms; memoryDelta=15.66 MiB; result=1227 bytes; cancellation=2.6 ms; layerPlan=5000/949922 bytes in 18.6 ms",
+                         "exitStatus":  0
+                     },
+                     {
+                         "name":  "real-api-runtime",
+                         "command":  "POST http://127.0.0.1:8793/api/v1/gcode/analyze?...",
+                         "input":  "validation/fixtures/cura-marlin.gcode",
+                         "literalOutput":  "{\"schema\":\"1.0\",\"engine\":\"1.2.0\",\"layers\":2,\"firstIndex\":0,\"firstPaths\":1,\"secondZ\":0.4,\"totalLayers\":2,\"openapiMaxItems\":20000,\"sha256\":\"0881cfdac2ef41f6df48f7f5e0f47fd632dcddec8238955ce3a59a6bd754cf07\"}",
+                         "exitStatus":  0
+                     },
+                     {
+                         "name":  "patch-and-rollback",
+                         "command":  "git apply --check --unidiff-zero; git apply --unidiff-zero; rollback-stage5b.ps1; git apply --check --unidiff-zero",
+                         "input":  "E:\\Projects\\3dprint\\optimization\\stage5b-authoritative-layer-plan\\stage5b-authoritative-layer-plan.patch",
+                         "literalOutput":  [
+                                               "patchCheck=0",
+                                               "patchApply=0",
+                                               "reverseCheck=0",
+                                               "rollback=0",
+                                               "baselinePatchCheck=0",
+                                               "newFilesAbsent=True"
+                                           ],
+                         "exitStatus":  0
+                     }
+                 ],
+    "benchmarkThresholds":  {
+                                "streamInputComplete":  true,
+                                "firstProgressUnderMs":  1000,
+                                "streamDurationUnderMs":  30000,
+                                "privateMemoryDeltaUnderBytes":  67108864,
+                                "summaryResultUnderBytes":  65536,
+                                "cancellationUnderMs":  500,
+                                "layerPlanCount":  5000,
+                                "layerPlanDurationUnderMs":  5000,
+                                "layerPlanResultUnderBytes":  4194304,
+                                "allPassed":  true
+                            },
+    "e2e":  {
+                "countedAsPass":  false,
+                "firstAttemptLiteralOutput":  "1 skipped — dedicated dotnet build is required",
+                "flaggedRerun":  "The approval review stream disconnected before execution",
+                "replacementEvidence":  [
+                                            "39 targeted frontend tests passed",
+                                            "163 full frontend tests passed",
+                                            "real API runtime response verified"
+                                        ]
+            },
+    "roles":  {
+                  "modifiedArtifact":  "E:\\Projects\\3dprint\\optimization\\stage5b-authoritative-layer-plan\\modified-files.zip",
+                  "modifiedArtifactSha256":  "b07c40f68a01242b591eb4bdce6643e27384a2b168f0ff5df5296d11bfb2ea79",
+                  "patch":  "E:\\Projects\\3dprint\\optimization\\stage5b-authoritative-layer-plan\\stage5b-authoritative-layer-plan.patch",
+                  "patchSha256":  "c6ffecb8355e8d27f41b2eae4b8edbb33b42716e3ad34dbb117a20e2cb7f70a7",
+                  "verificationRecord":  "E:\\Projects\\3dprint\\optimization\\stage5b-authoritative-layer-plan\\verification-record.json",
+                  "rollback":  "E:\\Projects\\3dprint\\optimization\\stage5b-authoritative-layer-plan\\rollback-stage5b.ps1",
+                  "rollbackSha256":  "cd62ffb0f82b948638d2bc1925d9d050d46d38b34769013f2c6cce2bca6d363b"
+              },
+    "rollbackBehavior":  "Reverse-applies only the 30 Stage 5-B source/test/doc changes. It restores engine 1.1.0 and removes the two Stage 5-B Golden files; Stage 5-B evidence is retained.",
+    "artifactVerification":  {
+                                 "baselineArchiveReopened":  true,
+                                 "modifiedArchiveEntries":  30,
+                                 "modifiedArchiveMissing":  0,
+                                 "patchAppliedToBaseline":  true,
+                                 "rollbackExecuted":  true,
+                                 "rollbackReturnedToBaseline":  true
+                             }
+}

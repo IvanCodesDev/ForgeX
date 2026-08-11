@@ -202,13 +202,14 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
               <code>{authority.diff.sha256Matches ? "match" : "mismatch"}</code>
             </p>
             <p>
-              <span>契约 / 输入 / 参数 / Profile</span>
+              <span>契约 / 输入 / 参数 / Profile / 层计划</span>
               <code>
                 {authority.diff.engineMatches &&
                 authority.diff.contractMatches &&
                 authority.diff.inputMatches &&
                 authority.diff.parametersMatch &&
-                authority.diff.profileMatches
+                authority.diff.profileMatches &&
+                authority.diff.layerPlanMatches
                   ? "match"
                   : "mismatch"}
               </code>
@@ -227,6 +228,14 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
               <span>字段差异</span>
               <code>
                 {authority.diff.fields.filter((field) => !field.pass).length} failed / {authority.diff.fields.length}
+              </code>
+            </p>
+            <p>
+              <span>权威层计划</span>
+              <code>
+                {authority.diff.layerPlanMatches
+                  ? `${authority.result.layers.length} layers match`
+                  : `${authority.diff.layerMismatchCount} layers mismatch`}
               </code>
             </p>
             <p>
@@ -250,6 +259,7 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
             {!authority.diff.inputMatches ? <li>C# bytesRead 与浏览器文件字节数不一致</li> : null}
             {!authority.diff.parametersMatch ? <li>C# 返回参数与本次提交参数不一致</li> : null}
             {!authority.diff.profileMatches ? <li>C# Profile 摘要与本次提交或返回参数不一致</li> : null}
+            {!authority.diff.layerPlanMatches ? <li>C# 逐层计划与浏览器完整解析结果不一致</li> : null}
             {authority.diff.fields
               .filter((field) => !field.pass)
               .slice(0, 6)
@@ -258,6 +268,11 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
                   {field.field}: Δ {number(field.absoluteDelta, 6)} &gt; {number(field.limit, 6)}
                 </li>
               ))}
+            {authority.diff.layerFields.slice(0, 6).map((field) => (
+              <li key={field.field}>
+                {field.field}: Δ {number(field.absoluteDelta, 6)} &gt; {number(field.limit, 6)}
+              </li>
+            ))}
           </ul>
         ) : null}
       </section>

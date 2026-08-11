@@ -16,6 +16,9 @@ export interface LegacyPath {
 export interface LegacyLayer {
   readonly z: number;
   readonly paths: readonly LegacyPath[];
+  readonly extLen: number;
+  readonly travelLen: number;
+  readonly timeSec: number;
 }
 
 export interface GcodeStats {
@@ -66,6 +69,17 @@ export interface PreviewLayer {
   readonly paths: readonly PreviewPath[];
 }
 
+export interface GcodeLayerSummary {
+  readonly index: number;
+  readonly zMm: number;
+  readonly pathCount: number;
+  readonly extrusionLengthMm: number;
+  readonly travelLengthMm: number;
+  readonly timeSeconds: number;
+  readonly filamentLengthMm: number;
+  readonly pathTypeCounts: Readonly<Record<string, number>>;
+}
+
 export interface GcodePreviewResult {
   readonly fileName: string;
   readonly byteLength: number;
@@ -78,6 +92,7 @@ export interface GcodePreviewResult {
   readonly warnings: readonly string[];
   readonly claims: Readonly<Record<string, string | number>>;
   readonly layers: readonly PreviewLayer[];
+  readonly layerSummaries: readonly GcodeLayerSummary[];
   readonly layerSegmentOffsets: readonly number[];
   readonly sourceSegments: number;
   readonly previewSegments: number;

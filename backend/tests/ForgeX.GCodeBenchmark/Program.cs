@@ -8,6 +8,7 @@ const long targetBytes = 16L * 1024 * 1024;
 var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", ".."));
 var artifactPath = Path.Combine(repositoryRoot, "backend", "artifacts", "gcode-stage5-benchmark.json");
 var fixturePath = Path.Combine(Path.GetTempPath(), $"forgex-gcode-benchmark-{Guid.NewGuid():N}.gcode");
+var layerFixturePath = Path.Combine(Path.GetTempPath(), $"forgex-gcode-layer-benchmark-{Guid.NewGuid():N}.gcode");
 
 try
 {
@@ -91,6 +92,22 @@ try
     cancellationStopwatch.Stop();
     var cancellationLatencyMs = cancellationStopwatch.Elapsed.TotalMilliseconds - cancellationIssuedMs;
 
+    const int layerPlanCount = 5_000;
+    await CreateLayerFixtureAsync(layerFixturePath, layerPlanCount);
+    var layerPlanStopwatch = Stopwatch.StartNew();
+    await using var layerPlanFile = new FileStream(
+        layerFixturePath,
+        FileMode.Open,
+        FileAccess.Read,
+        FileShare.Read,
+        64 * 1024,
+        FileOptions.Asynchronous | FileOptions.SequentialScan);
+    var layerPlanResult = await analyzer.AnalyzeAsync(layerPlanFile, options, CancellationToken.None);
+    layerPlanStopwatch.Stop();
+    var layerPlanResultBytes = JsonSerializer.SerializeToUtf8Bytes(
+        layerPlanResult,
+        new JsonSerializerOptions(JsonSerializerDefaults.Web)).Length;
+
     var checks = new Dictionary<string, bool>
     {
         ["input-complete"] = result.BytesRead == fixtureBytes,
@@ -101,6 +118,9 @@ try
         ["cancellation-under-500ms"] = cancelled && cancellationLatencyMs < 500,
         ["profile-bound"] = result.Profile.MachineProfileId == options.MachineProfileId &&
             result.Profile.MaterialProfileId == options.MaterialProfileId,
+        ["5000-layer-plan-complete"] = layerPlanResult.TotalLayers == layerPlanCount,
+        ["5000-layer-plan-under-5s"] = layerPlanStopwatch.Elapsed < TimeSpan.FromSeconds(5),
+        ["5000-layer-result-under-4MiB"] = layerPlanResultBytes < 4 * 1024 * 1024,
     };
     var pass = checks.Values.All(static value => value);
     var report = new
@@ -124,6 +144,13 @@ try
         cancelled,
         cancellationLatencyMs,
         profileFingerprint = result.Profile.Fingerprint,
+        layerPlan = new
+        {
+            layers = layerPlanResult.TotalLayers,
+            inputBytes = new FileInfo(layerFixturePath).Length,
+            durationMs = layerPlanStopwatch.Elapsed.TotalMilliseconds,
+            resultBytes = layerPlanResultBytes,
+        },
         checks,
     };
     Directory.CreateDirectory(Path.GetDirectoryName(artifactPath)!);
@@ -133,13 +160,15 @@ try
     Console.WriteLine(
         $"GCodeBenchmark: {(pass ? "PASS" : "FAIL")} — {fixtureBytes / 1024d / 1024d:F2} MiB in {stopwatch.Elapsed.TotalMilliseconds:F1} ms; " +
         $"firstProgress={firstProgressMs:F1} ms; memoryDelta={(peakPrivate - privateBefore) / 1024d / 1024d:F2} MiB; " +
-        $"result={resultBytes} bytes; cancellation={cancellationLatencyMs:F1} ms");
+        $"result={resultBytes} bytes; cancellation={cancellationLatencyMs:F1} ms; " +
+        $"layerPlan={layerPlanResult.TotalLayers}/{layerPlanResultBytes} bytes in {layerPlanStopwatch.Elapsed.TotalMilliseconds:F1} ms");
     Console.WriteLine(artifactPath);
     return pass ? 0 : 1;
 }
 finally
 {
     if (File.Exists(fixturePath)) File.Delete(fixturePath);
+    if (File.Exists(layerFixturePath)) File.Delete(layerFixturePath);
 }
 
 static async Task CreateFixtureAsync(string path, long targetBytes)
@@ -160,6 +189,26 @@ static async Task CreateFixtureAsync(string path, long targetBytes)
     {
         await stream.WriteAsync(useFirst ? first : second);
         useFirst = !useFirst;
+    }
+}
+
+static async Task CreateLayerFixtureAsync(string path, int layers)
+{
+    await using var stream = new FileStream(
+        path,
+        FileMode.CreateNew,
+        FileAccess.Write,
+        FileShare.None,
+        64 * 1024,
+        FileOptions.Asynchronous | FileOptions.SequentialScan);
+    await using var writer = new StreamWriter(stream, Encoding.ASCII, 64 * 1024, leaveOpen: false);
+    await writer.WriteAsync("; ForgeX Stage 5 layer plan benchmark\nG90\nM83\nG1 X10 Y10 F1200\n");
+    for (var index = 1; index <= layers; index++)
+    {
+        var z = index * 0.2d;
+        var coordinate = (index & 1) == 0 ? 10 : 20;
+        await writer.WriteLineAsync(FormattableString.Invariant($"G1 Z{z:R}"));
+        await writer.WriteLineAsync(FormattableString.Invariant($"G1 X{coordinate} Y{coordinate} E0.01 F1200"));
     }
 }
 

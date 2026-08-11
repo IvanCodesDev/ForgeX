@@ -14,7 +14,7 @@ namespace ForgeX.Simulation;
 /// </summary>
 public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
 {
-    public const string EngineVersion = "1.1.0";
+    public const string EngineVersion = "1.2.0";
 
     private const int ReadBufferSize = 64 * 1024;
     private static readonly Encoding StrictUtf8 = new UTF8Encoding(
@@ -169,6 +169,11 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
         if (options.MaxLineLength <= 0)
         {
             InvalidOption(nameof(options.MaxLineLength));
+        }
+
+        if (options.MaxLayers is <= 0 or > 100_000)
+        {
+            InvalidOption(nameof(options.MaxLayers));
         }
 
         if (!IsValidProfileId(options.MachineProfileId))
@@ -639,6 +644,14 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
         private void StartLayer(double zMm)
         {
             ClosePath();
+            if (_layers.Count >= _options.MaxLayers)
+            {
+                throw new GCodeAnalysisException(
+                    "GCODE_MAX_LAYERS_EXCEEDED",
+                    FormattableString.Invariant(
+                        $"G-code exceeds the configured {_options.MaxLayers}-layer limit."));
+            }
+
             _currentLayer = new MutableLayer(zMm);
             _layers.Add(_currentLayer);
         }

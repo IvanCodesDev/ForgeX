@@ -30,6 +30,18 @@ const RESULT: GcodePreviewResult = {
   coordinateOrigin: "corner",
   warnings: [],
   claims: {},
+  layerSummaries: [
+    {
+      index: 0,
+      zMm: 0.2,
+      pathCount: 1,
+      extrusionLengthMm: 10,
+      travelLengthMm: 2,
+      timeSeconds: 1,
+      filamentLengthMm: 20,
+      pathTypeCounts: { perimeter: 1 },
+    },
+  ],
   layers: [{ index: 0, z: 0.2, sourcePathCount: 1, sourcePointCount: 2, paths: [] }],
   layerSegmentOffsets: [0, 0],
   sourceSegments: 1,

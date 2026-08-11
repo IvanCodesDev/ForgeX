@@ -527,6 +527,7 @@
           "parameters",
           "summary",
           "bounds",
+          "layers",
           "claims",
           "pathTypeCounts",
           "warnings"
@@ -645,6 +646,13 @@
               }
             },
             "additionalProperties": false
+          },
+          "layers": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "$ref": "#/components/schemas/GCodeLayerSummary"
+            }
           },
           "claims": {
             "type": "object",
@@ -1479,6 +1487,57 @@
           "fingerprint": {
             "type": "string",
             "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "GCodeLayerSummary": {
+        "type": "object",
+        "required": [
+          "index",
+          "zMm",
+          "pathCount",
+          "extrusionLengthMm",
+          "travelLengthMm",
+          "timeSeconds",
+          "filamentLengthMm",
+          "pathTypeCounts"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "zMm": {
+            "type": "number"
+          },
+          "pathCount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "extrusionLengthMm": {
+            "type": "number",
+            "minimum": 0
+          },
+          "travelLengthMm": {
+            "type": "number",
+            "minimum": 0
+          },
+          "timeSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "filamentLengthMm": {
+            "type": "number",
+            "minimum": 0
+          },
+          "pathTypeCounts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64"
+            }
           }
         },
         "additionalProperties": false

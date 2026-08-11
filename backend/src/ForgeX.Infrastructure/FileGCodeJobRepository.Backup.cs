@@ -270,11 +270,7 @@ public sealed partial class FileGCodeJobRepository
     {
         var job = JsonSerializer.Deserialize<GCodeJobRecord>(bytes, JsonOptions)
             ?? throw new InvalidDataException($"BACKUP_JOB_EMPTY:{source}");
-        job = job with
-        {
-            TenantId = string.IsNullOrWhiteSpace(job.TenantId) ? "tn_local" : job.TenantId,
-            OwnerId = string.IsNullOrWhiteSpace(job.OwnerId) ? "ow_local" : job.OwnerId,
-        };
+        job = NormalizePersistedJob(job);
         ValidateId(job.Id);
         ValidateCallerContext(job.TenantId, job.OwnerId);
         return job;

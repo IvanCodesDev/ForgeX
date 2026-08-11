@@ -1,0 +1,39 @@
+{
+  "format": "forgex-gcode-stage5-benchmark",
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-08-11T09:28:40.8402568+00:00",
+  "engineVersion": "1.2.0",
+  "pass": true,
+  "inputBytes": 16777223,
+  "linesRead": 729447,
+  "firstProgressMs": 9.3186,
+  "durationMs": 504.617,
+  "throughputMiBPerSecond": 31.707228800694814,
+  "privateMemoryBeforeBytes": 12357632,
+  "peakPrivateMemoryBytes": 28782592,
+  "privateMemoryDeltaBytes": 16424960,
+  "managedMemoryBeforeBytes": 144160,
+  "managedMemoryAfterBytes": 6355992,
+  "resultBytes": 1227,
+  "cancelled": true,
+  "cancellationLatencyMs": 2.5808000000000035,
+  "profileFingerprint": "f35e5fd0df3c0fe49f9d2c7b99a68c7b8f154047bafa7dcb3430eeeaaf11f724",
+  "layerPlan": {
+    "layers": 5000,
+    "inputBytes": 195157,
+    "durationMs": 18.5588,
+    "resultBytes": 949922
+  },
+  "checks": {
+    "input-complete": true,
+    "first-progress-under-1000ms": true,
+    "duration-under-30s": true,
+    "private-memory-delta-under-64MiB": true,
+    "result-under-64KiB": true,
+    "cancellation-under-500ms": true,
+    "profile-bound": true,
+    "5000-layer-plan-complete": true,
+    "5000-layer-plan-under-5s": true,
+    "5000-layer-result-under-4MiB": true
+  }
+}

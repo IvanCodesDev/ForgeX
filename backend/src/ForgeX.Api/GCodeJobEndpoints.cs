@@ -231,7 +231,7 @@ internal static class GCodeJobEndpoints
 
     private static string Fingerprint(string sha256, GCodeAnalysisOptions options)
     {
-        var canonical = $"{sha256}|{GCodeProfileSummary.Create(options).Fingerprint}";
+        var canonical = $"forgex-gcode-job/2|{sha256}|{GCodeProfileSummary.Create(options).Fingerprint}";
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 

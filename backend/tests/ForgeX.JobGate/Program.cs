@@ -88,6 +88,60 @@ try
     var legacyFromTrustedTenant = await legacyRepository.GetOwnedAsync(tenantA, ownerA, legacyJob.Id, CancellationToken.None);
     Check("legacy-job-is-hidden-from-trusted-tenants", legacyFromTrustedTenant is null, legacyFromTrustedTenant?.Id);
 
+    var legacyResult = new GCodeAnalysisResult(
+        stored.Sha256,
+        "1.1.0",
+        "gcode-import",
+        GCodeProfileSummary.Create(options),
+        CoordinateOrigin.Corner,
+        stored.Bytes,
+        3,
+        1,
+        0.2,
+        new GCodeBounds(0, 10, 0, 10),
+        new GCodeStatistics(14.1421356, 0, 1, 0.002405, 0.001, 0.002982),
+        new Dictionary<string, string>(),
+        new Dictionary<string, long> { ["infill"] = 1 },
+        [new GCodeLayerSummary(0, 0.2, 1, 14.1421356, 0, 1, 1, new Dictionary<string, long> { ["infill"] = 1 })],
+        []);
+    var legacyCompleted = legacyJob with
+    {
+        Id = Guid.NewGuid().ToString("N"),
+        Status = GCodeJobStatus.Succeeded,
+        Progress = 1,
+        Phase = "complete",
+        FinishedAtUtc = now,
+        EngineVersion = legacyResult.EngineVersion,
+        Result = legacyResult,
+    };
+    await legacyRepository.SaveAsync(legacyCompleted, CancellationToken.None);
+    var legacyCompletedPath = Path.Combine(legacyRoot, legacyCompleted.Id + ".json");
+    var legacyCompletedJson = JsonNode.Parse(await File.ReadAllTextAsync(legacyCompletedPath))!.AsObject();
+    legacyCompletedJson["options"]!.AsObject().Remove("maxLayers");
+    legacyCompletedJson["result"]!.AsObject().Remove("layers");
+    await File.WriteAllTextAsync(legacyCompletedPath, legacyCompletedJson.ToJsonString());
+    var migratedCompleted = await legacyRepository.GetAsync(legacyCompleted.Id, CancellationToken.None);
+    Check("legacy-options-get-layer-limit", migratedCompleted?.Options.MaxLayers == 20_000, migratedCompleted?.Options.MaxLayers);
+    Check(
+        "legacy-result-degrades-without-invalid-response",
+        migratedCompleted is
+        {
+            Status: GCodeJobStatus.Degraded,
+            Phase: "contract-upgrade",
+            Result: null,
+            ErrorCode: "gcode_result_contract_outdated",
+        },
+        migratedCompleted?.Status);
+    Check(
+        "legacy-result-appends-terminal-evidence",
+        migratedCompleted?.Events[^1] is
+        {
+            Status: GCodeJobStatus.Degraded,
+            Phase: "contract-upgrade",
+            ErrorCode: "gcode_result_contract_outdated",
+        },
+        migratedCompleted?.Events[^1]);
+
     var queue = new GCodeJobQueue(2);
     await queue.EnqueueAsync("first", CancellationToken.None);
     await queue.EnqueueAsync("second", CancellationToken.None);

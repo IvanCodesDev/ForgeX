@@ -15,9 +15,9 @@ function path(pointCount: number, offset = 0): LegacyPath {
 function parsedFixture(): LegacyGcodeResult {
   return {
     layers: [
-      { z: 0.2, paths: [path(10), path(6, 20)] },
-      { z: 0.4, paths: [path(18, 40)] },
-      { z: 0.6, paths: [path(4, 80)] },
+      { z: 0.2, paths: [path(10), path(6, 20)], extLen: 14, travelLen: 3, timeSec: 2 },
+      { z: 0.4, paths: [path(18, 40)], extLen: 17, travelLen: 4, timeSec: 3 },
+      { z: 0.6, paths: [path(4, 80)], extLen: 3, travelLen: 5, timeSec: 4 },
     ],
     totalLayers: 3,
     height: 0.6,
@@ -69,7 +69,7 @@ describe("buildPreview", () => {
   it("marks complete geometry as untruncated", () => {
     const parsed: LegacyGcodeResult = {
       ...parsedFixture(),
-      layers: [{ z: 0.2, paths: [path(3)] }],
+      layers: [{ z: 0.2, paths: [path(3)], extLen: 2, travelLen: 0, timeSec: 1 }],
       totalLayers: 1,
       height: 0.2,
     };
@@ -101,5 +101,37 @@ describe("composePreviewResult", () => {
     expect(result.bounds).toBe(parsed.bounds);
     expect(result.warnings).toBe(parsed.warnings);
     expect(result.claims).toBe(parsed.claims);
+    expect(result.layerSummaries).toEqual([
+      {
+        index: 0,
+        zMm: 0.2,
+        pathCount: 2,
+        extrusionLengthMm: 14,
+        travelLengthMm: 3,
+        timeSeconds: 2,
+        filamentLengthMm: 4,
+        pathTypeCounts: { perimeter: 2 },
+      },
+      {
+        index: 1,
+        zMm: 0.4,
+        pathCount: 1,
+        extrusionLengthMm: 17,
+        travelLengthMm: 4,
+        timeSeconds: 3,
+        filamentLengthMm: 2,
+        pathTypeCounts: { perimeter: 1 },
+      },
+      {
+        index: 2,
+        zMm: 0.6,
+        pathCount: 1,
+        extrusionLengthMm: 3,
+        travelLengthMm: 5,
+        timeSeconds: 4,
+        filamentLengthMm: 2,
+        pathTypeCounts: { perimeter: 1 },
+      },
+    ]);
   });
 });

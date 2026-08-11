@@ -115,13 +115,51 @@ public sealed partial class FileGCodeJobRepository : IGCodeJobRepository, IGCode
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, true);
         var job = await JsonSerializer.DeserializeAsync<GCodeJobRecord>(stream, JsonOptions, cancellationToken)
             .ConfigureAwait(false) ?? throw new InvalidDataException($"Job record is empty: {Path.GetFileName(path)}");
+        return NormalizePersistedJob(job);
+    }
+
+    private static GCodeJobRecord NormalizePersistedJob(GCodeJobRecord job)
+    {
         // Stage 3-B records did not yet contain tenant/owner fields. They remain readable only
         // inside the explicit local-development scope instead of becoming globally visible.
-        return job with
+        job = job with
         {
+            Options = job.Options.MaxLayers <= 0 ? job.Options with { MaxLayers = 20_000 } : job.Options,
             TenantId = string.IsNullOrWhiteSpace(job.TenantId) ? "tn_local" : job.TenantId,
             OwnerId = string.IsNullOrWhiteSpace(job.OwnerId) ? "ow_local" : job.OwnerId,
         };
+
+        // Stage 5-A completed results predate the required layer-plan contract. Preserve the
+        // record and its provenance, but expose a stable degraded terminal state instead of
+        // serializing an invalid Stage 5-B response or throwing from the snapshot endpoint.
+        if (job.Result is not null && job.Result.Layers is null)
+        {
+            const string errorCode = "gcode_result_contract_outdated";
+            var atUtc = job.FinishedAtUtc ?? job.CreatedAtUtc;
+            var sequence = job.Events.Count == 0 ? 1 : job.Events[^1].Sequence + 1;
+            var events = job.Events.Concat([
+                new GCodeJobEvent(
+                    sequence,
+                    "terminal",
+                    atUtc,
+                    GCodeJobStatus.Degraded,
+                    1,
+                    "contract-upgrade",
+                    errorCode),
+            ]).ToArray();
+            job = job with
+            {
+                Status = GCodeJobStatus.Degraded,
+                Progress = 1,
+                Phase = "contract-upgrade",
+                Result = null,
+                ErrorCode = errorCode,
+                ErrorMessage = "The stored result predates the authoritative layer-plan contract; submit the G-code as a new job.",
+                Events = events,
+            };
+        }
+
+        return job;
     }
 
     private async Task WriteAsync(GCodeJobRecord job, CancellationToken cancellationToken)
