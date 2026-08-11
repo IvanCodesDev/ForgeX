@@ -6,10 +6,17 @@ import type { AuthorityAnalysisResponse } from "./gcode-authority";
 import type { GcodePreviewResult } from "./gcode-types";
 
 const requestAuthorityAnalysis = vi.hoisted(() => vi.fn());
+const requestAuthorityJobAnalysis = vi.hoisted(() => vi.fn());
+const cancelAuthorityJob = vi.hoisted(() => vi.fn());
 
 vi.mock("./gcode-authority", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./gcode-authority")>();
   return { ...actual, requestAuthorityAnalysis };
+});
+
+vi.mock("./gcode-job-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./gcode-job-client")>();
+  return { ...actual, requestAuthorityJobAnalysis, cancelAuthorityJob };
 });
 
 import { AUTHORITY_TIMEOUT_MS, useGcodeAuthority } from "./useGcodeAuthority";
@@ -56,7 +63,10 @@ const AUTHORITY: AuthorityAnalysisResponse = {
 describe("useGcodeAuthority", () => {
   beforeEach(() => {
     vi.stubEnv("VITE_GCODE_AUTHORITY", "dotnet");
+    vi.stubEnv("VITE_GCODE_JOB_API", "0");
     requestAuthorityAnalysis.mockReset();
+    requestAuthorityJobAnalysis.mockReset();
+    cancelAuthorityJob.mockReset().mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -102,6 +112,85 @@ describe("useGcodeAuthority", () => {
     expect(requestSignal?.aborted).toBe(true);
     expect(result.current).toMatchObject({ status: "error", result: null, diff: null });
     expect(result.current.error).toContain("已取消");
+    unmount();
+  });
+
+  it("tracks an async job lifecycle and exposes SSE progress without waiting for browser preview", async () => {
+    vi.stubEnv("VITE_GCODE_JOB_API", "1");
+    let resolveRequest: ((value: AuthorityAnalysisResponse) => void) | undefined;
+    requestAuthorityJobAnalysis.mockImplementation(
+      (
+        _file: File,
+        _options: unknown,
+        _env: ImportMetaEnv,
+        _signal: AbortSignal,
+        callbacks: {
+          onAccepted?: (jobId: string) => void;
+          onProgress?: (value: {
+            jobId: string;
+            status: "running";
+            progress: number;
+            phase: string;
+            sequence: number;
+            transport: "sse";
+          }) => void;
+        }
+      ) => {
+        callbacks.onAccepted?.("1".repeat(32));
+        callbacks.onProgress?.({
+          jobId: "1".repeat(32),
+          status: "running",
+          progress: 0.6,
+          phase: "parse",
+          sequence: 2,
+          transport: "sse",
+        });
+        return new Promise<AuthorityAnalysisResponse>((resolve) => (resolveRequest = resolve));
+      }
+    );
+    const file = new File(["x".repeat(20)], "fixture.gcode");
+    const { result, unmount } = renderHook(() => useGcodeAuthority(file, OPTIONS, null));
+
+    expect(requestAuthorityJobAnalysis).toHaveBeenCalledOnce();
+    expect(requestAuthorityAnalysis).not.toHaveBeenCalled();
+    expect(result.current).toMatchObject({
+      status: "running",
+      jobId: "1".repeat(32),
+      progress: 0.6,
+      phase: "parse",
+      transport: "sse",
+    });
+
+    await act(async () => resolveRequest?.(AUTHORITY));
+    expect(result.current).toMatchObject({ status: "done", result: AUTHORITY, progress: 1, phase: "succeeded" });
+    unmount();
+    expect(cancelAuthorityJob).not.toHaveBeenCalled();
+  });
+
+  it("cancels the accepted server job as well as the browser request", async () => {
+    vi.stubEnv("VITE_GCODE_JOB_API", "1");
+    let requestSignal: AbortSignal | undefined;
+    requestAuthorityJobAnalysis.mockImplementation(
+      (
+        _file: File,
+        _options: unknown,
+        _env: ImportMetaEnv,
+        signal: AbortSignal,
+        callbacks: { onAccepted?: (jobId: string) => void }
+      ) => {
+        requestSignal = signal;
+        callbacks.onAccepted?.("2".repeat(32));
+        return new Promise<AuthorityAnalysisResponse>(() => undefined);
+      }
+    );
+    const file = new File(["x".repeat(20)], "fixture.gcode");
+    const { result, unmount } = renderHook(() => useGcodeAuthority(file, OPTIONS, null));
+
+    act(() => result.current.cancel());
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(cancelAuthorityJob).toHaveBeenCalledWith("2".repeat(32), expect.any(Object));
+    expect(result.current).toMatchObject({ status: "error", jobId: "2".repeat(32), phase: "cancelled" });
     unmount();
   });
 

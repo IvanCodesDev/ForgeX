@@ -54,6 +54,10 @@ vi.mock("./useGcodeAuthority", () => ({
     result: null,
     diff: null,
     error: "",
+    jobId: null,
+    progress: 0,
+    phase: "idle",
+    transport: "sync",
     cancel: vi.fn(),
   }),
 }));

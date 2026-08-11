@@ -56,7 +56,7 @@ module.exports = defineConfig({
   ],
 
   webServer: {
-    // serve.js 会先以 browser authority 和全部 Stage 2 开关构建 dist/react，
+    // serve.js 默认以 browser authority 构建；Stage 3-B 专项门禁可显式切到 dotnet 作业模式，
     // 再启动规则引擎 + 临时数据目录；既不依赖 C# sidecar，也不污染仓库数据。
     command: "node tests/e2e/serve.js",
     cwd: path.resolve(__dirname, ".."),

@@ -148,8 +148,21 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
                 ? "C# 权威未完成；浏览器结果仅作临时预览。"
                 : "浏览器即时预览保持主结果；C# Shadow 正在并行对照。"}
             </p>
+            {authority.jobId ? (
+              <div className="worker-status authority-job-status">
+                <div>
+                  <span>
+                    作业 {authority.jobId.slice(0, 8)}… · {authority.phase} · {authority.transport.toUpperCase()}
+                  </span>
+                  <span>{Math.round(authority.progress * 100)}%</span>
+                </div>
+                <progress aria-label="C# 权威异步作业进度" max="1" value={authority.progress} />
+              </div>
+            ) : (
+              <p className="muted">正在创建可恢复的 C# 分析作业…</p>
+            )}
             <button className="reset-button" type="button" onClick={authority.cancel}>
-              取消 C# 分析
+              {authority.jobId ? "取消 C# 作业" : "取消 C# 分析"}
             </button>
           </>
         ) : null}

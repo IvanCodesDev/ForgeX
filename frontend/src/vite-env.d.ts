@@ -11,6 +11,7 @@ interface ImportMetaEnv {
   readonly VITE_REACT_ANALYTICS_ENABLED?: "0" | "1";
   readonly VITE_REACT_GOVERNANCE_ENABLED?: "0" | "1";
   readonly VITE_GCODE_AUTHORITY?: "browser" | "shadow" | "dotnet";
+  readonly VITE_GCODE_JOB_API?: "0" | "1";
   /** @deprecated G-code authority traffic always enters through VITE_API_BASE / Node. */
   readonly VITE_AUTHORITY_API_BASE?: string;
 }

@@ -134,7 +134,7 @@ function requireFinite(record: Record<string, unknown>, key: string): number {
   return value;
 }
 
-function parseAuthorityResponse(value: unknown): AuthorityAnalysisResponse {
+export function parseAuthorityResponse(value: unknown): AuthorityAnalysisResponse {
   const root = requireRecord(value, "root");
   const engine = requireRecord(root.engine, "engine");
   const input = requireRecord(root.input, "input");
@@ -186,7 +186,7 @@ function parseAuthorityResponse(value: unknown): AuthorityAnalysisResponse {
   };
 }
 
-function assertAuthorityContract(
+export function assertAuthorityContract(
   result: AuthorityAnalysisResponse,
   file: File,
   options: GcodeParseOptions

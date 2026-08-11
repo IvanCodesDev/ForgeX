@@ -18,6 +18,7 @@ const rootDir = path.resolve(__dirname, "../..");
  * 避免 .env.local 或 CI 机器密钥把回归测试偶然切到 C# / SSO / 客户端凭据路径。
  */
 function buildReactFixture() {
+  const authorityMode = process.env.E2E_GCODE_AUTHORITY === "dotnet" ? "dotnet" : "browser";
   const npmCli = process.env.npm_execpath;
   const command = npmCli ? process.execPath : process.platform === "win32" ? "npm.cmd" : "npm";
   const args = npmCli ? [npmCli, "run", "frontend:build"] : ["run", "frontend:build"];
@@ -29,7 +30,8 @@ function buildReactFixture() {
       VITE_API_BASE: "",
       VITE_NODE_API_KEY: "",
       VITE_NODE_BEARER: "",
-      VITE_GCODE_AUTHORITY: "browser",
+      VITE_GCODE_AUTHORITY: authorityMode,
+      VITE_GCODE_JOB_API: "1",
       VITE_REACT_SIMULATOR_ENABLED: "1",
       VITE_REACT_GCODE_ENABLED: "1",
       VITE_REACT_PROFILE_SELECTOR_ENABLED: "1",

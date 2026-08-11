@@ -263,6 +263,11 @@ jobs:
       # Chromium 跑全量；Firefox / WebKit 跑启动与 G-code→日志关键链路。
       - run: npm run test:e2e
 
+      - name: React C# 异步作业接线专项
+        run: npm run test:e2e:chromium -- tests/e2e/react-stage3b-jobs.spec.js
+        env:
+          E2E_GCODE_AUTHORITY: dotnet
+
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

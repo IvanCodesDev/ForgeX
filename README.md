@@ -192,7 +192,7 @@ Node.js service :8787
 
 - **前端**：旧页面继续可用；React 已落地共享身份头、Profile 选择、G-code/日志对账、数据分析与校准治理等垂直切片，G-code 在 Worker 中解析；
 - **业务后端**：Node.js 原生 `http`，零运行时依赖，并只对白名单路由提供 C# 同源代理；
-- **G-code 计算边界**：.NET 10 sidecar 保留同步摘要接口，并新增 `POST /api/v1/gcode/analyses`、作业快照、SSE 事件与幂等取消接口；React 当前仍按 `browser / shadow / dotnet` 使用同步结果，异步接口先作为后台长任务底座；
+- **G-code 计算边界**：.NET 10 sidecar 保留同步摘要接口，并新增 `POST /api/v1/gcode/analyses`、作业快照、SSE 事件与幂等取消接口；React 的 `dotnet` 模式使用异步作业、断线续传与轮询兜底，`browser / shadow` 路径保持原行为；
 - **存储**：默认写入 `data/`，容器部署可挂载持久化卷。
 
 ### React Stage 2 当前范围
@@ -221,7 +221,7 @@ Node.js service :8787
 | `VITE_REACT_ANALYTICS_ENABLED`        | 启用 `#/analytics` 本地分析路由；`0` 时显示该功能已回退            |
 | `VITE_REACT_GOVERNANCE_ENABLED`       | 启用 `#/governance` 校准治理路由；`0` 时显示该功能已回退           |
 
-`VITE_GCODE_AUTHORITY` 不是页面开关，而是 G-code 分析模式：`browser` 为默认浏览器结果，`shadow` 与 C# 双跑但不切换主结果，`dotnet` 才使用 C# 返回作为该路由结果。`VITE_API_BASE=offline` 可强制离线演示；`VITE_NODE_API_KEY` 与 `VITE_NODE_BEARER` 会进入浏览器产物，只能放置允许分发的客户端凭据，校准审核密钥只允许配置在服务端 `CALIBRATION_REVIEW_KEYS`。
+`VITE_GCODE_AUTHORITY` 不是页面开关，而是 G-code 分析模式：`browser` 为默认浏览器结果，`shadow` 与 C# 双跑但不切换主结果，`dotnet` 才使用 C# 返回作为该路由结果。`dotnet` 默认通过异步作业运行：创建请求携带稳定幂等键，SSE 使用事件序号续传，连接失败后轮询同一作业，页面取消会同步取消服务端作业。`VITE_GCODE_JOB_API=0` 可把 React 独立回退到既有同步 `/api/v1/gcode/analyze`；服务端 `GCODE_ASYNC_JOBS_ENABLED=0` 可关闭异步路由。`VITE_API_BASE=offline` 可强制离线演示；`VITE_NODE_API_KEY` 与 `VITE_NODE_BEARER` 会进入浏览器产物，只能放置允许分发的客户端凭据，校准审核密钥只允许配置在服务端 `CALIBRATION_REVIEW_KEYS`。
 
 ## 验证
 
