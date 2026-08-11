@@ -7,7 +7,7 @@ return await AnalyticsGateProgram.RunAsync(CancellationToken.None);
 
 internal static class AnalyticsGateProgram
 {
-    private const string EngineVersion = "forgex-analytics-csharp/1.0.0";
+    private const string EngineVersion = "forgex-analytics-csharp/1.1.0";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -211,6 +211,78 @@ internal static class AnalyticsGateProgram
                 absTolerance,
                 relTolerance);
         }
+        foreach (var caseNode in RequiredArray(golden, "pearsonCases"))
+        {
+            var item = caseNode!.AsObject();
+            var input = item["input"]!.AsObject();
+            var pairs = RequiredArray(input, "pairs")
+                .Select(static node => node!.AsArray())
+                .Select(static pair => new NumericPair(
+                    pair[0]!.GetValue<double>(),
+                    pair[1]!.GetValue<double>()))
+                .ToArray();
+            var options = input["options"]?.AsObject();
+            var degreesOfFreedom = options?["df"]?.GetValue<int>();
+            var alpha = options?["alpha"]?.GetValue<double>() ?? AnalyticsStatistics.DefaultAlpha;
+            CompareNode(
+                $"pearson/{RequiredString(input, "id")}",
+                item["expected"],
+                JsonSerializer.SerializeToNode(
+                    AnalyticsStatistics.Pearson(pairs, degreesOfFreedom, alpha),
+                    JsonOptions),
+                fields,
+                absTolerance,
+                relTolerance);
+        }
+        foreach (var caseNode in RequiredArray(golden, "partialCorrelationCases"))
+        {
+            var item = caseNode!.AsObject();
+            var input = item["input"]!.AsObject();
+            var xKey = RequiredString(input, "xKey");
+            var yKey = RequiredString(input, "yKey");
+            var controlKeys = RequiredArray(input, "controlKeys")
+                .Select(static node => node!.GetValue<string>())
+                .ToArray();
+            var observations = new List<PartialCorrelationObservation>();
+            foreach (var rowNode in RequiredArray(input, "rows"))
+            {
+                var row = rowNode!.AsObject();
+                if (!row.TryGetPropertyValue(xKey, out var xNode) ||
+                    !row.TryGetPropertyValue(yKey, out var yNode) ||
+                    !TryJsNumber(xNode, out var x) ||
+                    !TryJsNumber(yNode, out var y)) continue;
+                observations.Add(new PartialCorrelationObservation(
+                    x,
+                    y,
+                    [.. controlKeys.Select(key =>
+                        row.TryGetPropertyValue(key, out var control) ? JsString(control) : "undefined")]));
+            }
+            CompareNode(
+                $"partial/{RequiredString(input, "id")}",
+                item["expected"],
+                JsonSerializer.SerializeToNode(
+                    AnalyticsStatistics.PartialCorrelation(observations, controlKeys),
+                    JsonOptions),
+                fields,
+                absTolerance,
+                relTolerance);
+        }
+        foreach (var caseNode in RequiredArray(golden, "mannKendallCases"))
+        {
+            var item = caseNode!.AsObject();
+            var input = item["input"]!.AsObject();
+            var series = RequiredArray(input, "series")
+                .Select(static node => node!.GetValue<double>())
+                .ToArray();
+            var alpha = input["options"]?["alpha"]?.GetValue<double>() ?? AnalyticsStatistics.DefaultAlpha;
+            CompareNode(
+                $"mann-kendall/{RequiredString(input, "id")}",
+                item["expected"],
+                JsonSerializer.SerializeToNode(AnalyticsStatistics.MannKendall(series, alpha), JsonOptions),
+                fields,
+                absTolerance,
+                relTolerance);
+        }
         var ranking = golden["rankCase"]?.AsObject() ?? throw new InvalidDataException("rankCase is missing.");
         var rankInput = ranking["input"]!.AsObject();
         var groups = RequiredArray(rankInput, "groups")
@@ -353,6 +425,53 @@ internal static class AnalyticsGateProgram
     }
 
     private static string NodeText(JsonNode? node) => node?.ToJsonString() ?? "null";
+
+    private static bool TryJsNumber(JsonNode? node, out double value)
+    {
+        if (node is null)
+        {
+            value = 0;
+            return true;
+        }
+        if (node is JsonValue jsonValue)
+        {
+            if (jsonValue.TryGetValue<double>(out value)) return double.IsFinite(value);
+            if (jsonValue.TryGetValue<bool>(out var boolean))
+            {
+                value = boolean ? 1 : 0;
+                return true;
+            }
+            if (jsonValue.TryGetValue<string>(out var text))
+            {
+                text = text.Trim();
+                if (text.Length == 0)
+                {
+                    value = 0;
+                    return true;
+                }
+                return double.TryParse(
+                    text,
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out value) && double.IsFinite(value);
+            }
+        }
+        value = 0;
+        return false;
+    }
+
+    private static string JsString(JsonNode? node)
+    {
+        if (node is null) return "null";
+        if (node is not JsonValue value) return node.ToJsonString();
+        if (value.TryGetValue<string>(out var text)) return text;
+        if (value.TryGetValue<bool>(out var boolean)) return boolean ? "true" : "false";
+        if (value.TryGetValue<double>(out var number))
+        {
+            return number.ToString("G15", System.Globalization.CultureInfo.InvariantCulture);
+        }
+        return node.ToJsonString();
+    }
 
     private static JsonArray RequiredArray(JsonObject value, string property) =>
         value[property]?.AsArray() ?? throw new InvalidDataException($"{property} must be an array.");

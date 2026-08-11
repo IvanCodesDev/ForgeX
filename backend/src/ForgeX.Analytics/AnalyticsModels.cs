@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace ForgeX.Analytics;
 
 public enum AnalyticsStatus
@@ -81,6 +83,42 @@ public sealed record RateRanking(
     int MinSample,
     double Alpha,
     FleetRate Fleet);
+
+public readonly record struct NumericPair(double X, double Y);
+
+public sealed record CorrelationResult(
+    double R,
+    int N,
+    IReadOnlyList<double>? Ci95,
+    double PValue,
+    bool Significant,
+    string Method);
+
+public sealed record PartialCorrelationObservation(
+    double X,
+    double Y,
+    IReadOnlyList<string?> Controls);
+
+public sealed record PartialCorrelationResult(
+    double R,
+    int N,
+    IReadOnlyList<double>? Ci95,
+    double PValue,
+    bool Significant,
+    string Method,
+    int Groups,
+    int Dropped,
+    IReadOnlyList<string> Controls);
+
+public sealed record MannKendallResult(
+    int N,
+    [property: JsonPropertyName("S")] long S,
+    double Tau,
+    double Z,
+    double PValue,
+    string Direction,
+    bool Significant,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Method);
 
 public sealed record AnalyticsDateRange(
     string From,

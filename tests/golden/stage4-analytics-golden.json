@@ -1,5 +1,5 @@
 {
-  "baselineVersion": "0.19.0-stage4-a",
+  "baselineVersion": "0.19.0-stage4-b",
   "csvCases": [
     {
       "expected": {
@@ -205,6 +205,741 @@
     }
   ],
   "format": "forgex-stage4-analytics-golden",
+  "mannKendallCases": [
+    {
+      "expected": {
+        "S": 28,
+        "direction": "up",
+        "method": "Mann-Kendall 非参数趋势检验（正态近似 + 并列修正）",
+        "n": 8,
+        "pValue": 0.0008367385782124259,
+        "significant": true,
+        "tau": 1,
+        "z": 3.340383700311406
+      },
+      "input": {
+        "id": "strict-up",
+        "options": {},
+        "series": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      }
+    },
+    {
+      "expected": {
+        "S": -28,
+        "direction": "down",
+        "method": "Mann-Kendall 非参数趋势检验（正态近似 + 并列修正）",
+        "n": 8,
+        "pValue": 0.0008367385782124259,
+        "significant": true,
+        "tau": -1,
+        "z": -3.340383700311406
+      },
+      "input": {
+        "id": "strict-down",
+        "options": {},
+        "series": [
+          8,
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1
+        ]
+      }
+    },
+    {
+      "expected": {
+        "S": 0,
+        "direction": "flat",
+        "n": 6,
+        "pValue": 1,
+        "significant": false,
+        "tau": 0,
+        "z": 0
+      },
+      "input": {
+        "id": "all-tied",
+        "options": {},
+        "series": [
+          5,
+          5,
+          5,
+          5,
+          5,
+          5
+        ]
+      }
+    },
+    {
+      "expected": {
+        "S": 5,
+        "direction": "flat",
+        "method": "Mann-Kendall 非参数趋势检验（正态近似 + 并列修正）",
+        "n": 10,
+        "pValue": 0.7099484758219006,
+        "significant": false,
+        "tau": 0.1111111111111111,
+        "z": 0.3719254364242462
+      },
+      "input": {
+        "id": "wobble",
+        "options": {},
+        "series": [
+          10,
+          12,
+          9,
+          11,
+          10,
+          12,
+          9,
+          11,
+          10,
+          12
+        ]
+      }
+    },
+    {
+      "expected": {
+        "S": 24,
+        "direction": "up",
+        "method": "Mann-Kendall 非参数趋势检验（正态近似 + 并列修正）",
+        "n": 8,
+        "pValue": 0.0033159407236531546,
+        "significant": true,
+        "tau": 0.8571428571428571,
+        "z": 2.9368350311176825
+      },
+      "input": {
+        "id": "ties-corrected",
+        "options": {},
+        "series": [
+          1,
+          1,
+          2,
+          2,
+          3,
+          3,
+          4,
+          4
+        ]
+      }
+    },
+    {
+      "expected": {
+        "S": 15,
+        "direction": "flat",
+        "method": "Mann-Kendall 非参数趋势检验（正态近似 + 并列修正）",
+        "n": 6,
+        "pValue": 0.008534998139086536,
+        "significant": false,
+        "tau": 1,
+        "z": 2.630142022557628
+      },
+      "input": {
+        "id": "strict-alpha",
+        "options": {
+          "alpha": 0.001
+        },
+        "series": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      }
+    },
+    {
+      "expected": null,
+      "input": {
+        "id": "insufficient",
+        "options": {},
+        "series": [
+          1,
+          2,
+          3
+        ]
+      }
+    }
+  ],
+  "partialCorrelationCases": [
+    {
+      "expected": {
+        "ci95": [
+          -0.9999999937451161,
+          -0.9999984012504286
+        ],
+        "controls": [
+          "g"
+        ],
+        "dropped": 0,
+        "groups": 2,
+        "method": "组内中心化偏相关（控制：g）+ fisher-z 近似",
+        "n": 6,
+        "pValue": 0,
+        "r": -0.9999999,
+        "significant": true
+      },
+      "input": {
+        "controlKeys": [
+          "g"
+        ],
+        "id": "simpson-control",
+        "rows": [
+          {
+            "g": "A",
+            "x": 1,
+            "y": 10
+          },
+          {
+            "g": "A",
+            "x": 2,
+            "y": 9
+          },
+          {
+            "g": "A",
+            "x": 3,
+            "y": 8
+          },
+          {
+            "g": "B",
+            "x": 4,
+            "y": 20
+          },
+          {
+            "g": "B",
+            "x": 5,
+            "y": 19
+          },
+          {
+            "g": "B",
+            "x": 6,
+            "y": 18
+          }
+        ],
+        "xKey": "x",
+        "yKey": "y"
+      }
+    },
+    {
+      "expected": {
+        "ci95": [
+          -0.9999999937451161,
+          -0.9999984012504286
+        ],
+        "controls": [
+          "g"
+        ],
+        "dropped": 1,
+        "groups": 2,
+        "method": "组内中心化偏相关（控制：g）+ fisher-z 近似",
+        "n": 6,
+        "pValue": 0,
+        "r": -0.9999999,
+        "significant": true
+      },
+      "input": {
+        "controlKeys": [
+          "g"
+        ],
+        "id": "singleton-and-invalid",
+        "rows": [
+          {
+            "g": "A",
+            "x": 1,
+            "y": 10
+          },
+          {
+            "g": "A",
+            "x": 2,
+            "y": 9
+          },
+          {
+            "g": "A",
+            "x": 3,
+            "y": 8
+          },
+          {
+            "g": "B",
+            "x": 4,
+            "y": 20
+          },
+          {
+            "g": "B",
+            "x": 5,
+            "y": 19
+          },
+          {
+            "g": "B",
+            "x": 6,
+            "y": 18
+          },
+          {
+            "g": "C",
+            "x": 99,
+            "y": 99
+          },
+          {
+            "g": "A",
+            "x": "bad",
+            "y": 12
+          }
+        ],
+        "xKey": "x",
+        "yKey": "y"
+      }
+    },
+    {
+      "expected": {
+        "ci95": [
+          -0.9999999937451161,
+          -0.9999984012504286
+        ],
+        "controls": [
+          "g",
+          "model"
+        ],
+        "dropped": 0,
+        "groups": 2,
+        "method": "组内中心化偏相关（控制：g、model）+ fisher-z 近似",
+        "n": 6,
+        "pValue": 0,
+        "r": -0.9999999,
+        "significant": true
+      },
+      "input": {
+        "controlKeys": [
+          "g",
+          "model"
+        ],
+        "id": "two-controls",
+        "rows": [
+          {
+            "g": "A",
+            "model": "X",
+            "x": 1,
+            "y": 9
+          },
+          {
+            "g": "A",
+            "model": "X",
+            "x": 2,
+            "y": 7
+          },
+          {
+            "g": "A",
+            "model": "X",
+            "x": 3,
+            "y": 5
+          },
+          {
+            "g": "B",
+            "model": "Y",
+            "x": 5,
+            "y": 20
+          },
+          {
+            "g": "B",
+            "model": "Y",
+            "x": 6,
+            "y": 18
+          },
+          {
+            "g": "B",
+            "model": "Y",
+            "x": 7,
+            "y": 16
+          }
+        ],
+        "xKey": "x",
+        "yKey": "y"
+      }
+    },
+    {
+      "expected": null,
+      "input": {
+        "controlKeys": [
+          "g"
+        ],
+        "id": "insufficient",
+        "rows": [
+          {
+            "g": "A",
+            "x": 1,
+            "y": 1
+          }
+        ],
+        "xKey": "x",
+        "yKey": "y"
+      }
+    }
+  ],
+  "pearsonCases": [
+    {
+      "expected": {
+        "ci95": [
+          0.9999984012504286,
+          0.9999999937451161
+        ],
+        "method": "pearson + fisher-z 正态近似",
+        "n": 5,
+        "pValue": 0,
+        "r": 0.9999999,
+        "significant": true
+      },
+      "input": {
+        "id": "perfect-positive",
+        "options": {},
+        "pairs": [
+          [
+            1,
+            2
+          ],
+          [
+            2,
+            4
+          ],
+          [
+            3,
+            6
+          ],
+          [
+            4,
+            8
+          ],
+          [
+            5,
+            10
+          ]
+        ]
+      }
+    },
+    {
+      "expected": {
+        "ci95": [
+          -0.9999999937451161,
+          -0.9999984012504286
+        ],
+        "method": "pearson + fisher-z 正态近似",
+        "n": 5,
+        "pValue": 0,
+        "r": -0.9999999,
+        "significant": true
+      },
+      "input": {
+        "id": "perfect-negative",
+        "options": {},
+        "pairs": [
+          [
+            1,
+            10
+          ],
+          [
+            2,
+            8
+          ],
+          [
+            3,
+            6
+          ],
+          [
+            4,
+            4
+          ],
+          [
+            5,
+            2
+          ]
+        ]
+      }
+    },
+    {
+      "expected": {
+        "ci95": [
+          -0.22919687541742972,
+          0.38939825271184214
+        ],
+        "method": "pearson + fisher-z 正态近似",
+        "n": 40,
+        "pValue": 0.5887817838507305,
+        "r": 0.08864118557787629,
+        "significant": false
+      },
+      "input": {
+        "id": "weak-noise",
+        "options": {},
+        "pairs": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            2,
+            4
+          ],
+          [
+            3,
+            6
+          ],
+          [
+            4,
+            8
+          ],
+          [
+            5,
+            10
+          ],
+          [
+            6,
+            12
+          ],
+          [
+            7,
+            1
+          ],
+          [
+            8,
+            3
+          ],
+          [
+            9,
+            5
+          ],
+          [
+            10,
+            7
+          ],
+          [
+            11,
+            9
+          ],
+          [
+            12,
+            11
+          ],
+          [
+            13,
+            0
+          ],
+          [
+            14,
+            2
+          ],
+          [
+            15,
+            4
+          ],
+          [
+            16,
+            6
+          ],
+          [
+            17,
+            8
+          ],
+          [
+            18,
+            10
+          ],
+          [
+            19,
+            12
+          ],
+          [
+            20,
+            1
+          ],
+          [
+            21,
+            3
+          ],
+          [
+            22,
+            5
+          ],
+          [
+            23,
+            7
+          ],
+          [
+            24,
+            9
+          ],
+          [
+            25,
+            11
+          ],
+          [
+            26,
+            0
+          ],
+          [
+            27,
+            2
+          ],
+          [
+            28,
+            4
+          ],
+          [
+            29,
+            6
+          ],
+          [
+            30,
+            8
+          ],
+          [
+            31,
+            10
+          ],
+          [
+            32,
+            12
+          ],
+          [
+            33,
+            1
+          ],
+          [
+            34,
+            3
+          ],
+          [
+            35,
+            5
+          ],
+          [
+            36,
+            7
+          ],
+          [
+            37,
+            9
+          ],
+          [
+            38,
+            11
+          ],
+          [
+            39,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "expected": {
+        "ci95": [
+          -0.8822664257168621,
+          0.8822664257168621
+        ],
+        "method": "pearson + fisher-z 正态近似",
+        "n": 5,
+        "pValue": 1.0000000010496173,
+        "r": 0,
+        "significant": false
+      },
+      "input": {
+        "id": "zero-variance",
+        "options": {},
+        "pairs": [
+          [
+            5,
+            1
+          ],
+          [
+            5,
+            2
+          ],
+          [
+            5,
+            3
+          ],
+          [
+            5,
+            4
+          ],
+          [
+            5,
+            5
+          ]
+        ]
+      }
+    },
+    {
+      "expected": {
+        "ci95": null,
+        "method": "pearson + fisher-z 正态近似",
+        "n": 4,
+        "pValue": 1,
+        "r": 0.7071067811865475,
+        "significant": false
+      },
+      "input": {
+        "id": "df-disabled",
+        "options": {
+          "alpha": 0.01,
+          "df": 0
+        },
+        "pairs": [
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            4
+          ],
+          [
+            3,
+            2
+          ],
+          [
+            4,
+            5
+          ]
+        ]
+      }
+    },
+    {
+      "expected": null,
+      "input": {
+        "id": "insufficient",
+        "options": {},
+        "pairs": [
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            2
+          ],
+          [
+            3,
+            3
+          ]
+        ]
+      }
+    }
+  ],
   "rankCase": {
     "expected": {
       "alpha": 0.05,

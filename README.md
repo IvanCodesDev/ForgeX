@@ -198,7 +198,7 @@ Node.js service :8787
 - **契约边界**：`backend/src/ForgeX.Api/openapi/v1.json` 是 API 单一来源，构建前生成 TypeScript DTO、操作路径和路径参数函数；CI 通过源文件 SHA 与生成器复跑阻止前后端契约漂移；
 - **存储**：默认 `Persistence:Provider=file` 写入 `data/`，容器部署可挂载持久化卷；文件作业仓库提供逐条 SHA-256 的版本化备份、全量预检恢复和就绪探针。`backend/database/postgresql/` 已冻结 PostgreSQL v1 迁移、租户/归属键、事件表、幂等唯一约束与 RLS 策略，但本阶段未启用 PostgreSQL 运行时驱动，误配为 `postgresql` 会在启动时明确终止。
 - **可观测性**：C# 输出单行 JSON 请求日志，包含稳定路由模板、状态码、耗时与 trace ID；`/metrics` 提供有界标签的 Prometheus 文本指标，不把具体作业 ID 放入标签。
-- **分析迁移**：Stage 4-A 已把 CSV 归一、Wilson 区间、Fisher 精确检验、带样本量守卫的失败率排名和 KPI 汇总迁入零 NuGet 的 `ForgeX.Analytics`；同一份冻结输入仍由 JS 计算，C# 通过字段级差异报告证明口径一致。React 当前继续显示 JS 报告，尚未提前切换默认权威来源。
+- **分析迁移**：Stage 4-B 已把 CSV 归一、Wilson 区间、Fisher 精确检验、Pearson 相关、组内中心化偏相关、Mann–Kendall 趋势、带样本量守卫的失败率排名和 KPI 汇总迁入零 NuGet 的 `ForgeX.Analytics`；同一份冻结输入仍由 JS 计算，C# 通过字段级差异报告证明口径一致。React 当前继续显示 JS 报告，尚未提前切换默认权威来源。
 
 ### React Stage 2 当前范围
 

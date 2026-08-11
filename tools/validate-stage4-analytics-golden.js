@@ -70,6 +70,122 @@ function createGolden() {
     { a: 10, b: 20, c: 5, d: 25 },
     { a: 0, b: 0, c: 0, d: 0 },
   ];
+  const pearsonInputs = [
+    {
+      id: "perfect-positive",
+      pairs: [
+        [1, 2],
+        [2, 4],
+        [3, 6],
+        [4, 8],
+        [5, 10],
+      ],
+      options: {},
+    },
+    {
+      id: "perfect-negative",
+      pairs: [
+        [1, 10],
+        [2, 8],
+        [3, 6],
+        [4, 4],
+        [5, 2],
+      ],
+      options: {},
+    },
+    {
+      id: "weak-noise",
+      pairs: Array.from({ length: 40 }, (_, index) => [index, (index * 7919) % 13]),
+      options: {},
+    },
+    {
+      id: "zero-variance",
+      pairs: [
+        [5, 1],
+        [5, 2],
+        [5, 3],
+        [5, 4],
+        [5, 5],
+      ],
+      options: {},
+    },
+    {
+      id: "df-disabled",
+      pairs: [
+        [1, 1],
+        [2, 4],
+        [3, 2],
+        [4, 5],
+      ],
+      options: { df: 0, alpha: 0.01 },
+    },
+    {
+      id: "insufficient",
+      pairs: [
+        [1, 1],
+        [2, 2],
+        [3, 3],
+      ],
+      options: {},
+    },
+  ];
+  const simpsonRows = [
+    { g: "A", x: 1, y: 10 },
+    { g: "A", x: 2, y: 9 },
+    { g: "A", x: 3, y: 8 },
+    { g: "B", x: 4, y: 20 },
+    { g: "B", x: 5, y: 19 },
+    { g: "B", x: 6, y: 18 },
+  ];
+  const partialInputs = [
+    {
+      id: "simpson-control",
+      rows: simpsonRows,
+      xKey: "x",
+      yKey: "y",
+      controlKeys: ["g"],
+    },
+    {
+      id: "singleton-and-invalid",
+      rows: simpsonRows.concat([
+        { g: "C", x: 99, y: 99 },
+        { g: "A", x: "bad", y: 12 },
+      ]),
+      xKey: "x",
+      yKey: "y",
+      controlKeys: ["g"],
+    },
+    {
+      id: "two-controls",
+      rows: [
+        { g: "A", model: "X", x: 1, y: 9 },
+        { g: "A", model: "X", x: 2, y: 7 },
+        { g: "A", model: "X", x: 3, y: 5 },
+        { g: "B", model: "Y", x: 5, y: 20 },
+        { g: "B", model: "Y", x: 6, y: 18 },
+        { g: "B", model: "Y", x: 7, y: 16 },
+      ],
+      xKey: "x",
+      yKey: "y",
+      controlKeys: ["g", "model"],
+    },
+    {
+      id: "insufficient",
+      rows: [{ g: "A", x: 1, y: 1 }],
+      xKey: "x",
+      yKey: "y",
+      controlKeys: ["g"],
+    },
+  ];
+  const mannKendallInputs = [
+    { id: "strict-up", series: [1, 2, 3, 4, 5, 6, 7, 8], options: {} },
+    { id: "strict-down", series: [8, 7, 6, 5, 4, 3, 2, 1], options: {} },
+    { id: "all-tied", series: [5, 5, 5, 5, 5, 5], options: {} },
+    { id: "wobble", series: [10, 12, 9, 11, 10, 12, 9, 11, 10, 12], options: {} },
+    { id: "ties-corrected", series: [1, 1, 2, 2, 3, 3, 4, 4], options: {} },
+    { id: "strict-alpha", series: [1, 2, 3, 4, 5, 6], options: { alpha: 0.001 } },
+    { id: "insufficient", series: [1, 2, 3], options: {} },
+  ];
   const rankGroups = [
     { key: "A", k: 15, n: 49 },
     { key: "B", k: 13, n: 45 },
@@ -86,7 +202,7 @@ function createGolden() {
   return {
     format: "forgex-stage4-analytics-golden",
     schemaVersion: 1,
-    baselineVersion: "0.19.0-stage4-a",
+    baselineVersion: "0.19.0-stage4-b",
     tolerance: { numericAbs: 1e-9, numericRel: 1e-9 },
     engine: {
       name: "legacy-js-statistics",
@@ -102,6 +218,18 @@ function createGolden() {
     fisherCases: fisherInputs.map((input) => ({
       input,
       expected: stats.fisherExact(input.a, input.b, input.c, input.d),
+    })),
+    pearsonCases: pearsonInputs.map((input) => ({
+      input,
+      expected: stats.pearson(input.pairs, input.options),
+    })),
+    partialCorrelationCases: partialInputs.map((input) => ({
+      input,
+      expected: stats.partialCorrelation(input.rows, input.xKey, input.yKey, input.controlKeys),
+    })),
+    mannKendallCases: mannKendallInputs.map((input) => ({
+      input,
+      expected: stats.mannKendall(input.series, input.options),
     })),
     rankCase: {
       input: { groups: rankGroups, minSample: 5, alpha: 0.05 },
@@ -140,6 +268,8 @@ if (expectedText !== actualText) {
 }
 process.stdout.write(
   `Stage 4 analytics golden OK: ${current.csvCases.length} CSV + ${current.wilsonCases.length} Wilson + ` +
-    `${current.fisherCases.length} Fisher + 1 ranking + ${current.csvLimitCase.input.rowCount} row limit + ` +
+    `${current.fisherCases.length} Fisher + ${current.pearsonCases.length} Pearson + ` +
+    `${current.partialCorrelationCases.length} partial + ${current.mannKendallCases.length} Mann-Kendall + ` +
+    `1 ranking + ${current.csvLimitCase.input.rowCount} row limit + ` +
     `${current.dataset.expected.rowCount} dataset rows\n`
 );

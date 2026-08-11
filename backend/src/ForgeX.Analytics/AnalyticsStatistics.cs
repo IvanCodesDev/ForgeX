@@ -139,6 +139,208 @@ public static class AnalyticsStatistics
             new FleetRate(totalK, totalN, totalN > 0 ? (double)totalK / totalN : 0));
     }
 
+    public static CorrelationResult? Pearson(
+        IReadOnlyList<NumericPair> pairs,
+        int? degreesOfFreedom = null,
+        double alpha = DefaultAlpha)
+    {
+        var count = pairs.Count;
+        if (count < 4) return null;
+
+        var sumX = 0d;
+        var sumY = 0d;
+        for (var index = 0; index < count; index++)
+        {
+            sumX += pairs[index].X;
+            sumY += pairs[index].Y;
+        }
+
+        var meanX = sumX / count;
+        var meanY = sumY / count;
+        var numerator = 0d;
+        var sumSquaredX = 0d;
+        var sumSquaredY = 0d;
+        for (var index = 0; index < count; index++)
+        {
+            var centeredX = pairs[index].X - meanX;
+            var centeredY = pairs[index].Y - meanY;
+            numerator += centeredX * centeredY;
+            sumSquaredX += centeredX * centeredX;
+            sumSquaredY += centeredY * centeredY;
+        }
+
+        var denominator = Math.Sqrt(sumSquaredX * sumSquaredY);
+        var correlation = denominator < 1e-12 ? 0 : numerator / denominator;
+        correlation = Math.Max(-0.9999999, Math.Min(0.9999999, correlation));
+
+        var df = degreesOfFreedom ?? count - 3;
+        IReadOnlyList<double>? ci95 = null;
+        var pValue = 1d;
+        if (df > 0)
+        {
+            var fisherZ = Math.Atanh(correlation);
+            var standardError = 1 / Math.Sqrt(df);
+            ci95 =
+            [
+                Math.Tanh(fisherZ - 1.959963984540054 * standardError),
+                Math.Tanh(fisherZ + 1.959963984540054 * standardError),
+            ];
+            pValue = 2 * (1 - NormalCdf(Math.Abs(fisherZ) / standardError));
+        }
+
+        return new CorrelationResult(
+            correlation,
+            count,
+            ci95,
+            pValue,
+            ci95 is not null && pValue < alpha,
+            "pearson + fisher-z 正态近似");
+    }
+
+    public static PartialCorrelationResult? PartialCorrelation(
+        IReadOnlyList<PartialCorrelationObservation> observations,
+        IReadOnlyList<string> controlNames)
+    {
+        var buckets = new Dictionary<string, List<NumericPair>>(StringComparer.Ordinal);
+        var keyOrder = new List<string>();
+        foreach (var observation in observations)
+        {
+            if (!double.IsFinite(observation.X) || !double.IsFinite(observation.Y)) continue;
+            if (observation.Controls.Count != controlNames.Count)
+            {
+                throw new ArgumentException(
+                    "Each observation must provide one value for every control name.",
+                    nameof(observations));
+            }
+
+            var key = string.Concat(observation.Controls.Select(static value => "\u0001" + (value ?? "null")));
+            if (!buckets.TryGetValue(key, out var bucket))
+            {
+                bucket = [];
+                buckets.Add(key, bucket);
+                keyOrder.Add(key);
+            }
+            bucket.Add(new NumericPair(observation.X, observation.Y));
+        }
+
+        var residuals = new List<NumericPair>();
+        var groups = 0;
+        var dropped = 0;
+        foreach (var key in keyOrder)
+        {
+            var bucket = buckets[key];
+            if (bucket.Count < 2)
+            {
+                dropped += bucket.Count;
+                continue;
+            }
+
+            groups++;
+            var sumX = 0d;
+            var sumY = 0d;
+            foreach (var pair in bucket)
+            {
+                sumX += pair.X;
+                sumY += pair.Y;
+            }
+            var meanX = sumX / bucket.Count;
+            var meanY = sumY / bucket.Count;
+            foreach (var pair in bucket)
+            {
+                residuals.Add(new NumericPair(pair.X - meanX, pair.Y - meanY));
+            }
+        }
+
+        if (residuals.Count < 4 || groups < 1) return null;
+        var degreesOfFreedom = residuals.Count - groups - 2;
+        if (degreesOfFreedom <= 0) return null;
+        var correlation = Pearson(residuals, degreesOfFreedom);
+        if (correlation is null) return null;
+
+        return new PartialCorrelationResult(
+            correlation.R,
+            correlation.N,
+            correlation.Ci95,
+            correlation.PValue,
+            correlation.Significant,
+            "组内中心化偏相关（控制：" +
+            (controlNames.Count > 0 ? string.Join("、", controlNames) : "无") +
+            "）+ fisher-z 近似",
+            groups,
+            dropped,
+            [.. controlNames]);
+    }
+
+    public static MannKendallResult? MannKendall(
+        IReadOnlyList<double> series,
+        double alpha = DefaultAlpha)
+    {
+        var count = series.Count;
+        if (count < 4) return null;
+        if (series.Any(static value => !double.IsFinite(value)))
+        {
+            throw new ArgumentException("Mann-Kendall input values must be finite.", nameof(series));
+        }
+
+        long statistic = 0;
+        for (var left = 0; left < count - 1; left++)
+        {
+            for (var right = left + 1; right < count; right++)
+            {
+                var difference = series[right] - series[left];
+                statistic += difference > 0 ? 1 : difference < 0 ? -1 : 0;
+            }
+        }
+
+        var counts = new Dictionary<double, int>();
+        foreach (var value in series)
+        {
+            counts[value] = counts.GetValueOrDefault(value) + 1;
+        }
+        long tieTerm = 0;
+        foreach (var tiedCount in counts.Values)
+        {
+            if (tiedCount > 1)
+            {
+                tieTerm += (long)tiedCount * (tiedCount - 1) * (2 * tiedCount + 5);
+            }
+        }
+
+        var variance = ((double)count * (count - 1) * (2 * count + 5) - tieTerm) / 18;
+        if (variance <= 0)
+        {
+            return new MannKendallResult(count, statistic, 0, 0, 1, "flat", false, null);
+        }
+
+        var z = statistic > 0
+            ? (statistic - 1) / Math.Sqrt(variance)
+            : statistic < 0
+                ? (statistic + 1) / Math.Sqrt(variance)
+                : 0;
+        var pValue = 2 * (1 - NormalCdf(Math.Abs(z)));
+        var tau = 2d * statistic / ((double)count * (count - 1));
+        var significant = pValue < alpha;
+        return new MannKendallResult(
+            count,
+            statistic,
+            tau,
+            z,
+            pValue,
+            !significant ? "flat" : statistic > 0 ? "up" : "down",
+            significant,
+            "Mann-Kendall 非参数趋势检验（正态近似 + 并列修正）");
+    }
+
+    private static double NormalCdf(double value)
+    {
+        var t = 1 / (1 + 0.2316419 * Math.Abs(value));
+        var density = 0.3989422804014327 * Math.Exp(-value * value / 2);
+        var probability = density * t *
+            (0.319381530 + t * (-0.356563782 + t *
+                (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+        return value > 0 ? 1 - probability : probability;
+    }
+
     private static double ZFor(double confidence)
     {
         if (confidence >= 0.99) return 2.5758293035489004;
