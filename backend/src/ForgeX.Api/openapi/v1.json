@@ -3,7 +3,7 @@
   "info": {
     "title": "ForgeX Authoritative API",
     "version": "1.0.0",
-    "description": "Deterministic, streaming G-code analysis API. The response contains summary evidence and never returns full toolpaths."
+    "description": "Deterministic G-code and analytics authority API. G-code responses contain summary evidence without full toolpaths; analytics reports preserve auditable local-rule evidence."
   },
   "servers": [
     {
@@ -333,6 +333,46 @@
             "$ref": "#/components/responses/Problem"
           },
           "404": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/reports": {
+      "post": {
+        "operationId": "analyzeAnalyticsReport",
+        "summary": "Recompute a deterministic analytics report for shadow comparison",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyticsReportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "C# deterministic analytics report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsAuthorityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
             "$ref": "#/components/responses/Problem"
           }
         }
@@ -913,6 +953,456 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "AnalyticsRow": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "job_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "machine_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "material": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "layer_height_mm": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "duration_min": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "filament_g": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "cost_fen": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "success",
+              "fail"
+            ]
+          },
+          "fail_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "energy_kwh": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "AnalyticsGenerator": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "version",
+          "seed"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "seed": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
+      "AnalyticsProvenance": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source",
+          "synthetic",
+          "badge",
+          "note",
+          "generator",
+          "datasetKey",
+          "rowCount"
+        ],
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "synthetic": {
+            "type": "boolean"
+          },
+          "badge": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "generator": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsGenerator"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "datasetKey": {
+            "type": "string"
+          },
+          "rowCount": {
+            "type": "integer"
+          }
+        }
+      },
+      "AnalyticsReportRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "question",
+          "rows",
+          "provenance"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "1.0"
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "rows": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 5000,
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsRow"
+            }
+          },
+          "provenance": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsProvenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "AnalyticsAuthorityEngine": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "version"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "const": "forgex-analytics-csharp"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "AnalyticsReportSection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "h",
+          "lines"
+        ],
+        "properties": {
+          "h": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AnalyticsEvidence": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim",
+          "method",
+          "n",
+          "statistic",
+          "ci95",
+          "pValue"
+        ],
+        "properties": {
+          "claim": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "n": {
+            "type": "integer"
+          },
+          "statistic": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "ci95": {
+            "oneOf": [
+              {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "number"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pValue": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "AnalyticsChartItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "label",
+          "value"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          },
+          "hint": {
+            "type": "string"
+          },
+          "weak": {
+            "type": "boolean"
+          },
+          "ciLo": {
+            "type": "number"
+          },
+          "ciHi": {
+            "type": "number"
+          }
+        }
+      },
+      "AnalyticsChart": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "title",
+          "items"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsChartItem"
+            }
+          }
+        }
+      },
+      "AnalyticsHighlight": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "id"
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "AnalyticsReport": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "title",
+          "verdict",
+          "confidence",
+          "sections",
+          "chart",
+          "evidence",
+          "intent",
+          "intentMatched",
+          "rowCount",
+          "engine",
+          "provenance",
+          "highlight"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "title": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string"
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsReportSection"
+            }
+          },
+          "chart": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsChart"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsEvidence"
+            }
+          },
+          "intent": {
+            "type": "string"
+          },
+          "intentMatched": {
+            "type": "boolean"
+          },
+          "rowCount": {
+            "type": "integer"
+          },
+          "engine": {
+            "type": "string",
+            "const": "local-rules"
+          },
+          "provenance": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsProvenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "highlight": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsHighlight"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "AnalyticsAuthorityResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "engine",
+          "report"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "1.0"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/AnalyticsAuthorityEngine"
+          },
+          "report": {
+            "$ref": "#/components/schemas/AnalyticsReport"
           }
         }
       }

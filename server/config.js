@@ -27,6 +27,7 @@ function num(v, dflt) {
 }
 
 const GCODE_AUTHORITY_HARD_MAX_BYTES = 64 * 1024 * 1024;
+const ANALYTICS_AUTHORITY_HARD_MAX_BYTES = 5 * 1024 * 1024;
 
 function normalizeAuthorityOrigin(value, allowRemote) {
   const raw = String(value || "").trim();
@@ -134,6 +135,12 @@ function getConfig(overrides) {
       // Node 与 C# sidecar 的进程间信任边界。浏览器永远不接触该值；
       // 配置后，Node 才会向 C# 注入经过身份解析的匿名化 tenant/owner 上下文。
       gcodeAuthorityInternalSecret: env.GCODE_AUTHORITY_INTERNAL_SECRET || "",
+      // ── C# Analytics 影子计算 ─────────────────
+      // 与 G-code 共用同一 sidecar origin，但使用独立开关、超时和 5 MiB JSON 上限。
+      // 浏览器默认仍走 JS；只有显式 shadow 配置才会调用该路由。
+      analyticsAuthorityEnabled: env.ANALYTICS_AUTHORITY_ENABLED !== "0",
+      analyticsAuthorityTimeoutMs: num(env.ANALYTICS_AUTHORITY_TIMEOUT_MS, 30000),
+      analyticsAuthorityMaxBytes: ANALYTICS_AUTHORITY_HARD_MAX_BYTES,
 
       // 启动时探活 provider，失败自动降级为规则引擎（取代人工 INFINI_VERIFIED 门禁的下一步）
       probeProvider: env.PROBE_PROVIDER !== "0",
@@ -153,6 +160,13 @@ function getConfig(overrides) {
   cfg.gcodeAuthorityMaxBytes = Math.min(
     GCODE_AUTHORITY_HARD_MAX_BYTES,
     Math.max(1, num(cfg.gcodeAuthorityMaxBytes, GCODE_AUTHORITY_HARD_MAX_BYTES))
+  );
+  cfg.analyticsAuthorityEnabled =
+    cfg.analyticsAuthorityEnabled !== false && cfg.analyticsAuthorityEnabled !== "0";
+  cfg.analyticsAuthorityTimeoutMs = Math.max(1, num(cfg.analyticsAuthorityTimeoutMs, 30000));
+  cfg.analyticsAuthorityMaxBytes = Math.min(
+    ANALYTICS_AUTHORITY_HARD_MAX_BYTES,
+    Math.max(1, num(cfg.analyticsAuthorityMaxBytes, ANALYTICS_AUTHORITY_HARD_MAX_BYTES))
   );
 
   /* ── provider 选择 ──────────────────────────
@@ -193,4 +207,4 @@ function getConfig(overrides) {
   return cfg;
 }
 
-module.exports = { getConfig, GCODE_AUTHORITY_HARD_MAX_BYTES };
+module.exports = { getConfig, GCODE_AUTHORITY_HARD_MAX_BYTES, ANALYTICS_AUTHORITY_HARD_MAX_BYTES };

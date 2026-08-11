@@ -7,7 +7,8 @@ function env(
   profileSelector?: "0" | "1",
   analytics?: "0" | "1",
   governance?: "0" | "1",
-  simulator?: "0" | "1"
+  simulator?: "0" | "1",
+  analyticsAuthority?: "browser" | "shadow"
 ): ImportMetaEnv {
   return {
     BASE_URL: "/",
@@ -21,6 +22,7 @@ function env(
     ...(analytics === undefined ? {} : { VITE_REACT_ANALYTICS_ENABLED: analytics }),
     ...(governance === undefined ? {} : { VITE_REACT_GOVERNANCE_ENABLED: governance }),
     ...(simulator === undefined ? {} : { VITE_REACT_SIMULATOR_ENABLED: simulator }),
+    ...(analyticsAuthority === undefined ? {} : { VITE_ANALYTICS_AUTHORITY: analyticsAuthority }),
   };
 }
 
@@ -31,6 +33,7 @@ describe("readFeatureFlags", () => {
     expect(readFeatureFlags(env()).machineLogReact).toBe(true);
     expect(readFeatureFlags(env()).profileSelectorReact).toBe(true);
     expect(readFeatureFlags(env()).analyticsReact).toBe(true);
+    expect(readFeatureFlags(env()).analyticsAuthority).toBe("browser");
     expect(readFeatureFlags(env()).governanceReact).toBe(true);
   });
 
@@ -68,5 +71,9 @@ describe("readFeatureFlags", () => {
     expect(flags.gcodeReact).toBe(true);
     expect(flags.governanceReact).toBe(true);
     expect(flags.simulatorReact).toBe(false);
+  });
+
+  it("enables analytics shadow authority only when explicitly selected", () => {
+    expect(readFeatureFlags(env("1", "1", "1", "1", "1", "1", "shadow")).analyticsAuthority).toBe("shadow");
   });
 });

@@ -7,7 +7,7 @@ return await AnalyticsGateProgram.RunAsync(CancellationToken.None);
 
 internal static class AnalyticsGateProgram
 {
-    private const string EngineVersion = "forgex-analytics-csharp/1.1.0";
+    private const string EngineVersion = "forgex-analytics-csharp/1.3.0";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -32,6 +32,7 @@ internal static class AnalyticsGateProgram
             CompareCsvCases(golden, fields, absTolerance, relTolerance);
             CompareStatistics(golden, fields, absTolerance, relTolerance);
             await CompareDatasetAsync(root, golden, fields, absTolerance, relTolerance, cancellationToken);
+            await CompareReportsAsync(root, golden, fields, absTolerance, relTolerance, cancellationToken);
 
             var passed = fields.Count(static field => field.Pass);
             var report = new AnalyticsGateReport(
@@ -344,6 +345,54 @@ internal static class AnalyticsGateProgram
             fields,
             absTolerance,
             relTolerance);
+    }
+
+    private static async Task CompareReportsAsync(
+        string root,
+        JsonObject golden,
+        List<FieldDiff> fields,
+        double absTolerance,
+        double relTolerance,
+        CancellationToken cancellationToken)
+    {
+        foreach (var caseNode in RequiredArray(golden, "reportCases"))
+        {
+            var item = caseNode!.AsObject();
+            var input = item["input"]!.AsObject();
+            string csv;
+            if (input["datasetPath"] is JsonValue datasetPathValue &&
+                datasetPathValue.TryGetValue<string>(out var relativePath))
+            {
+                var fullPath = Path.GetFullPath(Path.Combine(root, relativePath));
+                if (!fullPath.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidDataException("Report dataset path escapes repository root.");
+                }
+                csv = await File.ReadAllTextAsync(fullPath, cancellationToken);
+            }
+            else
+            {
+                csv = RequiredString(input, "csv");
+            }
+
+            var parsed = AnalyticsCsvParser.Parse(csv);
+            if (parsed.Rows.Count == 0)
+            {
+                throw new InvalidDataException($"Report case {RequiredString(item, "id")} has no valid rows.");
+            }
+            var provenance = input["provenance"]?.Deserialize<AnalyticsProvenance>(JsonOptions);
+            var report = AnalyticsReportEngine.AnalyzeMigratedIntent(
+                RequiredString(input, "question"),
+                parsed.Rows,
+                provenance);
+            CompareNode(
+                $"report/{RequiredString(item, "id")}",
+                item["expected"],
+                JsonSerializer.SerializeToNode(report, JsonOptions),
+                fields,
+                absTolerance,
+                relTolerance);
+        }
     }
 
     private static void CompareNode(

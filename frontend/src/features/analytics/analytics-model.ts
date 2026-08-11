@@ -86,7 +86,7 @@ export async function importAnalyticsCsv(file: AnalyticsCsvFile): Promise<Analyt
     id,
     label: file.name || "本地 CSV",
     kind: "user-upload",
-    description: "仅在当前浏览器会话内解析；未向网络发送文件内容。",
+    description: "在当前浏览器会话内解析；browser 模式不联网，显式 shadow 模式会发送归一化数据行用于 C# 等价比对。",
     rows: parsed.rows,
     provenance: uploadProvenance(parsed.rows.length, id),
     warnings: parsed.errors,

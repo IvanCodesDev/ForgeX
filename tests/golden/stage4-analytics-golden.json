@@ -1,5 +1,5 @@
 {
-  "baselineVersion": "0.19.0-stage4-b",
+  "baselineVersion": "0.19.0-stage4-d",
   "csvCases": [
     {
       "expected": {
@@ -1035,6 +1035,1081 @@
       "minSample": 5
     }
   },
+  "reportCases": [
+    {
+      "expected": {
+        "chart": {
+          "items": [
+            {
+              "ciHi": 0.44527893558910636,
+              "ciLo": 0.19515491268006566,
+              "hint": "15/49 失败 · 95%CI 19.5%–44.5%",
+              "label": "FX-256-01",
+              "value": 0.30612244897959184,
+              "weak": false
+            },
+            {
+              "ciHi": 0.4336854057476158,
+              "ciLo": 0.17730082482849266,
+              "hint": "13/45 失败 · 95%CI 17.7%–43.4%",
+              "label": "FX-220-01",
+              "value": 0.28888888888888886,
+              "weak": false
+            },
+            {
+              "ciHi": 0.395806644106185,
+              "ciLo": 0.16437353918463654,
+              "hint": "14/53 失败 · 95%CI 16.4%–39.6%",
+              "label": "FX-256-04",
+              "value": 0.2641509433962264,
+              "weak": false
+            },
+            {
+              "ciHi": 0.3317125892298462,
+              "ciLo": 0.10650610134398542,
+              "hint": "9/46 失败 · 95%CI 10.7%–33.2%",
+              "label": "FX-220-02",
+              "value": 0.1956521739130435,
+              "weak": false
+            },
+            {
+              "ciHi": 0.22594269343738355,
+              "ciLo": 0.04630478218108157,
+              "hint": "5/47 失败 · 95%CI 4.6%–22.6%",
+              "label": "FX-500-01",
+              "value": 0.10638297872340426,
+              "weak": false
+            },
+            {
+              "ciHi": 0.21756361549195896,
+              "ciLo": 0.044379546744762646,
+              "hint": "5/49 失败 · 95%CI 4.4%–21.8%",
+              "label": "FX-Δ260-01",
+              "value": 0.10204081632653061,
+              "weak": false
+            },
+            {
+              "ciHi": 0.19931537786964587,
+              "ciLo": 0.03359412345792552,
+              "hint": "4/47 失败 · 95%CI 3.4%–19.9%",
+              "label": "FX-256-02",
+              "value": 0.0851063829787234,
+              "weak": false
+            },
+            {
+              "ciHi": 0.17019537354162906,
+              "ciLo": 0.03383117690855046,
+              "hint": "5/64 失败 · 95%CI 3.4%–17.0%",
+              "label": "FX-256-03",
+              "value": 0.078125,
+              "weak": false
+            }
+          ],
+          "kind": "bar-rate",
+          "title": "机台故障率（误差线为 95%CI）"
+        },
+        "confidence": "high",
+        "engine": "local-rules",
+        "evidence": [
+          {
+            "ci95": [
+              0.19515491268006566,
+              0.44527893558910636
+            ],
+            "claim": "FX-256-01 的失败率显著高于其余机台",
+            "method": "Fisher 精确检验（2×2，双侧）",
+            "n": 400,
+            "pValue": 0.015166901397336792,
+            "statistic": 2.374331550802139
+          },
+          {
+            "ci95": [
+              0.6211801716767764,
+              0.9626387408969346
+            ],
+            "claim": "「断料」是 FX-256-01 的主导故障类型",
+            "method": "Wilson 置信区间下界 > 40%",
+            "n": 15,
+            "pValue": null,
+            "statistic": null
+          }
+        ],
+        "highlight": {
+          "id": "FX-256-01",
+          "type": "machine"
+        },
+        "intent": "machine_fault",
+        "intentMatched": true,
+        "provenance": null,
+        "rowCount": 400,
+        "schemaVersion": 1,
+        "sections": [
+          {
+            "h": "失败率排行（含 95% 置信区间）",
+            "lines": [
+              "1. FX-256-01：30.6%（95%CI 19.5–44.5%），n=49　← 显著高于其余机台（p=0.015）",
+              "2. FX-220-01：28.9%（95%CI 17.7–43.4%），n=45　← 显著高于其余机台（p=0.039）",
+              "3. FX-256-04：26.4%（95%CI 16.4–39.6%），n=53",
+              "4. FX-220-02：19.6%（95%CI 10.7–33.2%），n=46",
+              "5. FX-500-01：10.6%（95%CI 4.6–22.6%），n=47",
+              "6. FX-Δ260-01：10.2%（95%CI 4.4–21.8%），n=49",
+              "7. FX-256-02：8.5%（95%CI 3.4–19.9%），n=47",
+              "8. FX-256-03：7.8%（95%CI 3.4–17.0%），n=64　← 显著高于其余机台（p=0.030）"
+            ]
+          },
+          {
+            "h": "故障归因（FX-256-01，n=49）",
+            "lines": [
+              "断料 × 13（占该机台失败 86.7%（95%CI 62.1–96.3%））",
+              "悬垂塌陷 × 1（占该机台失败 6.7%（95%CI 1.2–29.8%））",
+              "堵料 × 1（占该机台失败 6.7%（95%CI 1.2–29.8%））"
+            ]
+          },
+          {
+            "h": "建议",
+            "lines": [
+              "FX-256-01 的失败率 30.6%（95%CI 19.5–44.5%） 显著高于其余机台合计 15.7%（55/351），Fisher 精确检验 p=0.015，优势比 2.37。",
+              "「断料」占该机台失败的 86.7%（95%CI 62.1–96.3%），区间下界已超 40%，可判定为主因。指向送料链路：检查挤出齿轮咬合与磨损、料架阻力，以及料盘余量是否长期偏低。"
+            ]
+          }
+        ],
+        "title": "机台故障率排行",
+        "verdict": "FX-256-01 故障率最高且显著高于其余机台：30.6%（95%CI 19.5–44.5%）（15/49，p=0.015），主要故障：断料 × 13"
+      },
+      "id": "farm-machine-fault-report",
+      "input": {
+        "datasetPath": "datasets/print_farm_400.csv",
+        "provenance": null,
+        "question": "哪台机台故障率最高，需要优先保养？"
+      }
+    },
+    {
+      "expected": {
+        "chart": {
+          "items": [
+            {
+              "ciHi": 0.5672950690998263,
+              "ciLo": 0.30023319078881594,
+              "hint": "21/49 失败 · 95%CI 30.0%–56.7% · 良品均本 ¥1.28",
+              "label": "ABS",
+              "value": 0.42857142857142855,
+              "weak": false
+            },
+            {
+              "ciHi": 0.282132116226582,
+              "ciLo": 0.09877742301244645,
+              "hint": "11/64 失败 · 95%CI 9.9%–28.2% · 良品均本 ¥2.09",
+              "label": "TPU",
+              "value": 0.171875,
+              "weak": false
+            },
+            {
+              "ciHi": 0.22145113087705984,
+              "ciLo": 0.10173687918594745,
+              "hint": "21/138 失败 · 95%CI 10.2%–22.1% · 良品均本 ¥0.94",
+              "label": "PLA",
+              "value": 0.15217391304347827,
+              "weak": false
+            },
+            {
+              "ciHi": 0.17512049297428978,
+              "ciLo": 0.07246585638846925,
+              "hint": "17/149 失败 · 95%CI 7.2%–17.5% · 良品均本 ¥1.24",
+              "label": "PETG",
+              "value": 0.11409395973154363,
+              "weak": false
+            }
+          ],
+          "kind": "bar-rate",
+          "title": "各材料失败率（误差线为 95%CI）"
+        },
+        "confidence": "high",
+        "engine": "local-rules",
+        "evidence": [
+          {
+            "ci95": null,
+            "claim": "ABS 的失败率显著高于 TPU",
+            "method": "Fisher 精确检验（2×2，双侧）",
+            "n": 113,
+            "pValue": 0.0033354483345986573,
+            "statistic": 3.6136363636363638
+          },
+          {
+            "ci95": null,
+            "claim": "ABS 的失败率显著高于 PLA",
+            "method": "Fisher 精确检验（2×2，双侧）",
+            "n": 187,
+            "pValue": 0.0002265589598243204,
+            "statistic": 4.178571428571429
+          },
+          {
+            "ci95": null,
+            "claim": "ABS 的失败率显著高于 PETG",
+            "method": "Fisher 精确检验（2×2，双侧）",
+            "n": 198,
+            "pValue": 0.000005530939016401898,
+            "statistic": 5.823529411764706
+          },
+          {
+            "ci95": [
+              0.30023319078881594,
+              0.5672950690998263
+            ],
+            "claim": "ABS 的失败率显著高于其余材料",
+            "method": "Fisher 精确检验（2×2，双侧）",
+            "n": 400,
+            "pValue": 0.000006617592241973574,
+            "statistic": 4.622448979591836
+          }
+        ],
+        "intent": "material_cmp",
+        "intentMatched": true,
+        "provenance": null,
+        "rowCount": 400,
+        "schemaVersion": 1,
+        "sections": [
+          {
+            "h": "各材料表现（含 95% 置信区间）",
+            "lines": [
+              "1. ABS：失败率 42.9%（95%CI 30.0–56.7%），n=49，良品均本 ¥1.28　← 显著高于其余材料（p<0.0001）",
+              "2. TPU：失败率 17.2%（95%CI 9.9–28.2%），n=64，良品均本 ¥2.09",
+              "3. PLA：失败率 15.2%（95%CI 10.2–22.1%），n=138，良品均本 ¥0.94",
+              "4. PETG：失败率 11.4%（95%CI 7.2–17.5%），n=149，良品均本 ¥1.24　← 显著高于其余材料（p=0.014）"
+            ]
+          },
+          {
+            "h": "两两对比（仅列统计显著的差异）",
+            "lines": [
+              "ABS vs TPU：42.9% vs 17.2%，差 25.7 个百分点（p=0.0033，优势比 3.61）",
+              "ABS vs PLA：42.9% vs 15.2%，差 27.6 个百分点（p<0.001，优势比 4.18）",
+              "ABS vs PETG：42.9% vs 11.4%，差 31.4 个百分点（p<0.0001，优势比 5.82）"
+            ]
+          },
+          {
+            "h": "失败率最高的模型「传感器支架」上的分材料表现（n=145）",
+            "lines": [
+              "ABS：60.9%（95%CI 40.8–77.8%），n=23",
+              "TPU：26.1%（95%CI 12.5–46.5%），n=23",
+              "PLA：24.4%（95%CI 14.2–38.7%），n=45",
+              "PETG：24.1%（95%CI 14.6–36.9%），n=54"
+            ]
+          },
+          {
+            "h": "建议",
+            "lines": [
+              "ABS 的失败率 42.9%（95%CI 30.0–56.7%） 显著高于其余材料合计 14.0%（p<0.0001）：优先核查该材料的温度窗口、床温下限与环境条件（高收缩材料对腔体与风扰尤其敏感）。"
+            ]
+          }
+        ],
+        "title": "材料失败率对比",
+        "verdict": "失败率最高的材料是 ABS：42.9%（95%CI 30.0–56.7%）（n=49），显著高于其余材料（p<0.0001）"
+      },
+      "id": "farm-material-comparison-report",
+      "input": {
+        "datasetPath": "datasets/print_farm_400.csv",
+        "provenance": null,
+        "question": "PLA、PETG、ABS、TPU 材料失败率对比差多少？"
+      }
+    },
+    {
+      "expected": {
+        "chart": {
+          "items": [
+            {
+              "hint": "平均 55 分钟 · n=72",
+              "label": "0.12mm",
+              "value": 55,
+              "weak": false
+            },
+            {
+              "hint": "平均 33 分钟 · n=200",
+              "label": "0.20mm",
+              "value": 33,
+              "weak": false
+            },
+            {
+              "hint": "平均 25 分钟 · n=58",
+              "label": "0.28mm",
+              "value": 25,
+              "weak": false
+            }
+          ],
+          "kind": "bar-value",
+          "title": "各层高平均时长（分钟）"
+        },
+        "confidence": "low",
+        "engine": "local-rules",
+        "evidence": [
+          {
+            "ci95": [
+              -0.6045682025484634,
+              -0.4490768360142724
+            ],
+            "claim": "层高与时长的粗相关",
+            "method": "Pearson + Fisher-z 正态近似",
+            "n": 330,
+            "pValue": 0,
+            "statistic": -0.5312819515461771
+          },
+          {
+            "ci95": [
+              -0.8647284817031076,
+              -0.7973449176500302
+            ],
+            "claim": "层高与时长的偏相关（控制材料与模型）",
+            "method": "组内中心化偏相关（控制：material、model_name）+ fisher-z 近似",
+            "n": 330,
+            "pValue": 0,
+            "statistic": -0.8341227545194032
+          }
+        ],
+        "intent": "corr_layer",
+        "intentMatched": true,
+        "provenance": null,
+        "rowCount": 400,
+        "schemaVersion": 1,
+        "sections": [
+          {
+            "h": "分层高统计（成功任务）",
+            "lines": [
+              "0.12mm：平均时长 55 分钟，n=72",
+              "0.20mm：平均时长 33 分钟，n=200",
+              "0.28mm：平均时长 25 分钟，n=58"
+            ]
+          },
+          {
+            "h": "相关性（两个口径对照）",
+            "lines": [
+              "未控制混杂：r=-0.531（中等负相关，n=330，95%CI -0.605–-0.449，p<0.0001）",
+              "控制材料与模型后：r=-0.834（强负相关，有效样本 330，12 个「材料×模型」组，95%CI -0.865–-0.797，p<0.0001）",
+              "两者相差 0.30——说明粗相关里有相当一部分来自材料/模型差异，应以偏相关为准。"
+            ]
+          },
+          {
+            "h": "读数说明",
+            "lines": [
+              "相关不等于因果：以上只描述数据中的共变关系，不能推断「调大层高就会更快」。",
+              "要验证因果，需要固定其他参数只改层高的对照实验。",
+              "偏相关口径：按「材料×模型」组内中心化后求相关，自由度已扣除组数。"
+            ]
+          }
+        ],
+        "title": "层高与打印时长关系",
+        "verdict": "控制材料与模型后，层高与打印时长 r=-0.83（强负相关，n=330，p<0.0001）；未控制时为 r=-0.53，两者差异说明混杂因素的影响程度"
+      },
+      "id": "farm-correlation-report",
+      "input": {
+        "datasetPath": "datasets/print_farm_400.csv",
+        "provenance": null,
+        "question": "层高与打印时长的相关性如何？"
+      }
+    },
+    {
+      "expected": {
+        "chart": {
+          "items": [
+            {
+              "hint": "23 次",
+              "label": "堵料",
+              "value": 23
+            },
+            {
+              "hint": "19 次",
+              "label": "断料",
+              "value": 19
+            },
+            {
+              "hint": "16 次",
+              "label": "悬垂塌陷",
+              "value": 16
+            },
+            {
+              "hint": "8 次",
+              "label": "热失控",
+              "value": 8
+            },
+            {
+              "hint": "4 次",
+              "label": "翘边",
+              "value": 4
+            }
+          ],
+          "kind": "bar-value",
+          "title": "故障类型次数"
+        },
+        "confidence": "high",
+        "engine": "local-rules",
+        "evidence": [
+          {
+            "ci95": [
+              0.19515491268006566,
+              0.44527893558910636
+            ],
+            "claim": "FX-256-01 的失败率显著高于其余机台",
+            "method": "Fisher 精确检验（2×2，双侧）",
+            "n": 400,
+            "pValue": 0.015166901397336792,
+            "statistic": null
+          }
+        ],
+        "highlight": {
+          "id": "FX-256-01",
+          "type": "machine"
+        },
+        "intent": "fail_root",
+        "intentMatched": true,
+        "provenance": null,
+        "rowCount": 400,
+        "schemaVersion": 1,
+        "sections": [
+          {
+            "h": "故障类型分布",
+            "lines": [
+              "堵料：23 次（占失败 32.9%（95%CI 23.0–44.5%））",
+              "断料：19 次（占失败 27.1%（95%CI 18.1–38.5%））",
+              "悬垂塌陷：16 次（占失败 22.9%（95%CI 14.6–34.0%））",
+              "热失控：8 次（占失败 11.4%（95%CI 5.9–21.0%））",
+              "翘边：4 次（占失败 5.7%（95%CI 2.2–13.8%））"
+            ]
+          },
+          {
+            "h": "共性交叉（次数 vs 比率）",
+            "lines": [
+              "失败「次数」最多：FX-256-01（15 次）—— 但它的失败「率」是 30.6%（95%CI 19.5–44.5%）（n=49）",
+              "失败「率」最高且显著：FX-256-01（30.6%（95%CI 19.5–44.5%），n=49，p=0.015）—— 这台才是该优先保养的",
+              "失败次数最多的模型：传感器支架（44 次，失败率 30.3%（95%CI 23.4–38.3%），n=145）"
+            ]
+          },
+          {
+            "h": "针对性处置",
+            "lines": [
+              "堵料（占 32.9%（95%CI 23.0–44.5%））：指向热端：检查积碳与内壁粗糙度，核对喷嘴温度是否低于材料推荐值、体积流量是否超出材料上限。"
+            ]
+          }
+        ],
+        "title": "失败批次归因",
+        "verdict": "TOP 故障：堵料（23 次，占失败 32.9%（95%CI 23.0–44.5%））；FX-256-01 的失败率显著高于其余机台（p=0.015），应优先保养"
+      },
+      "id": "farm-failure-root-report",
+      "input": {
+        "datasetPath": "datasets/print_farm_400.csv",
+        "provenance": null,
+        "question": "失败批次有什么共性，主要原因如何归因？"
+      }
+    },
+    {
+      "expected": {
+        "chart": {
+          "items": [
+            {
+              "hint": "145 件 · 失败率 30.3%",
+              "label": "传感器支架",
+              "value": 145
+            },
+            {
+              "hint": "132 件 · 失败率 12.9%",
+              "label": "行星齿轮",
+              "value": 132
+            },
+            {
+              "hint": "123 件 · 失败率 7.3%",
+              "label": "涡轮叶轮",
+              "value": 123
+            }
+          ],
+          "kind": "bar-value",
+          "title": "分模型任务量"
+        },
+        "confidence": "high",
+        "engine": "local-rules",
+        "evidence": [],
+        "highlight": {
+          "id": "FX-256-01",
+          "type": "machine"
+        },
+        "intent": "overview",
+        "intentMatched": false,
+        "provenance": null,
+        "rowCount": 400,
+        "schemaVersion": 1,
+        "sections": [
+          {
+            "h": "没有匹配到分析维度",
+            "lines": [
+              "本引擎是规则引擎（非 AI），只能回答下列维度的问题：",
+              "· 机台故障率排行与归因",
+              "· 材料失败率对比",
+              "· 层高与打印时长的关系",
+              "· 成本趋势与拆解",
+              "· 失败批次归因",
+              "以下是数据集的总体情况，供参考。"
+            ]
+          },
+          {
+            "h": "分模型产量",
+            "lines": [
+              "传感器支架：145 件，失败率 30.3%",
+              "行星齿轮：132 件，失败率 12.9%",
+              "涡轮叶轮：123 件，失败率 7.3%"
+            ]
+          },
+          {
+            "h": "可以这样问",
+            "lines": [
+              "· 机台故障率排行与归因",
+              "· 材料失败率对比",
+              "· 层高与打印时长的关系",
+              "· 成本趋势与拆解",
+              "· 失败批次归因"
+            ]
+          }
+        ],
+        "title": "未识别的问题 · 生产概览",
+        "verdict": "未能识别问题对应的分析维度，以下为总体概览：共 400 个任务（2026-06-29 → 2026-07-19（21 天）），良率 82.5%，良品平均成本 ¥1.27；失败率最高 FX-256-01（30.6%，n=49）"
+      },
+      "id": "farm-overview-unmatched-report",
+      "input": {
+        "datasetPath": "datasets/print_farm_400.csv",
+        "provenance": null,
+        "question": "请总结一下当前情况"
+      }
+    },
+    {
+      "expected": {
+        "chart": {
+          "items": [
+            {
+              "hint": "2026-06-29 · ¥25.84 · 24 件",
+              "label": "06-29",
+              "value": 25.84
+            },
+            {
+              "hint": "2026-06-30 · ¥11.19 · 13 件",
+              "label": "06-30",
+              "value": 11.19
+            },
+            {
+              "hint": "2026-07-01 · ¥24.61 · 23 件",
+              "label": "07-01",
+              "value": 24.61
+            },
+            {
+              "hint": "2026-07-02 · ¥27.09 · 24 件",
+              "label": "07-02",
+              "value": 27.09
+            },
+            {
+              "hint": "2026-07-03 · ¥14.58 · 16 件",
+              "label": "07-03",
+              "value": 14.58
+            },
+            {
+              "hint": "2026-07-04 · ¥13.55 · 17 件",
+              "label": "07-04",
+              "value": 13.55
+            },
+            {
+              "hint": "2026-07-05 · ¥18.93 · 16 件",
+              "label": "07-05",
+              "value": 18.93
+            },
+            {
+              "hint": "2026-07-06 · ¥20.95 · 18 件",
+              "label": "07-06",
+              "value": 20.95
+            },
+            {
+              "hint": "2026-07-07 · ¥25.03 · 22 件",
+              "label": "07-07",
+              "value": 25.03
+            },
+            {
+              "hint": "2026-07-08 · ¥26.49 · 27 件",
+              "label": "07-08",
+              "value": 26.49
+            },
+            {
+              "hint": "2026-07-09 · ¥27.12 · 26 件",
+              "label": "07-09",
+              "value": 27.12
+            },
+            {
+              "hint": "2026-07-10 · ¥22.03 · 19 件",
+              "label": "07-10",
+              "value": 22.03
+            },
+            {
+              "hint": "2026-07-11 · ¥16.89 · 17 件",
+              "label": "07-11",
+              "value": 16.89
+            },
+            {
+              "hint": "2026-07-12 · ¥13.48 · 13 件",
+              "label": "07-12",
+              "value": 13.48
+            },
+            {
+              "hint": "2026-07-13 · ¥16.29 · 17 件",
+              "label": "07-13",
+              "value": 16.29
+            },
+            {
+              "hint": "2026-07-14 · ¥12.69 · 12 件",
+              "label": "07-14",
+              "value": 12.69
+            },
+            {
+              "hint": "2026-07-15 · ¥15.35 · 16 件",
+              "label": "07-15",
+              "value": 15.35
+            },
+            {
+              "hint": "2026-07-16 · ¥22.81 · 19 件",
+              "label": "07-16",
+              "value": 22.81
+            },
+            {
+              "hint": "2026-07-17 · ¥20.13 · 19 件",
+              "label": "07-17",
+              "value": 20.13
+            },
+            {
+              "hint": "2026-07-18 · ¥19.23 · 15 件",
+              "label": "07-18",
+              "value": 19.23
+            },
+            {
+              "hint": "2026-07-19 · ¥25.96 · 27 件",
+              "label": "07-19",
+              "value": 25.96
+            }
+          ],
+          "kind": "line",
+          "title": "每日成本（元）"
+        },
+        "confidence": "low",
+        "engine": "local-rules",
+        "evidence": [
+          {
+            "ci95": null,
+            "claim": "每日成本无显著趋势",
+            "method": "Mann-Kendall 非参数趋势检验（正态近似 + 并列修正）",
+            "n": 21,
+            "pValue": 0.879987818000241,
+            "statistic": -0.02857142857142857
+          }
+        ],
+        "intent": "cost_trend",
+        "intentMatched": true,
+        "provenance": null,
+        "rowCount": 400,
+        "schemaVersion": 1,
+        "sections": [
+          {
+            "h": "趋势检验",
+            "lines": [
+              "每日成本：无显著趋势（Mann-Kendall τ=-0.029，p=0.880，21 个日期点）",
+              "日间波动尚不能判定为趋势——不要据此推断成本正在变化。"
+            ]
+          },
+          {
+            "h": "成本拆解",
+            "lines": [
+              "耗材成本 ≈ ¥363.37（占 86.5%）",
+              "能耗 + 机时折旧 ≈ ¥56.87",
+              "失败损耗 ¥19.45（占总成本 4.6%；失败率 17.5%（95%CI 14.1–21.5%））"
+            ]
+          },
+          {
+            "h": "建议",
+            "lines": [
+              "失败损耗占总成本 4.6%。失败率的 95% 区间是 14.1%–21.5%，即便只压到区间下界也约可节省 ¥3.79。",
+              "以上金额按下方口径换算；换成你自己的采购价与电价后结论可能变化。"
+            ]
+          },
+          {
+            "h": "计价口径",
+            "lines": [
+              "中国大陆零售参考价（2026Q3）（cn-retail-2026q3）",
+              "材料 PLA ¥69/kg、PETG ¥89/kg、ABS ¥79/kg、TPU ¥159/kg",
+              "电价 ¥0.60/kWh · 机时折旧 ¥0.12/h",
+              "出处：主流电商耗材零售均价 + 民用商业电价的量级估算，非权威数据；请按自己的采购成本替换"
+            ]
+          }
+        ],
+        "title": "成本趋势与拆解",
+        "verdict": "期间（2026-06-29 → 2026-07-19（21 天））总成本 ¥420.24，良品平均单件 ¥1.27，失败损耗 ¥19.45（占 4.6%）；每日成本无显著趋势（p=0.880）"
+      },
+      "id": "farm-cost-trend-report",
+      "input": {
+        "datasetPath": "datasets/print_farm_400.csv",
+        "provenance": null,
+        "question": "本月单件成本与耗材成本趋势如何？"
+      }
+    },
+    {
+      "expected": {
+        "chart": {
+          "items": [
+            {
+              "hint": "平均 10 分钟 · n=1（样本不足）",
+              "label": "0.20mm",
+              "value": 10,
+              "weak": true
+            },
+            {
+              "hint": "平均 9 分钟 · n=1（样本不足）",
+              "label": "0.24mm",
+              "value": 9,
+              "weak": true
+            },
+            {
+              "hint": "平均 8 分钟 · n=1（样本不足）",
+              "label": "0.28mm",
+              "value": 8,
+              "weak": true
+            }
+          ],
+          "kind": "bar-value",
+          "title": "各层高平均时长（分钟）"
+        },
+        "confidence": "insufficient-data",
+        "engine": "local-rules",
+        "evidence": [],
+        "intent": "corr_layer",
+        "intentMatched": true,
+        "provenance": null,
+        "rowCount": 3,
+        "schemaVersion": 1,
+        "sections": [
+          {
+            "h": "分层高统计（成功任务）",
+            "lines": [
+              "0.20mm：平均时长 10 分钟，n=1　← 样本不足",
+              "0.24mm：平均时长 9 分钟，n=1　← 样本不足",
+              "0.28mm：平均时长 8 分钟，n=1　← 样本不足"
+            ]
+          }
+        ],
+        "title": "层高与打印时长关系",
+        "verdict": "有效成功样本仅 3 条（需 ≥4），无法计算相关性"
+      },
+      "id": "correlation-insufficient-report",
+      "input": {
+        "csv": "date,machine_id,model_name,material,layer_height_mm,duration_min,filament_g,cost_fen,status,energy_kwh\n2026-08-01,M-1,齿轮,PLA,0.20,10,2,20,success,0.1\n2026-08-02,M-1,齿轮,PLA,0.24,9,2,20,success,0.1\n2026-08-03,M-1,齿轮,PLA,0.28,8,2,20,success,0.1\n",
+        "provenance": null,
+        "question": "层高和时长关系"
+      }
+    },
+    {
+      "expected": {
+        "chart": {
+          "items": [
+            {
+              "hint": "2026-08-01 · ¥0.20 · 1 件",
+              "label": "08-01",
+              "value": 0.2
+            },
+            {
+              "hint": "2026-08-02 · ¥0.30 · 1 件",
+              "label": "08-02",
+              "value": 0.3
+            },
+            {
+              "hint": "2026-08-03 · ¥0.25 · 1 件",
+              "label": "08-03",
+              "value": 0.25
+            }
+          ],
+          "kind": "line",
+          "title": "每日成本（元）"
+        },
+        "confidence": "low",
+        "engine": "local-rules",
+        "evidence": [],
+        "intent": "cost_trend",
+        "intentMatched": true,
+        "provenance": null,
+        "rowCount": 3,
+        "schemaVersion": 1,
+        "sections": [
+          {
+            "h": "趋势检验",
+            "lines": [
+              "日期点少于 4 个，无法做趋势检验。"
+            ]
+          },
+          {
+            "h": "成本拆解",
+            "lines": [
+              "耗材成本 ≈ ¥0.47（占 63.2%）",
+              "能耗 + 机时折旧 ≈ ¥0.28",
+              "失败损耗 ¥0.00（占总成本 0.0%；失败率 0.0%（95%CI 0.0–56.1%））"
+            ]
+          },
+          {
+            "h": "建议",
+            "lines": [
+              "本期无失败损耗。",
+              "以上金额按下方口径换算；换成你自己的采购价与电价后结论可能变化。"
+            ]
+          },
+          {
+            "h": "计价口径",
+            "lines": [
+              "中国大陆零售参考价（2026Q3）（cn-retail-2026q3）",
+              "材料 PLA ¥69/kg、PETG ¥89/kg、ABS ¥79/kg、TPU ¥159/kg",
+              "电价 ¥0.60/kWh · 机时折旧 ¥0.12/h",
+              "出处：主流电商耗材零售均价 + 民用商业电价的量级估算，非权威数据；请按自己的采购成本替换"
+            ]
+          }
+        ],
+        "title": "成本趋势与拆解",
+        "verdict": "期间（2026-08-01 → 2026-08-03（3 天））总成本 ¥0.75，良品平均单件 ¥0.25，失败损耗 ¥0.00（占 0.0%）"
+      },
+      "id": "cost-short-range-report",
+      "input": {
+        "csv": "date,machine_id,model_name,material,layer_height_mm,duration_min,filament_g,cost_fen,status,energy_kwh\n2026-08-01,M-1,齿轮,PLA,0.20,10,2,20,success,0.1\n2026-08-02,M-1,齿轮,PETG,0.20,10,2,30,success,0.1\n2026-08-03,M-1,齿轮,ABS,0.20,10,2,25,success,0.1\n",
+        "provenance": null,
+        "question": "成本趋势"
+      }
+    },
+    {
+      "expected": {
+        "chart": {
+          "items": [
+            {
+              "ciHi": 0.9054687942657693,
+              "ciLo": 0.09453120573423074,
+              "hint": "1/2 失败 · 样本量 2 < 5，不参与排名",
+              "label": "M-A",
+              "value": 0.5,
+              "weak": true
+            },
+            {
+              "ciHi": 0.9054687942657693,
+              "ciLo": 0.09453120573423074,
+              "hint": "1/2 失败 · 样本量 2 < 5，不参与排名",
+              "label": "M-B",
+              "value": 0.5,
+              "weak": true
+            }
+          ],
+          "kind": "bar-rate",
+          "title": "机台故障率"
+        },
+        "confidence": "insufficient-data",
+        "engine": "local-rules",
+        "evidence": [],
+        "highlight": null,
+        "intent": "machine_fault",
+        "intentMatched": true,
+        "provenance": null,
+        "rowCount": 4,
+        "schemaVersion": 1,
+        "sections": [
+          {
+            "h": "为什么没有排名",
+            "lines": [
+              "参与排名需要每台机 ≥ 5 个任务，当前没有任何机台达标。",
+              "样本不足的机台：M-A（n=2）、M-B（n=2）",
+              "继续积累数据后重新提问即可得到排名。"
+            ]
+          }
+        ],
+        "title": "机台故障率排行",
+        "verdict": "样本不足：没有机台达到 5 个任务的最小样本量，无法给出可信排名"
+      },
+      "id": "machine-insufficient-report",
+      "input": {
+        "csv": "machine_id,model_name,material,status,fail_reason,cost_fen\nM-A,齿轮,PLA,fail,堵料,20\nM-A,齿轮,PLA,success,,20\nM-B,叶轮,PETG,success,,30\nM-B,叶轮,PETG,fail,翘边,30\n",
+        "provenance": null,
+        "question": "机台故障率排行"
+      }
+    },
+    {
+      "expected": {
+        "chart": {
+          "items": [
+            {
+              "ciHi": 0.769275718723987,
+              "ciLo": 0.11762077423264783,
+              "hint": "2/5 失败 · 95%CI 11.8%–76.9%",
+              "label": "M-A",
+              "value": 0.4,
+              "weak": false
+            },
+            {
+              "ciHi": 0.6244653702374747,
+              "ciLo": 0.036224108632430085,
+              "hint": "1/5 失败 · 95%CI 3.6%–62.4%",
+              "label": "M-B",
+              "value": 0.2,
+              "weak": false
+            }
+          ],
+          "kind": "bar-rate",
+          "title": "机台故障率（误差线为 95%CI）"
+        },
+        "confidence": "low",
+        "engine": "local-rules",
+        "evidence": [
+          {
+            "ci95": [
+              0.11762077423264783,
+              0.769275718723987
+            ],
+            "claim": "M-A 排名第一但差异未达显著",
+            "method": "Fisher 精确检验（2×2，双侧）",
+            "n": 10,
+            "pValue": 1,
+            "statistic": null
+          }
+        ],
+        "highlight": {
+          "id": "M-A",
+          "type": "machine"
+        },
+        "intent": "machine_fault",
+        "intentMatched": true,
+        "provenance": null,
+        "rowCount": 10,
+        "schemaVersion": 1,
+        "sections": [
+          {
+            "h": "失败率排行（含 95% 置信区间）",
+            "lines": [
+              "1. M-A：40.0%（95%CI 11.8–76.9%），n=5",
+              "2. M-B：20.0%（95%CI 3.6–62.4%），n=5"
+            ]
+          },
+          {
+            "h": "故障归因（M-A，n=5）",
+            "lines": [
+              "堵料 × 1（占该机台失败 50.0%（95%CI 9.5–90.5%））",
+              "断料 × 1（占该机台失败 50.0%（95%CI 9.5–90.5%））"
+            ]
+          },
+          {
+            "h": "建议",
+            "lines": [
+              "M-A 的失败率 40.0%（95%CI 11.8–76.9%） 排第一，但与其余机台（20.0%）的差异**未达统计显著**（p=1.000）——以现有样本量还不能断定它更差，把它当线索而不是结论。",
+              "需要多少数据才能判定：各机台样本量翻倍后重新分析，或对该机台专项跟踪 20 个任务。",
+              "故障类型分散（最高一类占比区间 50.0%（95%CI 9.5–90.5%），下界未超 40%），无法判定单一主因，建议逐单排查。"
+            ]
+          }
+        ],
+        "title": "机台故障率排行",
+        "verdict": "M-A 故障率排第一（40.0%（95%CI 11.8–76.9%），2/5），但与其余机台的差异未达统计显著（p=1.000），证据不足以判定它更差"
+      },
+      "id": "machine-nonsignificant-report",
+      "input": {
+        "csv": "machine_id,model_name,material,status,fail_reason,cost_fen\nM-A,齿轮,PLA,fail,堵料,20\nM-A,齿轮,PLA,fail,断料,20\nM-A,齿轮,PLA,success,,20\nM-A,齿轮,PLA,success,,20\nM-A,齿轮,PLA,success,,20\nM-B,叶轮,PETG,fail,翘边,30\nM-B,叶轮,PETG,success,,30\nM-B,叶轮,PETG,success,,30\nM-B,叶轮,PETG,success,,30\nM-B,叶轮,PETG,success,,30\n",
+        "provenance": null,
+        "question": "哪台机器故障率最高"
+      }
+    },
+    {
+      "expected": {
+        "chart": {
+          "items": [
+            {
+              "ciHi": 0.9054687942657693,
+              "ciLo": 0.09453120573423074,
+              "hint": "1/2 · 样本量 2 < 5",
+              "label": "PLA",
+              "value": 0.5,
+              "weak": true
+            },
+            {
+              "ciHi": 0.9054687942657693,
+              "ciLo": 0.09453120573423074,
+              "hint": "1/2 · 样本量 2 < 5",
+              "label": "PETG",
+              "value": 0.5,
+              "weak": true
+            }
+          ],
+          "kind": "bar-rate",
+          "title": "各材料失败率"
+        },
+        "confidence": "insufficient-data",
+        "engine": "local-rules",
+        "evidence": [],
+        "intent": "material_cmp",
+        "intentMatched": true,
+        "provenance": null,
+        "rowCount": 4,
+        "schemaVersion": 1,
+        "sections": [
+          {
+            "h": "为什么无法比较",
+            "lines": [
+              "PLA：n=2，样本量 2 < 5",
+              "PETG：n=2，样本量 2 < 5"
+            ]
+          }
+        ],
+        "title": "材料失败率对比",
+        "verdict": "样本不足：没有材料达到 5 个任务的最小样本量，无法比较"
+      },
+      "id": "material-insufficient-report",
+      "input": {
+        "csv": "machine_id,model_name,material,status,fail_reason,cost_fen\nM-A,齿轮,PLA,fail,堵料,20\nM-A,齿轮,PLA,success,,20\nM-B,叶轮,PETG,success,,30\nM-B,叶轮,PETG,fail,翘边,30\n",
+        "provenance": null,
+        "question": "材料失败率对比"
+      }
+    },
+    {
+      "expected": {
+        "chart": {
+          "items": [],
+          "kind": "bar-value",
+          "title": "故障类型次数"
+        },
+        "confidence": "insufficient-data",
+        "engine": "local-rules",
+        "evidence": [],
+        "highlight": {
+          "id": "M-A",
+          "type": "machine"
+        },
+        "intent": "fail_root",
+        "intentMatched": true,
+        "provenance": null,
+        "rowCount": 5,
+        "schemaVersion": 1,
+        "sections": [
+          {
+            "h": "故障类型分布",
+            "lines": [
+              "无失败记录"
+            ]
+          },
+          {
+            "h": "共性交叉（次数 vs 比率）",
+            "lines": [
+              "无失败记录"
+            ]
+          },
+          {
+            "h": "针对性处置",
+            "lines": [
+              "本期无失败记录。"
+            ]
+          }
+        ],
+        "title": "失败批次归因",
+        "verdict": "本数据集无失败记录"
+      },
+      "id": "failure-root-no-failures-report",
+      "input": {
+        "csv": "machine_id,model_name,material,status,cost_fen\nM-A,齿轮,PLA,success,20\nM-A,齿轮,PLA,success,20\nM-A,齿轮,PLA,success,20\nM-A,齿轮,PLA,success,20\nM-A,齿轮,PLA,success,20\n",
+        "provenance": null,
+        "question": "失败原因归因"
+      }
+    }
+  ],
   "schemaVersion": 1,
   "tolerance": {
     "numericAbs": 1e-9,

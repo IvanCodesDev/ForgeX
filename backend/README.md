@@ -48,15 +48,21 @@ added in this slice.
 `ForgeX.Analytics` is the analysis migration core. It has no external package reference and ports
 the existing browser contract for CSV aliases/status normalization, Wilson intervals, Fisher exact
 tests, Pearson correlation, within-group centered partial correlation, Mann-Kendall trend tests,
-sample-size guarded failure-rate ranking, and dashboard KPIs. It does not yet replace the React
-report engine.
+sample-size guarded failure-rate ranking, and dashboard KPIs. It does not replace the React
+report engine by default. Stage 4-D completes the deterministic report-core port for `machine_fault`,
+`material_cmp`, `corr_layer`, `cost_trend`, `fail_root`, and the unmatched-question `overview`,
+including confidence, evidence, explanatory sections, chart DTOs, machine highlights, and the
+reviewed cost profile.
 
 `tests/golden/stage4-analytics-golden.json` freezes four malformed/aliased CSV cases, five Wilson
 vectors, four Fisher vectors, six Pearson cases, four partial-correlation cases, seven Mann-Kendall
 cases, one ranking matrix, and the existing 400-row physical-farm dataset. The JS validator must
-reproduce the JSON byte-for-byte at the semantic level; `ForgeX.AnalyticsGate` then reads the same
-inputs and emits `backend/artifacts/analytics-golden-diff.json` with per-field absolute/relative
-deltas. Updating this baseline is an explicit reviewed operation:
+reproduce the JSON byte-for-byte at the semantic level. Twelve report cases additionally freeze all
+six report paths over the 400-row farm dataset plus insufficient-sample, non-significant,
+short-date, and no-failure edge paths.
+`ForgeX.AnalyticsGate` then reads the same inputs and emits
+`backend/artifacts/analytics-golden-diff.json` with per-field absolute/relative deltas. Updating this
+baseline is an explicit reviewed operation:
 
 ```text
 node tools/validate-stage4-analytics-golden.js
@@ -64,9 +70,15 @@ npm run dotnet:analytics
 npm run analytics:golden:update   # only after reviewing and approving an intentional change
 ```
 
-Rollback for Stage 4-B restores the Stage 4-A statistical core and frozen golden, removing the new
-correlation/trend methods and their gate comparisons. No API route, browser default, database, or
-stored user data changes in this slice.
+Stage 4-E adds a stateless `POST /api/v1/analytics/reports` boundary. It accepts `application/json`,
+at most 5 MiB and 5000 normalized rows, validates provenance row counts, and returns the same
+deterministic report DTO with engine evidence. Node exposes only this fixed same-origin path after
+its existing identity and rate-limit guards, streams the body without re-encoding, and strips all
+browser credentials before calling the loopback sidecar. React remains on the existing JS report
+path in the default `browser` mode; `VITE_ANALYTICS_AUTHORITY=shadow` runs C# in parallel and shows
+field-level differences without changing the displayed report or persisting inputs. Offline builds
+perform no request. Set `ANALYTICS_AUTHORITY_ENABLED=0` to close the proxy independently. Rollback
+restores the Stage 4-D source and keeps the frozen golden and all stored user data unchanged.
 
 Async job endpoints are tenant/owner scoped. In production, configure the same secret as Node's
 `GCODE_AUTHORITY_INTERNAL_SECRET` through `InternalAuth__SharedSecret`. Node resolves the browser

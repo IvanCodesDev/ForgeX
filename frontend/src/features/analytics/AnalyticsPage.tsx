@@ -1,4 +1,5 @@
 import { type ChangeEvent, useMemo, useState } from "react";
+import { type AnalyticsAuthorityMode, useAnalyticsAuthority } from "./analytics-authority";
 import { AccessibleAnalyticsChart } from "./AccessibleAnalyticsChart";
 import {
   ANALYTICS_QUESTIONS,
@@ -111,7 +112,12 @@ function ReportView({ report }: { readonly report: AnalyticsReport }) {
   );
 }
 
-export function AnalyticsPage() {
+export interface AnalyticsPageProps {
+  readonly authorityMode?: AnalyticsAuthorityMode;
+  readonly apiBase?: string | null;
+}
+
+export function AnalyticsPage({ authorityMode = "browser", apiBase = null }: AnalyticsPageProps = {}) {
   const builtIns = useMemo(listBuiltInAnalyticsDatasets, []);
   const initialDataset = builtIns[0]!;
   const [uploads, setUploads] = useState<readonly AnalyticsDataset[]>([]);
@@ -123,6 +129,7 @@ export function AnalyticsPage() {
   const [formError, setFormError] = useState("");
   const [importMessage, setImportMessage] = useState("");
   const [importing, setImporting] = useState(false);
+  const authority = useAnalyticsAuthority(authorityMode, apiBase);
   const datasets = useMemo(() => [...builtIns, ...uploads], [builtIns, uploads]);
   const kpis = useMemo(() => analyticsKpis(dataset), [dataset]);
 
@@ -130,13 +137,17 @@ export function AnalyticsPage() {
     const next = datasets.find((candidate) => candidate.id === id);
     if (!next) return;
     setDataset(next);
-    setReport(runAnalyticsQuestion(question, next));
+    const nextReport = runAnalyticsQuestion(question, next);
+    setReport(nextReport);
+    void authority.run(question, next, nextReport);
     setFormError("");
   };
 
   const run = () => {
     try {
-      setReport(runAnalyticsQuestion(question, dataset));
+      const nextReport = runAnalyticsQuestion(question, dataset);
+      setReport(nextReport);
+      void authority.run(question, dataset, nextReport);
       setFormError("");
     } catch (reason) {
       setFormError(reason instanceof Error ? reason.message : "分析失败");
@@ -153,11 +164,15 @@ export function AnalyticsPage() {
       const imported = await importAnalyticsCsv(file);
       setUploads((current) => [...current.filter((item) => item.id !== imported.id), imported]);
       setDataset(imported);
-      setReport(runAnalyticsQuestion(question, imported));
+      const nextReport = runAnalyticsQuestion(question, imported);
+      setReport(nextReport);
+      void authority.run(question, imported, nextReport);
       setImportMessage(
         imported.warnings.length
           ? `已导入 ${imported.rows.length} 行；${imported.warnings.join("；")}`
-          : `已导入 ${imported.rows.length} 行；文件内容仅在本地处理`
+          : authorityMode === "shadow"
+            ? `已导入 ${imported.rows.length} 行；已发送归一化数据行用于 C# 影子比对`
+            : `已导入 ${imported.rows.length} 行；文件内容仅在本地处理`
       );
     } catch (reason) {
       const message = reason instanceof AnalyticsImportError ? reason.message : "导入 CSV 失败";
@@ -181,7 +196,11 @@ export function AnalyticsPage() {
         <p className="eyebrow">ANALYTICS / STAGE 2 VERTICAL SLICE</p>
         <h1>数据来源、规则判断与统计证据保持在同一份可审计报告中。</h1>
         <p className="hero-copy">
-          内置数据与本地 CSV 均由既有规则引擎和统计核计算；本页面不发送网络请求，也不把规则引擎描述为 AI。
+          内置数据与本地 CSV 始终先由既有规则引擎计算并显示；
+          {authorityMode === "shadow"
+            ? "当前显式启用了 C# 影子比对，运行分析时会经 Node 发送归一化数据行，但不会用影子结果替换页面报告。"
+            : "当前为 browser 模式，不发送 Analytics 网络请求。"}
+          本页面不把规则引擎描述为 AI。
         </p>
       </section>
 
@@ -300,6 +319,44 @@ export function AnalyticsPage() {
           导出 CSV
         </button>
       </div>
+
+      <section className={`panel analytics-authority analytics-authority-${authority.state.status}`} aria-live="polite">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">AUTHORITY / {authorityMode.toUpperCase()}</p>
+            <h2>C# 字段级影子比对</h2>
+          </div>
+          <strong>{authority.state.status}</strong>
+        </div>
+        <p>{authority.state.detail}</p>
+        {"engineVersion" in authority.state ? (
+          <p className="muted">
+            引擎版本：{authority.state.engineVersion} · 已比较 {authority.state.comparedFields} 个字段
+          </p>
+        ) : null}
+        {authority.state.status === "mismatch" ? (
+          <div className="analytics-table-scroll">
+            <table aria-label="C# Analytics 影子差异">
+              <thead>
+                <tr>
+                  <th scope="col">字段</th>
+                  <th scope="col">浏览器 JS</th>
+                  <th scope="col">C#</th>
+                </tr>
+              </thead>
+              <tbody>
+                {authority.state.differences.map((difference) => (
+                  <tr key={difference.field}>
+                    <th scope="row">{difference.field}</th>
+                    <td>{difference.expected}</td>
+                    <td>{difference.actual}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </section>
 
       <ReportView report={report} />
     </div>

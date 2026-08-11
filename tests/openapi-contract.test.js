@@ -20,6 +20,7 @@ const expectedOperations = new Map([
   ["getGCodeAnalysisJob", ["GET", "/api/v1/jobs/{id}"]],
   ["streamGCodeAnalysisJobEvents", ["GET", "/api/v1/jobs/{id}/events"]],
   ["cancelGCodeAnalysisJob", ["POST", "/api/v1/jobs/{id}/cancel"]],
+  ["analyzeAnalyticsReport", ["POST", "/api/v1/analytics/reports"]],
 ]);
 const actualOperations = new Map();
 for (const [route, pathItem] of Object.entries(document.paths)) {
@@ -44,6 +45,10 @@ for (const schemaName of [
   "GCodeJobLinks",
   "GCodeJobError",
   "GCodeJobEvent",
+  "AnalyticsReportRequest",
+  "AnalyticsAuthorityResponse",
+  "AnalyticsReport",
+  "AnalyticsEvidence",
   "ApiProblem",
 ]) {
   assert.ok(schemas[schemaName], `missing schema ${schemaName}`);
@@ -57,6 +62,16 @@ assert.strictEqual(
   schemas.GCodeJobSnapshotResponse.properties.result.oneOf[0].$ref,
   "#/components/schemas/GCodeAnalysisResponse",
   "terminal result must retain the authority schema"
+);
+assert.strictEqual(
+  schemas.AnalyticsAuthorityResponse.properties.report.$ref,
+  "#/components/schemas/AnalyticsReport",
+  "analytics authority response must retain the typed report schema"
+);
+assert.strictEqual(
+  schemas.AnalyticsReportRequest.properties.rows.items.$ref,
+  "#/components/schemas/AnalyticsRow",
+  "analytics request rows must remain typed"
 );
 
 const sourceSha256 = crypto.createHash("sha256").update(fs.readFileSync(sourcePath)).digest("hex");

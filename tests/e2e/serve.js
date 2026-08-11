@@ -37,6 +37,7 @@ function buildReactFixture() {
       VITE_REACT_PROFILE_SELECTOR_ENABLED: "1",
       VITE_REACT_MACHINE_LOG_ENABLED: "1",
       VITE_REACT_ANALYTICS_ENABLED: "1",
+      VITE_ANALYTICS_AUTHORITY: "browser",
       VITE_REACT_GOVERNANCE_ENABLED: "1",
     },
   });
@@ -66,6 +67,7 @@ const app = createApp({
   infiniPartnerClientId: "",
   infiniPartnerClientSecret: "",
   gcodeAuthorityUrl: "",
+  analyticsAuthorityEnabled: false,
 });
 
 app.server.listen(8899, "127.0.0.1", () => {

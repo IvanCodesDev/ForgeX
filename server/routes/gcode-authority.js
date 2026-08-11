@@ -1,5 +1,5 @@
-/* C# G-code 权威分析 sidecar 代理。
-   固定目标路径、流式转发原始字节、严格限长，并刻意采用请求头白名单，
+/* C# 权威 sidecar 的 G-code 与 Analytics 固定路由代理。
+   固定目标路径、流式转发原始字节、按业务严格限长，并刻意采用请求头白名单，
    避免把 Node 会话、API Key 或 Authorization 泄露给独立计算进程。 */
 "use strict";
 const http = require("http");
@@ -9,6 +9,7 @@ const { resolveIdentity } = require("../lib/identity");
 
 const ANALYZE_PATH = "/api/v1/gcode/analyze";
 const ANALYSES_PATH = "/api/v1/gcode/analyses";
+const ANALYTICS_PATH = "/api/v1/analytics/reports";
 const RESPONSE_HEADERS = [
   "content-type",
   "traceparent",
@@ -85,13 +86,24 @@ function responseHeaders(upstream, reqId) {
 
 function proxyAnalyze(req, res, rc, ctx, targetPath) {
   const { cfg, log } = ctx;
+  const analytics = targetPath === ANALYTICS_PATH;
+  const authorityLabel = analytics ? "C# Analytics 影子计算" : "C# G-code 权威计算";
+  const maxBytes = analytics ? cfg.analyticsAuthorityMaxBytes : cfg.gcodeAuthorityMaxBytes;
+  const timeoutMs = analytics ? cfg.analyticsAuthorityTimeoutMs : cfg.gcodeAuthorityTimeoutMs;
+  const tooLargeTitle = analytics ? "Analytics JSON 超过 5 MiB 上限" : "G-code 超过 64 MiB 上限";
   // 与其他写接口共用同一身份优先级和同一 IP 冷却窗口；守卫与限流都在
   // 创建 sidecar 连接前执行，拒绝的请求不会向权威计算进程泄漏任何字节。
   const identity = resolveIdentity(req, rc, ctx);
   ctx.rateLimit(rc.ip);
 
+  if (analytics && !cfg.analyticsAuthorityEnabled) {
+    sendProblem(res, 503, "analytics_authority_disabled", "C# Analytics 影子计算已关闭", rc.reqId);
+    req.resume();
+    return Promise.resolve();
+  }
+
   if (!cfg.gcodeAuthorityUrl) {
-    sendProblem(res, 503, "authority_not_configured", "C# G-code 权威计算服务未配置", rc.reqId);
+    sendProblem(res, 503, "authority_not_configured", authorityLabel + "服务未配置", rc.reqId);
     req.resume();
     return Promise.resolve();
   }
@@ -102,8 +114,8 @@ function proxyAnalyze(req, res, rc, ctx, targetPath) {
     req.resume();
     return Promise.resolve();
   }
-  if (declaredLength != null && declaredLength > cfg.gcodeAuthorityMaxBytes) {
-    sendProblem(res, 413, "payload_too_large", "G-code 超过 64 MiB 上限", rc.reqId, true);
+  if (declaredLength != null && declaredLength > maxBytes) {
+    sendProblem(res, 413, "payload_too_large", tooLargeTitle, rc.reqId, true);
     req.resume();
     return Promise.resolve();
   }
@@ -138,7 +150,7 @@ function proxyAnalyze(req, res, rc, ctx, targetPath) {
       req.resume();
 
       if (error) {
-        log.warn("gcode authority proxy failed", {
+        log.warn(analytics ? "analytics authority proxy failed" : "gcode authority proxy failed", {
           reqId: rc.reqId,
           code,
           error: error.message,
@@ -166,10 +178,10 @@ function proxyAnalyze(req, res, rc, ctx, targetPath) {
       responseStarted = true;
       res.writeHead(upstreamRes.statusCode || 502, responseHeaders(upstreamRes, rc.reqId));
       upstreamRes.on("error", (error) => {
-        fail(502, "authority_response_error", "C# G-code 权威计算响应中断", error);
+        fail(502, "authority_response_error", authorityLabel + "响应中断", error);
       });
       upstreamRes.on("aborted", () => {
-        fail(502, "authority_response_aborted", "C# G-code 权威计算响应中断");
+        fail(502, "authority_response_aborted", authorityLabel + "响应中断");
       });
       upstreamRes.pipe(res);
       upstreamRes.resume();
@@ -181,21 +193,21 @@ function proxyAnalyze(req, res, rc, ctx, targetPath) {
         headers: upstreamHeaders(req, declaredLength, rc.reqId, identity, cfg),
       });
     } catch (error) {
-      fail(502, "authority_unavailable", "C# G-code 权威计算服务不可用", error);
+      fail(502, "authority_unavailable", authorityLabel + "服务不可用", error);
       finish();
       return;
     }
 
     timeout = setTimeout(() => {
-      fail(504, "authority_timeout", "C# G-code 权威计算超时");
-    }, cfg.gcodeAuthorityTimeoutMs);
+      fail(504, "authority_timeout", authorityLabel + "超时");
+    }, timeoutMs);
     timeout.unref();
 
     upstreamReq.on("response", startResponse);
     upstreamReq.on("error", (error) => {
       if (terminal) return;
       const code = responseStarted ? "authority_response_error" : "authority_unavailable";
-      const title = responseStarted ? "C# G-code 权威计算响应中断" : "C# G-code 权威计算服务不可用";
+      const title = responseStarted ? authorityLabel + "响应中断" : authorityLabel + "服务不可用";
       fail(502, code, title, error);
     });
     upstreamReq.on("drain", () => {
@@ -205,8 +217,8 @@ function proxyAnalyze(req, res, rc, ctx, targetPath) {
     req.on("data", (chunk) => {
       if (terminal) return;
       transferred += chunk.length;
-      if (transferred > cfg.gcodeAuthorityMaxBytes) {
-        fail(413, "payload_too_large", "G-code 超过 64 MiB 上限");
+      if (transferred > maxBytes) {
+        fail(413, "payload_too_large", tooLargeTitle);
         return;
       }
       if (!upstreamReq.write(chunk)) req.pause();
@@ -225,7 +237,7 @@ function proxyAnalyze(req, res, rc, ctx, targetPath) {
       finish();
     });
     req.on("error", (error) => {
-      fail(400, "request_stream_error", "G-code 上传中断", error);
+      fail(400, "request_stream_error", analytics ? "Analytics JSON 上传中断" : "G-code 上传中断", error);
     });
 
     res.once("finish", finish);
@@ -330,6 +342,9 @@ function register(router, ctx) {
       return Promise.resolve();
     }
     return proxyAnalyze(req, res, rc, ctx, ANALYSES_PATH);
+  });
+  router.add("POST", /^\/api\/v1\/analytics\/reports$/, (req, res, _match, rc) => {
+    return proxyAnalyze(req, res, rc, ctx, ANALYTICS_PATH);
   });
   router.add("GET", /^\/api\/v1\/jobs\/([a-f0-9]{32})$/, (req, res, match, rc) => {
     return proxyJobControl(req, res, rc, ctx, `/api/v1/jobs/${match[1]}`, false);

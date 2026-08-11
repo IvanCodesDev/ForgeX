@@ -2,10 +2,14 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ANALYTICS_QUESTIONS, listBuiltInAnalyticsDatasets, runAnalyticsQuestion } from "./analytics-model";
 import { AnalyticsPage } from "./AnalyticsPage";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("AnalyticsPage", () => {
   it("shows an auditable local-rules report and preserves the dataset source warning", () => {
@@ -29,5 +33,26 @@ describe("AnalyticsPage", () => {
     fireEvent.change(screen.getByLabelText("问题"), { target: { value: "  " } });
     fireEvent.click(screen.getByRole("button", { name: "运行规则分析" }));
     expect(screen.getByRole("alert")).toHaveTextContent("请输入要分析的问题");
+  });
+
+  it("keeps the browser report visible while shadow comparison succeeds", async () => {
+    const dataset = listBuiltInAnalyticsDatasets()[0]!;
+    const report = runAnalyticsQuestion(ANALYTICS_QUESTIONS[0], dataset);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          schemaVersion: "1.0",
+          engine: { name: "forgex-analytics-csharp", version: "1.3.0" },
+          report,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+    render(<AnalyticsPage authorityMode="shadow" apiBase="" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "运行规则分析" }));
+    expect(await screen.findByText(/字段级比对一致/)).toBeInTheDocument();
+    expect(screen.getByText("本地规则引擎（非 AI）")).toBeInTheDocument();
+    expect(screen.getByText(/引擎版本：1.3.0/)).toBeInTheDocument();
   });
 });

@@ -314,6 +314,31 @@
   line-height: 1.6;
 }
 
+.analytics-authority {
+  border-color: color-mix(in srgb, var(--analytics-border) 70%, #67c7ff);
+}
+
+.analytics-authority .panel-heading > strong {
+  color: #9ecff0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.analytics-authority-matched {
+  border-color: rgba(66, 196, 134, 0.5);
+}
+
+.analytics-authority-mismatch,
+.analytics-authority-error {
+  border-color: rgba(244, 158, 73, 0.58);
+}
+
+.analytics-authority td {
+  max-width: 38rem;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 1000px) {
   .analytics-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));

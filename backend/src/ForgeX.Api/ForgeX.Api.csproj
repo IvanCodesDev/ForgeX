@@ -6,6 +6,7 @@
     <ProjectReference Include="..\ForgeX.Simulation\ForgeX.Simulation.csproj" />
     <ProjectReference Include="..\ForgeX.Contracts\ForgeX.Contracts.csproj" />
     <ProjectReference Include="..\ForgeX.Infrastructure\ForgeX.Infrastructure.csproj" />
+    <ProjectReference Include="..\ForgeX.Analytics\ForgeX.Analytics.csproj" />
   </ItemGroup>
 
   <ItemGroup>

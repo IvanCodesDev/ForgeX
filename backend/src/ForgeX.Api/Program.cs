@@ -229,6 +229,17 @@ app.MapPost("/api/v1/gcode/analyze", GCodeEndpoints.AnalyzeAsync)
     .Produces<ApiProblem>(StatusCodes.Status422UnprocessableEntity, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status500InternalServerError, "application/problem+json");
 
+app.MapPost(
+        "/api/v1/analytics/reports",
+        (Func<HttpContext, Task<IResult>>)AnalyticsEndpoints.AnalyzeAsync)
+    .WithName("AnalyzeAnalyticsReport")
+    .Accepts<AnalyticsReportRequestDto>("application/json")
+    .Produces<AnalyticsAuthorityResponseDto>()
+    .Produces<ApiProblem>(StatusCodes.Status400BadRequest, "application/problem+json")
+    .Produces<ApiProblem>(StatusCodes.Status413PayloadTooLarge, "application/problem+json")
+    .Produces<ApiProblem>(StatusCodes.Status415UnsupportedMediaType, "application/problem+json")
+    .Produces<ApiProblem>(StatusCodes.Status500InternalServerError, "application/problem+json");
+
 app.MapPost("/api/v1/gcode/analyses", GCodeJobEndpoints.CreateAsync)
     .WithName("CreateGCodeAnalysisJob")
     .Accepts<Stream>("application/x-gcode")

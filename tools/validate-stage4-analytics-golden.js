@@ -198,11 +198,157 @@ function createGolden() {
     ...Array.from({ length: limitRowCount }, (_, index) => `M-${index % 2},success,${index + 1}`),
   ].join("\n");
   const limitResult = data.parseCsv(limitInput);
+  const reportCases = [
+    {
+      id: "farm-machine-fault-report",
+      input: {
+        question: "哪台机台故障率最高，需要优先保养？",
+        datasetPath: "datasets/print_farm_400.csv",
+        provenance: null,
+      },
+      rows: dataset.rows,
+    },
+    {
+      id: "farm-material-comparison-report",
+      input: {
+        question: "PLA、PETG、ABS、TPU 材料失败率对比差多少？",
+        datasetPath: "datasets/print_farm_400.csv",
+        provenance: null,
+      },
+      rows: dataset.rows,
+    },
+    {
+      id: "farm-correlation-report",
+      input: {
+        question: "层高与打印时长的相关性如何？",
+        datasetPath: "datasets/print_farm_400.csv",
+        provenance: null,
+      },
+      rows: dataset.rows,
+    },
+    {
+      id: "farm-failure-root-report",
+      input: {
+        question: "失败批次有什么共性，主要原因如何归因？",
+        datasetPath: "datasets/print_farm_400.csv",
+        provenance: null,
+      },
+      rows: dataset.rows,
+    },
+    {
+      id: "farm-overview-unmatched-report",
+      input: {
+        question: "请总结一下当前情况",
+        datasetPath: "datasets/print_farm_400.csv",
+        provenance: null,
+      },
+      rows: dataset.rows,
+    },
+    {
+      id: "farm-cost-trend-report",
+      input: {
+        question: "本月单件成本与耗材成本趋势如何？",
+        datasetPath: "datasets/print_farm_400.csv",
+        provenance: null,
+      },
+      rows: dataset.rows,
+    },
+    {
+      id: "correlation-insufficient-report",
+      input: {
+        question: "层高和时长关系",
+        csv:
+          "date,machine_id,model_name,material,layer_height_mm,duration_min,filament_g,cost_fen,status,energy_kwh\n" +
+          "2026-08-01,M-1,齿轮,PLA,0.20,10,2,20,success,0.1\n" +
+          "2026-08-02,M-1,齿轮,PLA,0.24,9,2,20,success,0.1\n" +
+          "2026-08-03,M-1,齿轮,PLA,0.28,8,2,20,success,0.1\n",
+        provenance: null,
+      },
+    },
+    {
+      id: "cost-short-range-report",
+      input: {
+        question: "成本趋势",
+        csv:
+          "date,machine_id,model_name,material,layer_height_mm,duration_min,filament_g,cost_fen,status,energy_kwh\n" +
+          "2026-08-01,M-1,齿轮,PLA,0.20,10,2,20,success,0.1\n" +
+          "2026-08-02,M-1,齿轮,PETG,0.20,10,2,30,success,0.1\n" +
+          "2026-08-03,M-1,齿轮,ABS,0.20,10,2,25,success,0.1\n",
+        provenance: null,
+      },
+    },
+    {
+      id: "machine-insufficient-report",
+      input: {
+        question: "机台故障率排行",
+        csv:
+          "machine_id,model_name,material,status,fail_reason,cost_fen\n" +
+          "M-A,齿轮,PLA,fail,堵料,20\n" +
+          "M-A,齿轮,PLA,success,,20\n" +
+          "M-B,叶轮,PETG,success,,30\n" +
+          "M-B,叶轮,PETG,fail,翘边,30\n",
+        provenance: null,
+      },
+    },
+    {
+      id: "machine-nonsignificant-report",
+      input: {
+        question: "哪台机器故障率最高",
+        csv:
+          "machine_id,model_name,material,status,fail_reason,cost_fen\n" +
+          "M-A,齿轮,PLA,fail,堵料,20\n" +
+          "M-A,齿轮,PLA,fail,断料,20\n" +
+          "M-A,齿轮,PLA,success,,20\n" +
+          "M-A,齿轮,PLA,success,,20\n" +
+          "M-A,齿轮,PLA,success,,20\n" +
+          "M-B,叶轮,PETG,fail,翘边,30\n" +
+          "M-B,叶轮,PETG,success,,30\n" +
+          "M-B,叶轮,PETG,success,,30\n" +
+          "M-B,叶轮,PETG,success,,30\n" +
+          "M-B,叶轮,PETG,success,,30\n",
+        provenance: null,
+      },
+    },
+    {
+      id: "material-insufficient-report",
+      input: {
+        question: "材料失败率对比",
+        csv:
+          "machine_id,model_name,material,status,fail_reason,cost_fen\n" +
+          "M-A,齿轮,PLA,fail,堵料,20\n" +
+          "M-A,齿轮,PLA,success,,20\n" +
+          "M-B,叶轮,PETG,success,,30\n" +
+          "M-B,叶轮,PETG,fail,翘边,30\n",
+        provenance: null,
+      },
+    },
+    {
+      id: "failure-root-no-failures-report",
+      input: {
+        question: "失败原因归因",
+        csv:
+          "machine_id,model_name,material,status,cost_fen\n" +
+          "M-A,齿轮,PLA,success,20\n" +
+          "M-A,齿轮,PLA,success,20\n" +
+          "M-A,齿轮,PLA,success,20\n" +
+          "M-A,齿轮,PLA,success,20\n" +
+          "M-A,齿轮,PLA,success,20\n",
+        provenance: null,
+      },
+    },
+  ].map((item) => {
+    const rows = item.rows || data.parseCsv(item.input.csv).rows;
+    return {
+      id: item.id,
+      input: item.input,
+      expected: engine.analyze(item.input.question, rows, { provenance: item.input.provenance }),
+    };
+  });
 
   return {
     format: "forgex-stage4-analytics-golden",
     schemaVersion: 1,
-    baselineVersion: "0.19.0-stage4-b",
+    baselineVersion: "0.19.0-stage4-d",
     tolerance: { numericAbs: 1e-9, numericRel: 1e-9 },
     engine: {
       name: "legacy-js-statistics",
@@ -231,6 +377,7 @@ function createGolden() {
       input,
       expected: stats.mannKendall(input.series, input.options),
     })),
+    reportCases,
     rankCase: {
       input: { groups: rankGroups, minSample: 5, alpha: 0.05 },
       expected: stats.rankByRate(rankGroups, { minSample: 5, alpha: 0.05 }),
@@ -270,6 +417,6 @@ process.stdout.write(
   `Stage 4 analytics golden OK: ${current.csvCases.length} CSV + ${current.wilsonCases.length} Wilson + ` +
     `${current.fisherCases.length} Fisher + ${current.pearsonCases.length} Pearson + ` +
     `${current.partialCorrelationCases.length} partial + ${current.mannKendallCases.length} Mann-Kendall + ` +
-    `1 ranking + ${current.csvLimitCase.input.rowCount} row limit + ` +
+    `${current.reportCases.length} reports + 1 ranking + ${current.csvLimitCase.input.rowCount} row limit + ` +
     `${current.dataset.expected.rowCount} dataset rows\n`
 );

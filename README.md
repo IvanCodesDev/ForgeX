@@ -198,7 +198,7 @@ Node.js service :8787
 - **契约边界**：`backend/src/ForgeX.Api/openapi/v1.json` 是 API 单一来源，构建前生成 TypeScript DTO、操作路径和路径参数函数；CI 通过源文件 SHA 与生成器复跑阻止前后端契约漂移；
 - **存储**：默认 `Persistence:Provider=file` 写入 `data/`，容器部署可挂载持久化卷；文件作业仓库提供逐条 SHA-256 的版本化备份、全量预检恢复和就绪探针。`backend/database/postgresql/` 已冻结 PostgreSQL v1 迁移、租户/归属键、事件表、幂等唯一约束与 RLS 策略，但本阶段未启用 PostgreSQL 运行时驱动，误配为 `postgresql` 会在启动时明确终止。
 - **可观测性**：C# 输出单行 JSON 请求日志，包含稳定路由模板、状态码、耗时与 trace ID；`/metrics` 提供有界标签的 Prometheus 文本指标，不把具体作业 ID 放入标签。
-- **分析迁移**：Stage 4-B 已把 CSV 归一、Wilson 区间、Fisher 精确检验、Pearson 相关、组内中心化偏相关、Mann–Kendall 趋势、带样本量守卫的失败率排名和 KPI 汇总迁入零 NuGet 的 `ForgeX.Analytics`；同一份冻结输入仍由 JS 计算，C# 通过字段级差异报告证明口径一致。React 当前继续显示 JS 报告，尚未提前切换默认权威来源。
+- **分析迁移**：Stage 4-E 已把 CSV 归一、Wilson 区间、Fisher 精确检验、Pearson 相关、组内中心化偏相关、Mann–Kendall 趋势、带样本量守卫的失败率排名和 KPI 汇总迁入零 NuGet 的 `ForgeX.Analytics`，并完成机台故障、材料对比、层高相关、成本趋势、失败归因和未识别问题概览六条确定性规则报告的 C# 等价实现；新增的 `POST /api/v1/analytics/reports` 只接受归一化且带来源证据的最多 5000 行 JSON，并由 Node 同源白名单代理。React 默认继续显示 JS 报告；`VITE_ANALYTICS_AUTHORITY=shadow` 才并行请求 C# 并展示字段级差异，不改变主结果、不写入服务端数据，也不构成权威切换。
 
 ### React Stage 2 当前范围
 
@@ -227,6 +227,8 @@ Node.js service :8787
 | `VITE_REACT_GOVERNANCE_ENABLED`       | 启用 `#/governance` 校准治理路由；`0` 时显示该功能已回退           |
 
 `VITE_GCODE_AUTHORITY` 不是页面开关，而是 G-code 分析模式：`browser` 为默认浏览器结果，`shadow` 与 C# 双跑但不切换主结果，`dotnet` 才使用 C# 返回作为该路由结果。`dotnet` 默认通过异步作业运行：创建请求携带稳定幂等键，SSE 使用事件序号续传，连接失败后轮询同一作业，页面取消会同步取消服务端作业。`VITE_GCODE_JOB_API=0` 可把 React 独立回退到既有同步 `/api/v1/gcode/analyze`；服务端 `GCODE_ASYNC_JOBS_ENABLED=0` 可关闭异步路由。`VITE_API_BASE=offline` 可强制离线演示；`VITE_NODE_API_KEY` 与 `VITE_NODE_BEARER` 会进入浏览器产物，只能放置允许分发的客户端凭据，校准审核密钥只允许配置在服务端 `CALIBRATION_REVIEW_KEYS`。
+
+Analytics 另有独立的 `VITE_ANALYTICS_AUTHORITY=browser|shadow`：默认 `browser` 完全本地计算且零分析 API 请求；`shadow` 把当前归一化数据发送到 Node 的 `/api/v1/analytics/reports`，仅比较 C# 回包与浏览器报告。服务端可用 `ANALYTICS_AUTHORITY_ENABLED=0` 独立关闭该路由，5 MiB 请求上限和 5000 行上限不可由部署配置放大。
 
 ## 验证
 
@@ -282,7 +284,7 @@ node server/index.js
 npm run dotnet:api
 ```
 
-常用配置见 [`server/.env.example`](./server/.env.example) 与 [`frontend/.env.example`](./frontend/.env.example)。Node 会先执行统一的 Partner SSO/API Key 身份守卫，再把同步分析或开启的异步作业白名单路由流式代理到 `GCODE_AUTHORITY_URL`；浏览器 Cookie、API Key 与 Authorization 均不会转发给 C# sidecar。生产环境应同时配置同一个至少 32 字节的 `GCODE_AUTHORITY_INTERNAL_SECRET` 与 C# `InternalAuth__SharedSecret`：Node 仅转发匿名化的 `tn_/ow_` 标识，C# 不接受浏览器自报租户。`GCODE_ASYNC_JOBS_ENABLED=0` 可独立关闭异步路由而保留同步分析。React 默认使用同源 HttpOnly Cookie；只有在凭据允许随浏览器产物分发时，才使用 `VITE_NODE_API_KEY` 或 `VITE_NODE_BEARER`。部署完成后可访问 Node `/healthz` 与 `/metrics`，并在内部网络访问 C# `/health/ready` 与 `/metrics` 检查仓库、队列、Worker、请求耗时和 CallerContext 状态。迁移期间 `/` 保持旧工作台，`/react/` 提供新工作台。文件仓库备份/恢复命令见 [`backend/README.md`](./backend/README.md)，PostgreSQL 部署和 `pg_dump/pg_restore` 演练见 [`backend/database/postgresql/README.md`](./backend/database/postgresql/README.md)。
+常用配置见 [`server/.env.example`](./server/.env.example) 与 [`frontend/.env.example`](./frontend/.env.example)。Node 会先执行统一的 Partner SSO/API Key 身份守卫，再把 G-code 同步分析、开启的异步作业以及可选 Analytics shadow 白名单路由流式代理到 `GCODE_AUTHORITY_URL`；浏览器 Cookie、API Key 与 Authorization 均不会转发给 C# sidecar。Analytics shadow 另受 `ANALYTICS_AUTHORITY_ENABLED`、`ANALYTICS_AUTHORITY_TIMEOUT_MS` 和不超过 5 MiB 的 `ANALYTICS_AUTHORITY_MAX_BYTES` 约束。生产环境应同时配置同一个至少 32 字节的 `GCODE_AUTHORITY_INTERNAL_SECRET` 与 C# `InternalAuth__SharedSecret`：Node 仅转发匿名化的 `tn_/ow_` 标识，C# 不接受浏览器自报租户。`GCODE_ASYNC_JOBS_ENABLED=0` 可独立关闭异步路由而保留同步分析。React 默认使用同源 HttpOnly Cookie；只有在凭据允许随浏览器产物分发时，才使用 `VITE_NODE_API_KEY` 或 `VITE_NODE_BEARER`。部署完成后可访问 Node `/healthz` 与 `/metrics`，并在内部网络访问 C# `/health/ready` 与 `/metrics` 检查仓库、队列、Worker、请求耗时和 CallerContext 状态。迁移期间 `/` 保持旧工作台，`/react/` 提供新工作台。文件仓库备份/恢复命令见 [`backend/README.md`](./backend/README.md)，PostgreSQL 部署和 `pg_dump/pg_restore` 演练见 [`backend/database/postgresql/README.md`](./backend/database/postgresql/README.md)。
 
 ## 项目结构
 

@@ -89,7 +89,16 @@ export function App() {
             <Route
               path="analytics"
               element={
-                featureFlags.analyticsReact ? deferred(<AnalyticsPage />) : <DisabledFeaturePage title="数据分析" />
+                featureFlags.analyticsReact ? (
+                  deferred(
+                    <AnalyticsPage
+                      authorityMode={featureFlags.analyticsAuthority}
+                      apiBase={runtimeMode.kind === "remote" ? runtimeMode.apiBase : null}
+                    />
+                  )
+                ) : (
+                  <DisabledFeaturePage title="数据分析" />
+                )
               }
             />
             <Route
