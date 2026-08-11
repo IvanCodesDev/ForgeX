@@ -7,10 +7,18 @@ using ForgeX.Application;
 using ForgeX.Contracts;
 using ForgeX.Infrastructure;
 using ForgeX.Simulation;
+using Microsoft.Extensions.Logging.Console;
 
 const long MaxGCodeBytes = 64L * 1024 * 1024;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.ClearProviders();
+builder.Logging.AddJsonConsole(options =>
+{
+    options.IncludeScopes = true;
+    options.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
+    options.UseUtcTimestamp = true;
+});
 var internalSharedSecret = builder.Configuration["InternalAuth:SharedSecret"] ?? string.Empty;
 var persistenceProvider = builder.Configuration["Persistence:Provider"] ?? "file";
 if (!string.IsNullOrEmpty(internalSharedSecret) && Encoding.UTF8.GetByteCount(internalSharedSecret) < 32)
@@ -58,13 +66,17 @@ builder.Services.AddSingleton<IGCodeJobRepository>(static services => services.G
 builder.Services.AddSingleton<IGCodeJobRepositoryMaintenance>(static services => services.GetRequiredService<FileGCodeJobRepository>());
 builder.Services.AddSingleton<IGCodeJobQueue>(_ => new GCodeJobQueue());
 builder.Services.AddSingleton<GCodeJobRuntime>();
+builder.Services.AddSingleton<ForgeXMetrics>();
 builder.Services.AddSingleton<GCodeJobWorker>();
 builder.Services.AddHostedService(static services => services.GetRequiredService<GCodeJobWorker>());
 
 var app = builder.Build();
+var metrics = app.Services.GetRequiredService<ForgeXMetrics>();
+var requestLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("ForgeX.Api.Request");
 
 app.Use(async (context, next) =>
 {
+    var started = Stopwatch.GetTimestamp();
     var activity = Activity.Current;
     var traceId = activity?.TraceId.ToHexString() ?? context.TraceIdentifier;
     var traceParent = activity?.Id;
@@ -88,6 +100,21 @@ app.Use(async (context, next) =>
     catch (Exception exception) when (!context.Response.HasStarted)
     {
         await ApiProblemResults.WriteExceptionAsync(context, exception);
+    }
+    finally
+    {
+        var elapsed = Stopwatch.GetElapsedTime(started);
+        metrics.ObserveHttp(context.Request.Method, context.Request.Path, context.Response.StatusCode, elapsed);
+        if (requestLogger.IsEnabled(LogLevel.Information))
+        {
+            requestLogger.LogInformation(
+                "HTTP request completed {Method} {Path} with {StatusCode} in {ElapsedMilliseconds} ms; traceId={TraceId}",
+                context.Request.Method,
+                ForgeXMetrics.RouteLabel(context.Request.Path),
+                context.Response.StatusCode,
+                elapsed.TotalMilliseconds,
+                traceId);
+        }
     }
 });
 
@@ -147,6 +174,7 @@ app.MapGet("/health/ready", async (IGCodeAnalyzer analyzer, IContentObjectStore 
     {
         var writable = await objects.ProbeWritableAsync(ct);
         var repository = await jobs.ProbeAsync(ct);
+        metrics.SetRepositoryHealth(repository.Ready, repository.RecordCount);
         var ready = writable && repository.Ready && queue.IsAccepting && worker.Started;
         var response = new HealthResponse(
             ready ? "ready" : "not_ready",
@@ -178,6 +206,12 @@ app.MapGet("/healthz", () => Results.Ok(new LegacyHealthResponse(
         DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())))
     .WithName("GetLegacyHealth")
     .Produces<LegacyHealthResponse>();
+
+app.MapGet("/metrics", () => Results.Text(
+        metrics.Render(serviceVersion),
+        "text/plain; version=0.0.4; charset=utf-8"))
+    .WithName("GetMetrics")
+    .ExcludeFromDescription();
 
 app.MapGet("/openapi/v1.json", () => Results.Text(
         OpenApiDocument.Json,

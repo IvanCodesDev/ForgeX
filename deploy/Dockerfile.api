@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1.7
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0.302-alpine3.23 AS build
+WORKDIR /src
+COPY global.json ./
+COPY backend/Directory.Build.props backend/NuGet.Config ./backend/
+COPY backend/src ./backend/src
+RUN dotnet restore backend/src/ForgeX.Api/ForgeX.Api.csproj \
+    --configfile backend/NuGet.Config \
+    --disable-parallel \
+    -m:1 \
+    -nr:false
+RUN dotnet publish backend/src/ForgeX.Api/ForgeX.Api.csproj \
+    --configuration Release \
+    --no-restore \
+    --output /out \
+    -p:UseAppHost=false \
+    -m:1 \
+    -nr:false
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.10-alpine3.23 AS runtime
+WORKDIR /app
+ENV Kestrel__Endpoints__Http__Url=http://0.0.0.0:8788 \
+    Storage__Root=/app/data \
+    Persistence__Provider=file \
+    DOTNET_EnableDiagnostics=0
+
+RUN mkdir -p /app/data && chown -R 1654:1654 /app
+COPY --from=build --chown=1654:1654 /out ./
+
+EXPOSE 8788
+USER 1654:1654
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --quiet --output-document=/dev/null http://127.0.0.1:8788/health/ready || exit 1
+
+ENTRYPOINT ["dotnet", "ForgeX.Api.dll"]

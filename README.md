@@ -197,6 +197,7 @@ Node.js service :8787
 - **G-code 计算边界**：.NET 10 sidecar 保留同步摘要接口，并新增 `POST /api/v1/gcode/analyses`、作业快照、SSE 事件与幂等取消接口；React 的 `dotnet` 模式使用异步作业、断线续传与轮询兜底，`browser / shadow` 路径保持原行为；Node 会把已核验身份匿名化为稳定 `tenant/owner`，再通过独立内部密钥交给 C#，任务查询、SSE 与取消均按该边界过滤；
 - **契约边界**：`backend/src/ForgeX.Api/openapi/v1.json` 是 API 单一来源，构建前生成 TypeScript DTO、操作路径和路径参数函数；CI 通过源文件 SHA 与生成器复跑阻止前后端契约漂移；
 - **存储**：默认 `Persistence:Provider=file` 写入 `data/`，容器部署可挂载持久化卷；文件作业仓库提供逐条 SHA-256 的版本化备份、全量预检恢复和就绪探针。`backend/database/postgresql/` 已冻结 PostgreSQL v1 迁移、租户/归属键、事件表、幂等唯一约束与 RLS 策略，但本阶段未启用 PostgreSQL 运行时驱动，误配为 `postgresql` 会在启动时明确终止。
+- **可观测性**：C# 输出单行 JSON 请求日志，包含稳定路由模板、状态码、耗时与 trace ID；`/metrics` 提供有界标签的 Prometheus 文本指标，不把具体作业 ID 放入标签。
 
 ### React Stage 2 当前范围
 
@@ -236,6 +237,7 @@ npm run dotnet:golden         # 构建 .NET 10 G-code 核心并执行 JS/C# 字�
 npm run dotnet:jobs           # 验证内容寻址存储、文件作业仓库、幂等冲突与有界队列
 npm run postgres:migrations:check # 验证 PostgreSQL 迁移顺序、SHA、RLS 与非破坏性 DDL
 npm run dotnet:persistence    # 创建、校验、篡改检测并恢复文件作业仓库备份
+npm run containers:check      # 静态验证镜像固定版本、非 root、只读文件系统和卷边界
 npm run test:e2e              # Chromium 全量 + Firefox/WebKit 关键流程
 npm run demo:check            # 演示素材与真实导入链校验
 ```
@@ -256,8 +258,12 @@ npm run test:e2e:chromium -- tests/e2e/react-stage3-simulator.spec.js
 ### Docker Compose
 
 ```bash
+copy deploy\.env.example deploy\.env
+# 为 GCODE_AUTHORITY_INTERNAL_SECRET 生成至少 32 字节的随机值，再写入 deploy/.env
 docker compose -f deploy/docker-compose.yml up -d
 ```
+
+Compose 同时构建 Node 网关与 .NET 10 权威 sidecar。两者使用固定版本的 Alpine 多阶段镜像、不同的非 root UID、独立命名卷、只读根文件系统、`tmpfs /tmp`、空 capabilities 与 `no-new-privileges`；C# 的 8788 端口只暴露给 Compose 内部网络。完整启动、健康、指标、日志、升级前备份和回滚步骤见 [`deploy/README.md`](./deploy/README.md)。CI 会真实构建两张镜像，并执行 UID、写入边界、`/react/`、`/metrics` 和 sidecar 重启演练。
 
 ### Node
 
@@ -272,7 +278,7 @@ node server/index.js
 npm run dotnet:api
 ```
 
-常用配置见 [`server/.env.example`](./server/.env.example) 与 [`frontend/.env.example`](./frontend/.env.example)。Node 会先执行统一的 Partner SSO/API Key 身份守卫，再把同步分析或开启的异步作业白名单路由流式代理到 `GCODE_AUTHORITY_URL`；浏览器 Cookie、API Key 与 Authorization 均不会转发给 C# sidecar。生产环境应同时配置同一个至少 32 字节的 `GCODE_AUTHORITY_INTERNAL_SECRET` 与 C# `InternalAuth__SharedSecret`：Node 仅转发匿名化的 `tn_/ow_` 标识，C# 不接受浏览器自报租户。`GCODE_ASYNC_JOBS_ENABLED=0` 可独立关闭异步路由而保留同步分析。React 默认使用同源 HttpOnly Cookie；只有在凭据允许随浏览器产物分发时，才使用 `VITE_NODE_API_KEY` 或 `VITE_NODE_BEARER`。部署完成后可访问 `/healthz` 与 C# `/health/ready` 检查分析器、对象存储、文件作业仓库 schema/count、队列、Worker 与 CallerContext 状态，访问 `/metrics` 获取 Node 指标。迁移期间 `/` 保持旧工作台，`/react/` 提供新工作台。文件仓库备份/恢复命令见 [`backend/README.md`](./backend/README.md)，PostgreSQL 部署和 `pg_dump/pg_restore` 演练见 [`backend/database/postgresql/README.md`](./backend/database/postgresql/README.md)。
+常用配置见 [`server/.env.example`](./server/.env.example) 与 [`frontend/.env.example`](./frontend/.env.example)。Node 会先执行统一的 Partner SSO/API Key 身份守卫，再把同步分析或开启的异步作业白名单路由流式代理到 `GCODE_AUTHORITY_URL`；浏览器 Cookie、API Key 与 Authorization 均不会转发给 C# sidecar。生产环境应同时配置同一个至少 32 字节的 `GCODE_AUTHORITY_INTERNAL_SECRET` 与 C# `InternalAuth__SharedSecret`：Node 仅转发匿名化的 `tn_/ow_` 标识，C# 不接受浏览器自报租户。`GCODE_ASYNC_JOBS_ENABLED=0` 可独立关闭异步路由而保留同步分析。React 默认使用同源 HttpOnly Cookie；只有在凭据允许随浏览器产物分发时，才使用 `VITE_NODE_API_KEY` 或 `VITE_NODE_BEARER`。部署完成后可访问 Node `/healthz` 与 `/metrics`，并在内部网络访问 C# `/health/ready` 与 `/metrics` 检查仓库、队列、Worker、请求耗时和 CallerContext 状态。迁移期间 `/` 保持旧工作台，`/react/` 提供新工作台。文件仓库备份/恢复命令见 [`backend/README.md`](./backend/README.md)，PostgreSQL 部署和 `pg_dump/pg_restore` 演练见 [`backend/database/postgresql/README.md`](./backend/database/postgresql/README.md)。
 
 ## 项目结构
 

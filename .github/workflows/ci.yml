@@ -153,6 +153,32 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  containers:
+    name: Hardened Node + .NET containers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate pinned images and runtime policy
+        run: npm run containers:check
+
+      - name: Build explicit multi-stage images
+        run: |
+          docker build --file deploy/Dockerfile --tag forgex-node:ci .
+          docker build --file deploy/Dockerfile.api --tag forgex-api:ci .
+
+      - name: Validate Compose resolution without exposing the authority port
+        env:
+          GCODE_AUTHORITY_INTERNAL_SECRET: ci-compose-contract-secret-0123456789abcdef
+        run: docker compose --file deploy/docker-compose.yml config --quiet
+
+      - name: Exercise non-root, read-only, health, metrics and restart contracts
+        run: sh deploy/verify-containers.sh
+
   honesty:
     name: 诚实性检查
     runs-on: ubuntu-latest

@@ -9,7 +9,9 @@ const { spawn } = require("child_process");
 
 const root = path.resolve(__dirname, "..");
 const canonicalPath = path.join(root, "backend", "src", "ForgeX.Api", "openapi", "v1.json");
-const apiDll = path.join(root, "backend", "src", "ForgeX.Api", "bin", "Release", "net10.0", "ForgeX.Api.dll");
+const apiDll = process.env.FORGEX_API_DLL
+  ? path.resolve(root, process.env.FORGEX_API_DLL)
+  : path.join(root, "backend", "src", "ForgeX.Api", "bin", "Release", "net10.0", "ForgeX.Api.dll");
 
 function dotnetExecutable() {
   const local = path.join(root, ".dotnet", process.platform === "win32" ? "dotnet.exe" : "dotnet");
@@ -36,9 +38,10 @@ async function request(url, init = {}, timeoutMs = 10_000) {
   return fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
 }
 
-async function waitForReady(baseUrl, child, stderr) {
+async function waitForReady(baseUrl, child, stdout, stderr) {
   for (let attempt = 0; attempt < 80; attempt += 1) {
-    if (child.exitCode !== null) throw new Error(`ForgeX.Api exited ${child.exitCode}: ${stderr.join("")}`);
+    if (child.exitCode !== null)
+      throw new Error(`ForgeX.Api exited ${child.exitCode}: ${stdout.join("")}${stderr.join("")}`);
     try {
       const response = await request(`${baseUrl}/health/ready`, {}, 1_000);
       if (response.ok) return;
@@ -47,7 +50,7 @@ async function waitForReady(baseUrl, child, stderr) {
     }
     await new Promise((resolve) => setTimeout(resolve, 125));
   }
-  throw new Error(`ForgeX.Api readiness timed out: ${stderr.join("")}`);
+  throw new Error(`ForgeX.Api readiness timed out: ${stdout.join("")}${stderr.join("")}`);
 }
 
 async function waitForTerminal(baseUrl, statusPath, headers) {
@@ -114,6 +117,7 @@ async function main() {
   const port = await getFreePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "forgex-openapi-runtime-"));
+  const stdout = [];
   const stderr = [];
   const internalSecret = "openapi-runtime-internal-secret-32-bytes";
   const callerA = {
@@ -141,8 +145,9 @@ async function main() {
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
+    child.stdout.on("data", (chunk) => stdout.push(chunk.toString("utf8")));
     child.stderr.on("data", (chunk) => stderr.push(chunk.toString("utf8")));
-    await waitForReady(baseUrl, child, stderr);
+    await waitForReady(baseUrl, child, stdout, stderr);
 
     const openApiResponse = await request(`${baseUrl}/openapi/v1.json`);
     const served = Buffer.from(await openApiResponse.arrayBuffer());
@@ -232,7 +237,10 @@ async function main() {
 
     const snapshot = await waitForTerminal(baseUrl, accepted.links.status, callerA);
     if (snapshot.status !== "succeeded" || snapshot.result?.input?.sha256 !== sha256(gcode)) {
-      throw new Error(`async terminal contract mismatch: ${JSON.stringify(snapshot.error || snapshot.status)}`);
+      throw new Error(
+        `async terminal contract mismatch: ${JSON.stringify(snapshot.error || snapshot.status)}\n` +
+          `stdout=${stdout.join("")}\nstderr=${stderr.join("")}`
+      );
     }
 
     await waitForTerminal(baseUrl, acceptedB.links.status, callerB);
@@ -240,9 +248,49 @@ async function main() {
     const cancelResponse = await request(baseUrl + accepted.links.cancel, { method: "POST", headers: callerA });
     if (cancelResponse.status !== 200) throw new Error(`terminal cancel returned ${cancelResponse.status}`);
 
+    const metricsResponse = await request(`${baseUrl}/metrics`);
+    const metrics = await metricsResponse.text();
+    if (
+      metricsResponse.status !== 200 ||
+      !String(metricsResponse.headers.get("content-type")).startsWith("text/plain; version=0.0.4")
+    ) {
+      throw new Error(`metrics endpoint contract mismatch: ${metricsResponse.status}`);
+    }
+    for (const required of [
+      "# TYPE forgex_build_info gauge",
+      "forgex_job_repository_ready 1",
+      'forgex_http_requests_total{method="POST",route="/api/v1/gcode/analyses",status="202"} 2',
+      'forgex_http_request_duration_seconds_count{method="POST",route="/api/v1/gcode/analyses"}',
+    ]) {
+      if (!metrics.includes(required)) throw new Error(`metrics missing: ${required}`);
+    }
+    if (metrics.includes(accepted.jobId) || metrics.includes(acceptedB.jobId)) {
+      throw new Error("metrics leaked a concrete job id into labels");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const jsonLogs = stdout
+      .join("")
+      .split(/\r?\n/u)
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+    const requestLog = jsonLogs.find(
+      (line) => line.Category === "ForgeX.Api.Request" && line.State?.StatusCode === 202 && line.State?.TraceId
+    );
+    if (!requestLog) throw new Error(`structured request log missing: ${stdout.join("")}`);
+
     console.log(`OpenAPI runtime gate PASS: ${Object.keys(document.paths).length} paths`);
     console.log(`canonicalSha256=${sha256(canonical)}`);
-    console.log(`jobId=${accepted.jobId} status=${snapshot.status} sse=terminal tenantIsolation=pass`);
+    console.log(
+      `jobId=${accepted.jobId} status=${snapshot.status} sse=terminal tenantIsolation=pass metrics=pass jsonLogs=pass`
+    );
   } finally {
     if (child) {
       if (child.exitCode === null) child.kill();

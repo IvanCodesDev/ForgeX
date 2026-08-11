@@ -1,19 +1,35 @@
-# FORGE·X 智造洞察 — 零 npm 依赖：无 install、无 build，拷入即运行。
-# 适用 Fly.io / Railway / Zeabur / 自建 Docker 主机；Render 用原生 Node 环境更简单。
-FROM node:20-alpine
+# syntax=docker/dockerfile:1.7
 
+FROM node:22.13.1-alpine3.21 AS frontend-build
+WORKDIR /src
+COPY package.json package-lock.json ./
+COPY frontend/package.json ./frontend/package.json
+RUN npm ci --no-audit --no-fund
+COPY frontend ./frontend
+COPY js ./js
+RUN npm run frontend:build
+
+FROM node:22.13.1-alpine3.21 AS runtime
 WORKDIR /app
-COPY . .
-
-# 容器内必须监听 0.0.0.0；PORT 可被平台注入覆盖（server/config.js 会读取）
 ENV HOST=0.0.0.0 \
     PORT=8787 \
-    NODE_ENV=production
+    NODE_ENV=production \
+    DATA_DIR=/app/data
+
+RUN mkdir -p /app/data && chown -R node:node /app
+COPY --chown=node:node index.html README.md ./
+COPY --chown=node:node server ./server
+COPY --chown=node:node css ./css
+COPY --chown=node:node js ./js
+COPY --chown=node:node profiles ./profiles
+COPY --chown=node:node calibration ./calibration
+COPY --chown=node:node validation ./validation
+COPY --from=frontend-build --chown=node:node /src/dist/react ./dist/react
 
 EXPOSE 8787
-USER node
+USER 1000:1000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8787)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:8787/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "server/index.js"]

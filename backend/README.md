@@ -29,11 +29,18 @@ Health and contracts:
 GET  /health/live
 GET  /health/ready
 GET  /healthz
+GET  /metrics
 GET  /openapi/v1.json
 POST /api/v1/gcode/analyze
 ```
 
 The G-code endpoint accepts the raw `application/x-gcode` body. The first slice returns an authoritative summary only; the React Worker remains responsible for immediate 3D preview geometry.
+
+The API writes JSON console logs with a bounded route template, status, elapsed milliseconds, and
+trace ID. `/metrics` emits Prometheus text with bounded method/route/status labels, request duration
+histograms, uptime, build identity, and the latest file repository readiness/count. Concrete job IDs
+are never used as metric labels. This uses only the ASP.NET shared framework; no telemetry package is
+added in this slice.
 
 Async job endpoints are tenant/owner scoped. In production, configure the same secret as Node's
 `GCODE_AUTHORITY_INTERNAL_SECRET` through `InternalAuth__SharedSecret`. Node resolves the browser
