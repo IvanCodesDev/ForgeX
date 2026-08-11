@@ -185,13 +185,14 @@ Node.js service :8787
                                         ▼
                               C# .NET 10 sidecar :8788
                               ├─ StreamingGCodeAnalyzer
+                              ├─ 持久异步作业、SSE、取消与幂等键
                               ├─ 确定性摘要、单位与稳定错误码
-                              └─ JS/C# GoldenDiff 门禁
+                              └─ JS/C# GoldenDiff + JobGate 门禁
 ```
 
 - **前端**：旧页面继续可用；React 已落地共享身份头、Profile 选择、G-code/日志对账、数据分析与校准治理等垂直切片，G-code 在 Worker 中解析；
 - **业务后端**：Node.js 原生 `http`，零运行时依赖，并只对白名单路由提供 C# 同源代理；
-- **G-code 计算边界**：.NET 10 sidecar 已实现流式 G-code 摘要与 JS/C# 黄金差异门禁，仅在显式选择 `shadow` 或 `dotnet` 时参与该路由；默认 `browser` 模式不代表整个仿真核心已迁入 C#；
+- **G-code 计算边界**：.NET 10 sidecar 保留同步摘要接口，并新增 `POST /api/v1/gcode/analyses`、作业快照、SSE 事件与幂等取消接口；React 当前仍按 `browser / shadow / dotnet` 使用同步结果，异步接口先作为后台长任务底座；
 - **存储**：默认写入 `data/`，容器部署可挂载持久化卷。
 
 ### React Stage 2 当前范围
@@ -229,6 +230,7 @@ npm run check                 # ESLint + Prettier + React 类型/单测 + Node �
 npm run frontend:build        # 生成由 Node 在 /react/ 提供的生产包
 npm run frontend:build:offline # 生成可由 file:// 打开的 React 单文件包
 npm run dotnet:golden         # 构建 .NET 10 G-code 核心并执行 JS/C# 字段级黄金差异
+npm run dotnet:jobs           # 验证内容寻址存储、文件作业仓库、幂等冲突与有界队列
 npm run test:e2e              # Chromium 全量 + Firefox/WebKit 关键流程
 npm run demo:check            # 演示素材与真实导入链校验
 ```
@@ -265,7 +267,7 @@ node server/index.js
 npm run dotnet:api
 ```
 
-常用配置见 [`server/.env.example`](./server/.env.example) 与 [`frontend/.env.example`](./frontend/.env.example)。Node 会先执行统一的 Partner SSO/API Key 身份守卫与冷却限流，再将唯一的 G-code 原始请求流式代理到 `GCODE_AUTHORITY_URL`；浏览器 Cookie、API Key 与 Authorization 均不会转发给 C# sidecar。React 默认使用同源 HttpOnly Cookie；只有在凭据允许随浏览器产物分发时，才使用 `VITE_NODE_API_KEY` 或 `VITE_NODE_BEARER`。部署完成后可访问 `/healthz` 与 C# `/health/ready` 检查服务状态，访问 `/metrics` 获取运行指标。迁移期间 `/` 保持旧工作台，`/react/` 提供新工作台。
+常用配置见 [`server/.env.example`](./server/.env.example) 与 [`frontend/.env.example`](./frontend/.env.example)。Node 会先执行统一的 Partner SSO/API Key 身份守卫，再把同步分析或开启的异步作业白名单路由流式代理到 `GCODE_AUTHORITY_URL`；浏览器 Cookie、API Key 与 Authorization 均不会转发给 C# sidecar。`GCODE_ASYNC_JOBS_ENABLED=0` 可独立关闭异步路由而保留同步分析。React 默认使用同源 HttpOnly Cookie；只有在凭据允许随浏览器产物分发时，才使用 `VITE_NODE_API_KEY` 或 `VITE_NODE_BEARER`。部署完成后可访问 `/healthz` 与 C# `/health/ready` 检查分析器、对象存储、队列和 Worker 状态，访问 `/metrics` 获取 Node 指标。迁移期间 `/` 保持旧工作台，`/react/` 提供新工作台。
 
 ## 项目结构
 

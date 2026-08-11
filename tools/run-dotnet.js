@@ -24,7 +24,9 @@ const result = spawnSync(executable, args, {
     NUGET_PACKAGES: path.join(root, ".nuget-packages"),
     DOTNET_CLI_TELEMETRY_OPTOUT: "1",
     DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1",
+    DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER: "1",
     MSBuildEnableWorkloadResolver: "false",
+    MSBUILDDISABLENODEREUSE: "1",
   },
 });
 if (result.error) throw result.error;

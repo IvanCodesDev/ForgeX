@@ -115,10 +115,20 @@ jobs:
       - name: JS/C# GoldenDiff
         run: node tools/run-dotnet.js run --project backend/tests/ForgeX.GoldenDiff/ForgeX.GoldenDiff.csproj --configuration Release --no-build
 
+      - name: 异步作业存储、幂等与队列门禁
+        run: node tools/run-dotnet.js run --project backend/tests/ForgeX.JobGate/ForgeX.JobGate.csproj --configuration Release --no-build
+
       - uses: actions/upload-artifact@v4
         with:
           name: gcode-golden-diff-dotnet-10.0.302
           path: backend/artifacts/gcode-golden-diff.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gcode-job-gate-dotnet-10.0.302
+          path: backend/artifacts/gcode-job-gate.json
           if-no-files-found: error
           retention-days: 14
 

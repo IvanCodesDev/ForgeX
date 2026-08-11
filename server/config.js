@@ -130,6 +130,7 @@ function getConfig(overrides) {
       gcodeAuthorityAllowRemote: env.GCODE_AUTHORITY_ALLOW_REMOTE === "1",
       gcodeAuthorityTimeoutMs: num(env.GCODE_AUTHORITY_TIMEOUT_MS, 120000),
       gcodeAuthorityMaxBytes: GCODE_AUTHORITY_HARD_MAX_BYTES,
+      gcodeAsyncJobsEnabled: env.GCODE_ASYNC_JOBS_ENABLED !== "0",
 
       // 启动时探活 provider，失败自动降级为规则引擎（取代人工 INFINI_VERIFIED 门禁的下一步）
       probeProvider: env.PROBE_PROVIDER !== "0",
@@ -140,6 +141,7 @@ function getConfig(overrides) {
   cfg.gcodeAuthorityAllowRemote = cfg.gcodeAuthorityAllowRemote === true || cfg.gcodeAuthorityAllowRemote === "1";
   cfg.gcodeAuthorityUrl = normalizeAuthorityOrigin(cfg.gcodeAuthorityUrl, cfg.gcodeAuthorityAllowRemote);
   cfg.gcodeAuthorityTimeoutMs = Math.max(1, num(cfg.gcodeAuthorityTimeoutMs, 120000));
+  cfg.gcodeAsyncJobsEnabled = cfg.gcodeAsyncJobsEnabled !== false && cfg.gcodeAsyncJobsEnabled !== "0";
   // 生产硬上限恒为 64 MiB；测试可通过 override 缩小，任何配置都不能放大。
   cfg.gcodeAuthorityMaxBytes = Math.min(
     GCODE_AUTHORITY_HARD_MAX_BYTES,

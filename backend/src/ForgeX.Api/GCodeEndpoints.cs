@@ -8,7 +8,7 @@ namespace ForgeX.Api;
 
 internal static class GCodeEndpoints
 {
-    private const long MaxGCodeBytes = 64L * 1024 * 1024;
+    internal const long MaxGCodeBytes = 64L * 1024 * 1024;
     private const double DefaultBedSizeMm = 256;
     private const double DefaultDensityGPerCm3 = 1.24;
 
@@ -54,7 +54,11 @@ internal static class GCodeEndpoints
 
         var result = await analyzer.AnalyzeAsync(context.Request.Body, options, context.RequestAborted);
 
-        var response = new GCodeAnalysisResponse(
+        return Results.Ok(ToResponse(result, options));
+    }
+
+    internal static GCodeAnalysisResponse ToResponse(GCodeAnalysisResult result, GCodeAnalysisOptions options) =>
+        new(
             "1.0",
             new GCodeEngineDto(result.EngineVersion, result.Source),
             new GCodeInputSummaryDto(result.Sha256, result.BytesRead, result.LinesRead),
@@ -81,10 +85,7 @@ internal static class GCodeEndpoints
             [.. result.Warnings
                 .Select(static warning => new GCodeWarningDto(warning.Code, warning.Message))]);
 
-        return Results.Ok(response);
-    }
-
-    private static bool TryReadOptions(
+    internal static bool TryReadOptions(
         HttpRequest request,
         out GCodeAnalysisOptions options,
         out IReadOnlyDictionary<string, string[]> errors)

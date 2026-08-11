@@ -62,6 +62,47 @@ internal static class OpenApiDocument
                   "500": { "$ref": "#/components/responses/Problem" }
                 }
               }
+            },
+            "/api/v1/gcode/analyses": {
+              "post": {
+                "operationId": "createGCodeAnalysisJob",
+                "summary": "Persist a G-code stream and queue an authoritative analysis",
+                "parameters": [
+                  { "name": "Idempotency-Key", "in": "header", "schema": { "type": "string", "maxLength": 128 } },
+                  { "name": "bedSizeMm", "in": "query", "schema": { "type": "number", "minimum": 1, "maximum": 2000, "default": 256 } },
+                  { "name": "coordinateOrigin", "in": "query", "schema": { "type": "string", "enum": ["corner", "center"], "default": "corner" } },
+                  { "name": "filamentDensityGPerCm3", "in": "query", "schema": { "type": "number", "exclusiveMinimum": 0, "maximum": 20, "default": 1.24 } }
+                ],
+                "requestBody": { "required": true, "content": { "application/x-gcode": { "schema": { "type": "string", "format": "binary", "maxLength": 67108864 } } } },
+                "responses": {
+                  "202": { "description": "Job queued", "headers": { "Location": { "schema": { "type": "string" } } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GCodeJobAcceptedResponse" } } } },
+                  "409": { "$ref": "#/components/responses/Problem" }
+                }
+              }
+            },
+            "/api/v1/jobs/{id}": {
+              "get": {
+                "operationId": "getGCodeAnalysisJob",
+                "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[a-f0-9]{32}$" } }],
+                "responses": { "200": { "description": "Durable job snapshot", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GCodeJobSnapshotResponse" } } } }, "404": { "$ref": "#/components/responses/Problem" } }
+              }
+            },
+            "/api/v1/jobs/{id}/events": {
+              "get": {
+                "operationId": "streamGCodeAnalysisJobEvents",
+                "parameters": [
+                  { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[a-f0-9]{32}$" } },
+                  { "name": "Last-Event-ID", "in": "header", "schema": { "type": "integer", "minimum": 0 } }
+                ],
+                "responses": { "200": { "description": "SSE progress, heartbeat, and terminal events", "content": { "text/event-stream": { "schema": { "type": "string" } } } }, "404": { "$ref": "#/components/responses/Problem" } }
+              }
+            },
+            "/api/v1/jobs/{id}/cancel": {
+              "post": {
+                "operationId": "cancelGCodeAnalysisJob",
+                "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[a-f0-9]{32}$" } }],
+                "responses": { "200": { "description": "Current terminal or cancelled snapshot", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GCodeJobSnapshotResponse" } } } }, "404": { "$ref": "#/components/responses/Problem" } }
+              }
             }
           },
           "components": {
@@ -167,6 +208,36 @@ internal static class OpenApiDocument
                       "properties": { "code": { "type": "string" }, "message": { "type": "string" } }
                     }
                   }
+                }
+              },
+              "GCodeJobAcceptedResponse": {
+                "type": "object",
+                "required": ["schemaVersion", "jobId", "status", "input", "links"],
+                "properties": {
+                  "schemaVersion": { "type": "string", "const": "1.0" },
+                  "jobId": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+                  "status": { "type": "string", "enum": ["queued", "running", "succeeded", "degraded", "failed", "cancelled"] },
+                  "input": { "type": "object" },
+                  "links": { "type": "object" }
+                }
+              },
+              "GCodeJobSnapshotResponse": {
+                "type": "object",
+                "required": ["schemaVersion", "id", "kind", "status", "progress", "phase", "sequence", "createdAtUtc", "input", "links"],
+                "properties": {
+                  "schemaVersion": { "type": "string", "const": "1.0" },
+                  "id": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+                  "kind": { "type": "string", "const": "gcode-analysis" },
+                  "status": { "type": "string", "enum": ["queued", "running", "succeeded", "degraded", "failed", "cancelled"] },
+                  "progress": { "type": "number", "minimum": 0, "maximum": 1 },
+                  "phase": { "type": "string" },
+                  "sequence": { "type": "integer", "format": "int64" },
+                  "createdAtUtc": { "type": "string", "format": "date-time" },
+                  "input": { "type": "object" },
+                  "engineVersion": { "type": ["string", "null"] },
+                  "result": { "oneOf": [{ "$ref": "#/components/schemas/GCodeAnalysisResponse" }, { "type": "null" }] },
+                  "error": { "type": ["object", "null"] },
+                  "links": { "type": "object" }
                 }
               },
               "ApiProblem": {

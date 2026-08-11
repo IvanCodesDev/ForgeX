@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using ForgeX.Api;
 using ForgeX.Application;
 using ForgeX.Contracts;
+using ForgeX.Infrastructure;
 using ForgeX.Simulation;
 
 const long MaxGCodeBytes = 64L * 1024 * 1024;
@@ -34,10 +35,17 @@ if (allowedOrigins.Length > 0)
     builder.Services.AddCors(options => options.AddPolicy("ConfiguredFrontend", policy => policy
         .WithOrigins(allowedOrigins)
         .WithMethods("GET", "POST")
-        .WithHeaders("Accept", "Content-Type")
-        .WithExposedHeaders("X-Trace-Id", "X-Request-Id", "traceparent")));
+        .WithHeaders("Accept", "Content-Type", "Idempotency-Key", "Last-Event-ID")
+        .WithExposedHeaders("Location", "X-Trace-Id", "X-Request-Id", "traceparent")));
 }
 builder.Services.AddSingleton<IGCodeAnalyzer, StreamingGCodeAnalyzer>();
+var storageRoot = Path.GetFullPath(builder.Configuration["Storage:Root"] ?? "data/dotnet-preview", builder.Environment.ContentRootPath);
+builder.Services.AddSingleton<IContentObjectStore>(_ => new ContentAddressedObjectStore(Path.Combine(storageRoot, "objects")));
+builder.Services.AddSingleton<IGCodeJobRepository>(_ => new FileGCodeJobRepository(Path.Combine(storageRoot, "jobs")));
+builder.Services.AddSingleton<IGCodeJobQueue>(_ => new GCodeJobQueue());
+builder.Services.AddSingleton<GCodeJobRuntime>();
+builder.Services.AddSingleton<GCodeJobWorker>();
+builder.Services.AddHostedService(static services => services.GetRequiredService<GCodeJobWorker>());
 
 var app = builder.Build();
 
@@ -80,6 +88,7 @@ app.UseStatusCodePages(async statusCodeContext =>
     var (code, title) = context.Response.StatusCode switch
     {
         StatusCodes.Status400BadRequest => ("invalid_request", "Invalid request"),
+        StatusCodes.Status409Conflict => ("conflict", "Request conflicts with existing state"),
         StatusCodes.Status404NotFound => ("route_not_found", "Route not found"),
         StatusCodes.Status405MethodNotAllowed => ("method_not_allowed", "Method not allowed"),
         StatusCodes.Status413PayloadTooLarge => ("payload_too_large", "G-code payload is too large"),
@@ -102,15 +111,24 @@ app.MapGet("/health/live", () => Results.Ok(new HealthResponse(
     .WithName("GetLiveness")
     .Produces<HealthResponse>();
 
-app.MapGet("/health/ready", (IGCodeAnalyzer analyzer) => Results.Ok(new HealthResponse(
-        "ready",
-        "forgex-authoritative-api",
-        serviceVersion,
-        DateTimeOffset.UtcNow,
-        new Dictionary<string, string>
-        {
-            ["gcodeAnalyzer"] = analyzer.GetType().Name,
-        })))
+app.MapGet("/health/ready", async (IGCodeAnalyzer analyzer, IContentObjectStore objects, IGCodeJobQueue queue, GCodeJobWorker worker, CancellationToken ct) =>
+    {
+        var writable = await objects.ProbeWritableAsync(ct);
+        var ready = writable && queue.IsAccepting && worker.Started;
+        var response = new HealthResponse(
+            ready ? "ready" : "not_ready",
+            "forgex-authoritative-api",
+            serviceVersion,
+            DateTimeOffset.UtcNow,
+            new Dictionary<string, string>
+            {
+                ["gcodeAnalyzer"] = analyzer.GetType().Name,
+                ["objectStore"] = writable ? "writable" : "unavailable",
+                ["jobQueue"] = queue.IsAccepting ? "accepting" : "closed",
+                ["jobWorker"] = worker.Started ? "started" : "starting",
+            });
+        return Results.Json(response, statusCode: ready ? 200 : 503);
+    })
     .WithName("GetReadiness")
     .Produces<HealthResponse>();
 
@@ -139,5 +157,26 @@ app.MapPost("/api/v1/gcode/analyze", GCodeEndpoints.AnalyzeAsync)
     .Produces<ApiProblem>(StatusCodes.Status415UnsupportedMediaType, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status422UnprocessableEntity, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status500InternalServerError, "application/problem+json");
+
+app.MapPost("/api/v1/gcode/analyses", GCodeJobEndpoints.CreateAsync)
+    .WithName("CreateGCodeAnalysisJob")
+    .Accepts<Stream>("application/x-gcode")
+    .Produces<GCodeJobAcceptedResponse>(StatusCodes.Status202Accepted)
+    .Produces<ApiProblem>(StatusCodes.Status409Conflict, "application/problem+json");
+
+app.MapGet("/api/v1/jobs/{id}", GCodeJobEndpoints.GetAsync)
+    .WithName("GetGCodeAnalysisJob")
+    .Produces<GCodeJobSnapshotResponse>()
+    .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
+
+app.MapGet("/api/v1/jobs/{id}/events", GCodeJobEndpoints.EventsAsync)
+    .WithName("StreamGCodeAnalysisJobEvents")
+    .Produces(StatusCodes.Status200OK, contentType: "text/event-stream")
+    .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
+
+app.MapPost("/api/v1/jobs/{id}/cancel", GCodeJobEndpoints.CancelAsync)
+    .WithName("CancelGCodeAnalysisJob")
+    .Produces<GCodeJobSnapshotResponse>()
+    .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
 
 app.Run();

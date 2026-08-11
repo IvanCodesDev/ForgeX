@@ -7,6 +7,7 @@ const https = require("https");
 const { resolveIdentity } = require("../lib/identity");
 
 const ANALYZE_PATH = "/api/v1/gcode/analyze";
+const ANALYSES_PATH = "/api/v1/gcode/analyses";
 const RESPONSE_HEADERS = [
   "content-type",
   "traceparent",
@@ -15,6 +16,8 @@ const RESPONSE_HEADERS = [
   "x-correlation-id",
   "x-trace-id",
   "server-timing",
+  "location",
+  "x-accel-buffering",
 ];
 
 function sendProblem(res, status, code, title, traceId, closeConnection) {
@@ -51,6 +54,12 @@ function upstreamHeaders(req, length, reqId) {
     headers["content-type"] = req.headers["content-type"];
   }
   if (length != null) headers["content-length"] = String(length);
+  if (typeof req.headers["idempotency-key"] === "string") {
+    headers["idempotency-key"] = req.headers["idempotency-key"];
+  }
+  if (typeof req.headers["last-event-id"] === "string") {
+    headers["last-event-id"] = req.headers["last-event-id"];
+  }
   return headers;
 }
 
@@ -64,7 +73,7 @@ function responseHeaders(upstream, reqId) {
   return headers;
 }
 
-function proxyAnalyze(req, res, rc, ctx) {
+function proxyAnalyze(req, res, rc, ctx, targetPath) {
   const { cfg, log } = ctx;
   // 与其他写接口共用同一身份优先级和同一 IP 冷却窗口；守卫与限流都在
   // 创建 sidecar 连接前执行，拒绝的请求不会向权威计算进程泄漏任何字节。
@@ -90,7 +99,7 @@ function proxyAnalyze(req, res, rc, ctx) {
   }
 
   const requestUrl = new URL(req.url, "http://node.invalid");
-  const target = new URL(ANALYZE_PATH + requestUrl.search, cfg.gcodeAuthorityUrl);
+  const target = new URL((targetPath || ANALYZE_PATH) + requestUrl.search, cfg.gcodeAuthorityUrl);
   const transport = target.protocol === "https:" ? https : http;
 
   return new Promise((resolve) => {
@@ -221,9 +230,105 @@ function proxyAnalyze(req, res, rc, ctx) {
   });
 }
 
+function proxyJobControl(req, res, rc, ctx, targetPath, rateLimited) {
+  const { cfg, log } = ctx;
+  resolveIdentity(req, rc, ctx);
+  if (rateLimited) ctx.rateLimit(rc.ip);
+  if (!cfg.gcodeAsyncJobsEnabled) {
+    sendProblem(res, 503, "async_jobs_disabled", "异步 G-code 作业已关闭", rc.reqId);
+    req.resume();
+    return Promise.resolve();
+  }
+  if (!cfg.gcodeAuthorityUrl) {
+    sendProblem(res, 503, "authority_not_configured", "C# G-code 权威计算服务未配置", rc.reqId);
+    req.resume();
+    return Promise.resolve();
+  }
+
+  const target = new URL(targetPath, cfg.gcodeAuthorityUrl);
+  const transport = target.protocol === "https:" ? https : http;
+  req.resume();
+  return new Promise((resolve) => {
+    let done = false;
+    let terminal = false;
+    let timeout = null;
+    let upstreamReq;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      if (timeout) clearTimeout(timeout);
+      resolve();
+    };
+    try {
+      upstreamReq = transport.request(target, {
+        method: req.method,
+        headers: upstreamHeaders(req, 0, rc.reqId),
+      });
+    } catch (error) {
+      log.warn("gcode job proxy failed", { reqId: rc.reqId, error: error.message });
+      sendProblem(res, 502, "authority_unavailable", "C# G-code 权威计算服务不可用", rc.reqId);
+      return finish();
+    }
+    if (!targetPath.endsWith("/events")) {
+      timeout = setTimeout(() => {
+        if (terminal) return;
+        terminal = true;
+        upstreamReq.destroy();
+        if (!res.headersSent) {
+          sendProblem(res, 504, "authority_timeout", "C# G-code 权威计算超时", rc.reqId);
+        } else if (!res.destroyed) {
+          res.destroy();
+        }
+        finish();
+      }, cfg.gcodeAuthorityTimeoutMs);
+      timeout.unref();
+    }
+    upstreamReq.on("response", (upstreamRes) => {
+      if (terminal) return upstreamRes.destroy();
+      res.writeHead(upstreamRes.statusCode || 502, responseHeaders(upstreamRes, rc.reqId));
+      upstreamRes.on("error", () => {
+        if (!res.destroyed) res.destroy();
+      });
+      upstreamRes.pipe(res);
+    });
+    upstreamReq.on("error", (error) => {
+      if (terminal) return;
+      terminal = true;
+      log.warn("gcode job proxy failed", { reqId: rc.reqId, error: error.message });
+      if (!res.headersSent) {
+        sendProblem(res, 502, "authority_unavailable", "C# G-code 权威计算服务不可用", rc.reqId);
+      } else if (!res.destroyed) res.destroy();
+      finish();
+    });
+    upstreamReq.end();
+    res.once("finish", finish);
+    res.once("close", () => {
+      if (!upstreamReq.destroyed) upstreamReq.destroy();
+      finish();
+    });
+  });
+}
+
 function register(router, ctx) {
   router.add("POST", /^\/api\/v1\/gcode\/analyze$/, (req, res, _match, rc) => {
     return proxyAnalyze(req, res, rc, ctx);
+  });
+  router.add("POST", /^\/api\/v1\/gcode\/analyses$/, (req, res, _match, rc) => {
+    if (!ctx.cfg.gcodeAsyncJobsEnabled) {
+      sendProblem(res, 503, "async_jobs_disabled", "异步 G-code 作业已关闭", rc.reqId);
+      req.resume();
+      return Promise.resolve();
+    }
+    return proxyAnalyze(req, res, rc, ctx, ANALYSES_PATH);
+  });
+  router.add("GET", /^\/api\/v1\/jobs\/([a-f0-9]{32})$/, (req, res, match, rc) => {
+    return proxyJobControl(req, res, rc, ctx, `/api/v1/jobs/${match[1]}`, false);
+  });
+  router.add("GET", /^\/api\/v1\/jobs\/([a-f0-9]{32})\/events$/, (req, res, match, rc) => {
+    return proxyJobControl(req, res, rc, ctx, `/api/v1/jobs/${match[1]}/events`, false);
+  });
+  router.add("POST", /^\/api\/v1\/jobs\/([a-f0-9]{32})\/cancel$/, (req, res, match, rc) => {
+    return proxyJobControl(req, res, rc, ctx, `/api/v1/jobs/${match[1]}/cancel`, true);
   });
 }
 
