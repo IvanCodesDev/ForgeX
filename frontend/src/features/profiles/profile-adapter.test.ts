@@ -65,11 +65,15 @@ describe("profile adapter", () => {
       bedSize: 256,
       densityG: 1.24,
       origin: "corner",
+      machineProfileId: "corexy",
+      materialProfileId: "PLA",
     });
     expect(delta && petg ? deriveProfileOptions(delta, petg) : null).toEqual({
       bedSize: 260,
       densityG: 1.27,
       origin: "center",
+      machineProfileId: "delta",
+      materialProfileId: "PETG",
     });
     expect(Object.isFrozen(catalog.machines)).toBe(true);
     expect(Object.isFrozen(catalog.machines[0]?.buildVolume)).toBe(true);

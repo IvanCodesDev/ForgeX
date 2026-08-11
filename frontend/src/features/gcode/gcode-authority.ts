@@ -22,9 +22,34 @@ export interface AuthorityDiff {
   readonly contractMatches: boolean;
   readonly inputMatches: boolean;
   readonly parametersMatch: boolean;
+  readonly profileMatches: boolean;
   readonly sha256Matches: boolean;
   readonly pass: boolean;
   readonly fields: readonly AuthorityDiffField[];
+}
+
+export const DEFAULT_MACHINE_PROFILE_ID = "unspecified-machine";
+export const DEFAULT_MATERIAL_PROFILE_ID = "unspecified-material";
+
+function effectiveProfileIds(options: GcodeParseOptions): {
+  readonly machineProfileId: string;
+  readonly materialProfileId: string;
+} {
+  return {
+    machineProfileId: options.machineProfileId ?? DEFAULT_MACHINE_PROFILE_ID,
+    materialProfileId: options.materialProfileId ?? DEFAULT_MATERIAL_PROFILE_ID,
+  };
+}
+
+export function buildGcodeAuthorityQuery(options: GcodeParseOptions): URLSearchParams {
+  const profile = effectiveProfileIds(options);
+  return new URLSearchParams({
+    bedSizeMm: String(options.bedSize),
+    coordinateOrigin: options.origin,
+    filamentDensityGPerCm3: String(options.densityG),
+    machineProfileId: profile.machineProfileId,
+    materialProfileId: profile.materialProfileId,
+  });
 }
 
 export interface EffectiveGcodeSummary {
@@ -116,6 +141,7 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
   const root = requireRecord(value, "root");
   const engine = requireRecord(root.engine, "engine");
   const input = requireRecord(root.input, "input");
+  const profile = requireRecord(root.profile, "profile");
   const parameters = requireRecord(root.parameters, "parameters");
   const summary = requireRecord(root.summary, "summary");
   const bounds = requireRecord(root.bounds, "bounds");
@@ -128,6 +154,14 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
   if (coordinateOrigin !== "corner" && coordinateOrigin !== "center") {
     throw new Error(`C# 权威结果契约不一致：coordinateOrigin=${coordinateOrigin}`);
   }
+  const profileCoordinateOrigin = requireString(profile, "coordinateOrigin");
+  if (profileCoordinateOrigin !== "corner" && profileCoordinateOrigin !== "center") {
+    throw new Error(`C# 权威结果契约不一致：profile.coordinateOrigin=${profileCoordinateOrigin}`);
+  }
+  const fingerprint = requireString(profile, "fingerprint");
+  if (!/^[a-f0-9]{64}$/.test(fingerprint)) {
+    throw new Error("C# 权威结果契约不一致：profile.fingerprint 无效");
+  }
   return {
     schemaVersion,
     engine: { version: requireString(engine, "version"), source: requireString(engine, "source") },
@@ -135,6 +169,14 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
       sha256: requireString(input, "sha256"),
       bytesRead: requireFinite(input, "bytesRead"),
       linesRead: requireFinite(input, "linesRead"),
+    },
+    profile: {
+      machineProfileId: requireString(profile, "machineProfileId"),
+      materialProfileId: requireString(profile, "materialProfileId"),
+      bedSizeMm: requireFinite(profile, "bedSizeMm"),
+      coordinateOrigin: profileCoordinateOrigin,
+      filamentDensityGPerCm3: requireFinite(profile, "filamentDensityGPerCm3"),
+      fingerprint,
     },
     parameters: {
       bedSizeMm: requireFinite(parameters, "bedSizeMm"),
@@ -176,6 +218,7 @@ export function assertAuthorityContract(
   options: GcodeParseOptions
 ): AuthorityAnalysisResponse {
   const mismatches: string[] = [];
+  const profile = effectiveProfileIds(options);
   if (result.schemaVersion !== "1.0") mismatches.push(`schemaVersion=${result.schemaVersion}`);
   if (!result.engine.version.trim()) mismatches.push("engine.version is empty");
   if (result.engine.source !== "gcode-import") {
@@ -193,6 +236,23 @@ export function assertAuthorityContract(
   if (result.parameters.filamentDensityGPerCm3 !== options.densityG) {
     mismatches.push(`filamentDensityGPerCm3=${result.parameters.filamentDensityGPerCm3}, expected=${options.densityG}`);
   }
+  if (result.profile.machineProfileId !== profile.machineProfileId) {
+    mismatches.push(
+      `profile.machineProfileId=${result.profile.machineProfileId}, expected=${profile.machineProfileId}`
+    );
+  }
+  if (result.profile.materialProfileId !== profile.materialProfileId) {
+    mismatches.push(
+      `profile.materialProfileId=${result.profile.materialProfileId}, expected=${profile.materialProfileId}`
+    );
+  }
+  if (
+    result.profile.bedSizeMm !== result.parameters.bedSizeMm ||
+    result.profile.coordinateOrigin !== result.parameters.coordinateOrigin ||
+    result.profile.filamentDensityGPerCm3 !== result.parameters.filamentDensityGPerCm3
+  ) {
+    mismatches.push("profile effective values differ from parameters");
+  }
   if (mismatches.length) throw new Error(`C# 权威结果契约不一致：${mismatches.join("; ")}`);
   return result;
 }
@@ -204,11 +264,7 @@ export async function requestAuthorityAnalysis(
   signal: AbortSignal
 ): Promise<AuthorityAnalysisResponse> {
   const base = resolveNodeApiBase(env);
-  const query = new URLSearchParams({
-    bedSizeMm: String(options.bedSize),
-    coordinateOrigin: options.origin,
-    filamentDensityGPerCm3: String(options.densityG),
-  });
+  const query = buildGcodeAuthorityQuery(options);
   const response = await fetch(
     `${base}${forgeXApiOperations.analyzeGCode.path}?${query}`,
     createNodeRequestInit(env, {
@@ -268,11 +324,20 @@ export function compareAuthority(
       (authority.parameters.bedSizeMm === expectedOptions.bedSize &&
         authority.parameters.coordinateOrigin === expectedOptions.origin &&
         authority.parameters.filamentDensityGPerCm3 === expectedOptions.densityG));
+  const profileIds = expectedOptions ? effectiveProfileIds(expectedOptions) : null;
+  const profileMatches =
+    authority.profile.bedSizeMm === authority.parameters.bedSizeMm &&
+    authority.profile.coordinateOrigin === authority.parameters.coordinateOrigin &&
+    authority.profile.filamentDensityGPerCm3 === authority.parameters.filamentDensityGPerCm3 &&
+    (!profileIds ||
+      (authority.profile.machineProfileId === profileIds.machineProfileId &&
+        authority.profile.materialProfileId === profileIds.materialProfileId));
   return {
     engineMatches,
     contractMatches,
     inputMatches,
     parametersMatch,
+    profileMatches,
     sha256Matches,
     fields,
     pass:
@@ -280,6 +345,7 @@ export function compareAuthority(
       contractMatches &&
       inputMatches &&
       parametersMatch &&
+      profileMatches &&
       sha256Matches &&
       fields.every((field) => field.pass),
   };

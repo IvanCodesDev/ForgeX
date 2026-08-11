@@ -82,6 +82,8 @@ export function deriveProfileOptions(machine: MachineProfile, material: Material
     bedSize: Math.max(machine.buildVolume.x, machine.buildVolume.y),
     densityG: material.densityG,
     origin: machine.kinematics === "delta" ? "center" : "corner",
+    machineProfileId: machine.id,
+    materialProfileId: material.id,
   });
 }
 

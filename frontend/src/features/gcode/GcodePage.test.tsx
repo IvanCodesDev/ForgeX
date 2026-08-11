@@ -4,7 +4,15 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const parseFile = vi.fn<(...args: [File, { bedSize: number; densityG: number; origin: string }]) => Promise<void>>();
+const parseFile =
+  vi.fn<
+    (
+      ...args: [
+        File,
+        { bedSize: number; densityG: number; origin: string; machineProfileId: string; materialProfileId: string },
+      ]
+    ) => Promise<void>
+  >();
 const cancel = vi.fn();
 const reset = vi.fn();
 
@@ -95,7 +103,13 @@ describe("GcodePage Profile integration", () => {
     fireEvent.change(gcodeInput(), { target: { files: [file] } });
 
     await waitFor(() =>
-      expect(parseFile).toHaveBeenCalledWith(file, { bedSize: 260, densityG: 1.27, origin: "center" })
+      expect(parseFile).toHaveBeenCalledWith(file, {
+        bedSize: 260,
+        densityG: 1.27,
+        origin: "center",
+        machineProfileId: "delta",
+        materialProfileId: "PETG",
+      })
     );
 
     fireEvent.change(screen.getByLabelText("材料 Profile"), { target: { value: "ABS" } });
@@ -104,7 +118,13 @@ describe("GcodePage Profile integration", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "按当前参数重新解析" }));
     await waitFor(() =>
-      expect(parseFile).toHaveBeenLastCalledWith(file, { bedSize: 260, densityG: 1.05, origin: "center" })
+      expect(parseFile).toHaveBeenLastCalledWith(file, {
+        bedSize: 260,
+        densityG: 1.05,
+        origin: "center",
+        machineProfileId: "delta",
+        materialProfileId: "ABS",
+      })
     );
   });
 

@@ -1,4 +1,7 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace ForgeX.Domain;
 
@@ -16,10 +19,45 @@ public sealed record GCodeAnalysisOptions(
     double MaterialDensityGPerCm3 = 1.24d,
     long MaxInputBytes = 64L * 1024 * 1024,
     long MaxLines = 4_000_000L,
-    int MaxLineLength = 1_048_576)
+    int MaxLineLength = 1_048_576,
+    string MachineProfileId = "unspecified-machine",
+    string MaterialProfileId = "unspecified-material")
 {
     /// <summary>Compatibility alias used by the streaming implementation.</summary>
     public long MaxBytes => MaxInputBytes;
+}
+
+/// <summary>Stable identity and effective physical values for the selected Profile pair.</summary>
+public sealed record GCodeProfileSummary(
+    string MachineProfileId,
+    string MaterialProfileId,
+    double BedSizeMm,
+    CoordinateOrigin CoordinateOrigin,
+    double FilamentDensityGPerCm3,
+    string Fingerprint)
+{
+    public const string FingerprintVersion = "forgex-gcode-profile/1";
+
+    public static GCodeProfileSummary Create(GCodeAnalysisOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var canonical = string.Join(
+            '\n',
+            FingerprintVersion,
+            options.MachineProfileId,
+            options.MaterialProfileId,
+            options.BedSizeMm.ToString("R", CultureInfo.InvariantCulture),
+            options.CoordinateOrigin.ToString().ToLowerInvariant(),
+            options.MaterialDensityGPerCm3.ToString("R", CultureInfo.InvariantCulture));
+        var fingerprint = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+        return new GCodeProfileSummary(
+            options.MachineProfileId,
+            options.MaterialProfileId,
+            options.BedSizeMm,
+            options.CoordinateOrigin,
+            options.MaterialDensityGPerCm3,
+            fingerprint);
+    }
 }
 
 /// <summary>Centered XY bounds of all extrusion moves, in millimetres.</summary>
@@ -57,6 +95,7 @@ public sealed record GCodeAnalysisResult(
     string Sha256,
     string EngineVersion,
     string Source,
+    GCodeProfileSummary Profile,
     CoordinateOrigin CoordinateOrigin,
     long BytesRead,
     long LinesRead,

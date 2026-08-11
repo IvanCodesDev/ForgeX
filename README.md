@@ -194,7 +194,7 @@ Node.js service :8787
 
 - **前端**：旧页面继续可用；React 已落地共享身份头、Profile 选择、G-code/日志对账、数据分析与校准治理等垂直切片，G-code 在 Worker 中解析；
 - **业务后端**：Node.js 原生 `http`，零运行时依赖，并只对白名单路由提供 C# 同源代理；
-- **G-code 计算边界**：.NET 10 sidecar 保留同步摘要接口，并新增 `POST /api/v1/gcode/analyses`、作业快照、SSE 事件与幂等取消接口；React 的 `dotnet` 模式使用异步作业、断线续传与轮询兜底，`browser / shadow` 路径保持原行为；Node 会把已核验身份匿名化为稳定 `tenant/owner`，再通过独立内部密钥交给 C#，任务查询、SSE 与取消均按该边界过滤；
+- **G-code 计算边界**：.NET 10 sidecar 保留同步摘要接口，并新增 `POST /api/v1/gcode/analyses`、作业快照、SSE 事件与幂等取消接口；同步与异步结果都返回机型/材料 Profile 标识、实际生效参数和确定性 SHA-256 Profile 指纹，异步幂等键也绑定该指纹；React 会核验 Profile 摘要与提交值、返回参数完全一致。`dotnet` 模式使用异步作业、断线续传与轮询兜底，`browser / shadow` 路径保持原行为；Node 会把已核验身份匿名化为稳定 `tenant/owner`，再通过独立内部密钥交给 C#，任务查询、SSE 与取消均按该边界过滤；
 - **契约边界**：`backend/src/ForgeX.Api/openapi/v1.json` 是 API 单一来源，构建前生成 TypeScript DTO、操作路径和路径参数函数；CI 通过源文件 SHA 与生成器复跑阻止前后端契约漂移；
 - **存储**：默认 `Persistence:Provider=file` 写入 `data/`，容器部署可挂载持久化卷；文件作业仓库提供逐条 SHA-256 的版本化备份、全量预检恢复和就绪探针。`backend/database/postgresql/` 已冻结 PostgreSQL v1 迁移、租户/归属键、事件表、幂等唯一约束与 RLS 策略，但本阶段未启用 PostgreSQL 运行时驱动，误配为 `postgresql` 会在启动时明确终止。
 - **可观测性**：C# 输出单行 JSON 请求日志，包含稳定路由模板、状态码、耗时与 trace ID；`/metrics` 提供有界标签的 Prometheus 文本指标，不把具体作业 ID 放入标签。
@@ -226,7 +226,7 @@ Node.js service :8787
 | `VITE_REACT_ANALYTICS_ENABLED`        | 启用 `#/analytics` 本地分析路由；`0` 时显示该功能已回退            |
 | `VITE_REACT_GOVERNANCE_ENABLED`       | 启用 `#/governance` 校准治理路由；`0` 时显示该功能已回退           |
 
-`VITE_GCODE_AUTHORITY` 不是页面开关，而是 G-code 分析模式：`browser` 为默认浏览器结果，`shadow` 与 C# 双跑但不切换主结果，`dotnet` 才使用 C# 返回作为该路由结果。`dotnet` 默认通过异步作业运行：创建请求携带稳定幂等键，SSE 使用事件序号续传，连接失败后轮询同一作业，页面取消会同步取消服务端作业。`VITE_GCODE_JOB_API=0` 可把 React 独立回退到既有同步 `/api/v1/gcode/analyze`；服务端 `GCODE_ASYNC_JOBS_ENABLED=0` 可关闭异步路由。`VITE_API_BASE=offline` 可强制离线演示；`VITE_NODE_API_KEY` 与 `VITE_NODE_BEARER` 会进入浏览器产物，只能放置允许分发的客户端凭据，校准审核密钥只允许配置在服务端 `CALIBRATION_REVIEW_KEYS`。
+`VITE_GCODE_AUTHORITY` 不是页面开关，而是 G-code 分析模式：`browser` 为默认浏览器结果，`shadow` 与 C# 双跑但不切换主结果，`dotnet` 才使用 C# 返回作为该路由结果。Profile 选择会把稳定机型/材料 ID 与生效的平台尺寸、原点和材料密度同时提交；C# 返回确定性 Profile 指纹，前端在切换结果前核验 ID、参数和指纹结构。`dotnet` 默认通过异步作业运行：创建请求携带稳定幂等键，SSE 使用事件序号续传，连接失败后轮询同一作业，页面取消会同步取消服务端作业。`VITE_GCODE_JOB_API=0` 可把 React 独立回退到既有同步 `/api/v1/gcode/analyze`；服务端 `GCODE_ASYNC_JOBS_ENABLED=0` 可关闭异步路由。`VITE_API_BASE=offline` 可强制离线演示；`VITE_NODE_API_KEY` 与 `VITE_NODE_BEARER` 会进入浏览器产物，只能放置允许分发的客户端凭据，校准审核密钥只允许配置在服务端 `CALIBRATION_REVIEW_KEYS`。
 
 Analytics 另有独立的 `VITE_ANALYTICS_AUTHORITY=dotnet|shadow|browser`：未配置时默认 `dotnet`，只有字段级门禁完全一致的 C# 报告会进入页面与导出；`shadow` 只显示差异；`browser` 完全本地计算且零分析 API 请求，是一个发布周期内的即时回滚开关。`VITE_API_BASE=offline` 在任何模式下都强制浏览器结果。服务端可用 `ANALYTICS_AUTHORITY_ENABLED=0` 独立关闭该路由，5 MiB 请求上限和 5000 行上限不可由部署配置放大。
 
@@ -238,6 +238,7 @@ npm run frontend:build        # 生成由 Node 在 /react/ 提供的生产包
 npm run frontend:build:offline # 生成可由 file:// 打开的 React 单文件包
 npm run dotnet:golden         # 构建 .NET 10 G-code 核心并执行 JS/C# 字段级黄金差异
 npm run dotnet:jobs           # 验证内容寻址存储、文件作业仓库、幂等冲突与有界队列
+npm run dotnet:gcode-benchmark # 生成 16 MiB 流式解析、内存、结果体积与取消延迟证据
 npm run postgres:migrations:check # 验证 PostgreSQL 迁移顺序、SHA、RLS 与非破坏性 DDL
 npm run dotnet:persistence    # 创建、校验、篡改检测并恢复文件作业仓库备份
 npm run dotnet:analytics      # 双跑 JS/C# CSV、统计核、排名和 400 行 KPI，生成字段级差异

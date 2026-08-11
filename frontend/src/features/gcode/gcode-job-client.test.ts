@@ -13,6 +13,14 @@ const AUTHORITY: AuthorityAnalysisResponse = {
   schemaVersion: "1.0",
   engine: { version: "forgex-gcode-csharp/1", source: "gcode-import" },
   input: { sha256: "a".repeat(64), bytesRead: 20, linesRead: 2 },
+  profile: {
+    machineProfileId: "unspecified-machine",
+    materialProfileId: "unspecified-material",
+    bedSizeMm: 256,
+    coordinateOrigin: "corner",
+    filamentDensityGPerCm3: 1.24,
+    fingerprint: "f".repeat(64),
+  },
   parameters: { bedSizeMm: 256, coordinateOrigin: "corner", filamentDensityGPerCm3: 1.24 },
   summary: {
     totalLayers: 2,
@@ -125,7 +133,7 @@ describe("G-code async authority job client", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      "https://node.example.test/api/v1/gcode/analyses?bedSizeMm=256&coordinateOrigin=corner&filamentDensityGPerCm3=1.24"
+      "https://node.example.test/api/v1/gcode/analyses?bedSizeMm=256&coordinateOrigin=corner&filamentDensityGPerCm3=1.24&machineProfileId=unspecified-machine&materialProfileId=unspecified-material"
     );
     const creation = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const headers = new Headers(creation.headers);

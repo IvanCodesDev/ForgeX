@@ -49,6 +49,8 @@ export interface GcodeParseOptions {
   readonly densityG: number;
   readonly bedSize: number;
   readonly origin: "corner" | "center";
+  readonly machineProfileId?: string;
+  readonly materialProfileId?: string;
 }
 
 export interface PreviewPath {

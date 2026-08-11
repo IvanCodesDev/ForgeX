@@ -19,8 +19,16 @@ test.describe("React Stage 3-B async authority", () => {
     const links = { status: base, events: `${base}/events`, cancel: `${base}/cancel` };
     const authority = {
       schemaVersion: "1.0",
-      engine: { version: "forgex-gcode-csharp/1", source: "gcode-import" },
+      engine: { version: "1.1.0", source: "gcode-import" },
       input: { sha256: SHA256, bytesRead: 350, linesRead: 18 },
+      profile: {
+        machineProfileId: "corexy",
+        materialProfileId: "PLA",
+        bedSizeMm: 256,
+        coordinateOrigin: "corner",
+        filamentDensityGPerCm3: 1.24,
+        fingerprint: "f".repeat(64),
+      },
       parameters: { bedSizeMm: 256, coordinateOrigin: "corner", filamentDensityGPerCm3: 1.24 },
       summary: {
         totalLayers: 2,
@@ -44,6 +52,9 @@ test.describe("React Stage 3-B async authority", () => {
       expect(request.method()).toBe("POST");
       expect(request.headers()["idempotency-key"]).toMatch(/^gcode-/);
       expect(request.postDataBuffer()?.byteLength).toBe(350);
+      const query = new URL(request.url()).searchParams;
+      expect(query.get("machineProfileId")).toBe("corexy");
+      expect(query.get("materialProfileId")).toBe("PLA");
       await route.fulfill({
         status: 202,
         contentType: "application/json",
@@ -98,6 +109,7 @@ test.describe("React Stage 3-B async authority", () => {
     await expect(page.getByText("摘要口径：C# 权威结果", { exact: true })).toBeVisible();
     await expect(page.getByText(SHA256, { exact: true })).toBeVisible();
     await expect(page.getByText("C# 引擎权威口径", { exact: true })).toBeVisible();
+    await expect(page.getByText("corexy / PLA", { exact: true })).toBeVisible();
     expect(creationCount).toBe(1);
     expect(sseCount).toBe(1);
   });

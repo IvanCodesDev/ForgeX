@@ -238,6 +238,16 @@ internal static class GoldenDiffProgram
                     baselineFixture,
                     baseline,
                     cancellationToken)),
+            await RunProbeAsync(
+                "profile-summary",
+                () => CheckProfileSummaryAsync(
+                    analyzer,
+                    baselineCase,
+                    baselineFixture,
+                    cancellationToken)),
+            await RunProbeAsync(
+                "profile-id-validation",
+                () => CheckProfileIdValidationAsync(analyzer, cancellationToken)),
         };
         return checks;
     }
@@ -343,6 +353,84 @@ internal static class GoldenDiffProgram
             semanticMatch && shaMatch,
             $"maxReadBytes=1; shaMatch={shaMatch}; semanticMatch={semanticMatch}",
             StreamingGCodeAnalyzer.EngineVersion);
+    }
+
+    private static async Task<ContractCheck> CheckProfileSummaryAsync(
+        StreamingGCodeAnalyzer analyzer,
+        GoldenCase baselineCase,
+        string baselineFixture,
+        CancellationToken cancellationToken)
+    {
+        var options = CreateOptions(baselineCase) with
+        {
+            MachineProfileId = "delta",
+            MaterialProfileId = "PETG",
+        };
+        var first = await AnalyzeFixtureAsync(analyzer, baselineFixture, options, cancellationToken);
+        var second = await AnalyzeFixtureAsync(analyzer, baselineFixture, options, cancellationToken);
+        var changed = await AnalyzeFixtureAsync(
+            analyzer,
+            baselineFixture,
+            options with { MaterialProfileId = "ABS" },
+            cancellationToken);
+        var profile = first.Profile;
+        var valuesMatch =
+            profile.MachineProfileId == options.MachineProfileId &&
+            profile.MaterialProfileId == options.MaterialProfileId &&
+            profile.BedSizeMm == options.BedSizeMm &&
+            profile.CoordinateOrigin == options.CoordinateOrigin &&
+            profile.FilamentDensityGPerCm3 == options.MaterialDensityGPerCm3;
+        var fingerprintShape = profile.Fingerprint.Length == 64 &&
+            profile.Fingerprint.All(static character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
+        var deterministic = profile.Fingerprint == second.Profile.Fingerprint;
+        var sensitive = profile.Fingerprint != changed.Profile.Fingerprint;
+        return new ContractCheck(
+            "profile-summary",
+            valuesMatch && fingerprintShape && deterministic && sensitive,
+            $"valuesMatch={valuesMatch}; fingerprintShape={fingerprintShape}; deterministic={deterministic}; materialSensitive={sensitive}",
+            StreamingGCodeAnalyzer.EngineVersion);
+    }
+
+    private static async Task<ContractCheck> CheckProfileIdValidationAsync(
+        StreamingGCodeAnalyzer analyzer,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = new MemoryStream(
+            Encoding.UTF8.GetBytes("G90\nM82\nG1 X0 Y0 Z0.2 F1200\nG1 X10 Y10 E1 F900\n"),
+            writable: false);
+        try
+        {
+            await analyzer.AnalyzeAsync(
+                stream,
+                new GCodeAnalysisOptions(MachineProfileId: "../invalid"),
+                cancellationToken);
+            return ContractFailure("profile-id-validation", "Invalid Profile identifier unexpectedly produced a result.");
+        }
+        catch (GCodeAnalysisException exception)
+        {
+            var pass = exception.Code == "GCODE_INVALID_OPTIONS";
+            return new ContractCheck(
+                "profile-id-validation",
+                pass,
+                $"stableCode={exception.Code}",
+                StreamingGCodeAnalyzer.EngineVersion);
+        }
+    }
+
+    private static async Task<GCodeAnalysisResult> AnalyzeFixtureAsync(
+        StreamingGCodeAnalyzer analyzer,
+        string fixturePath,
+        GCodeAnalysisOptions options,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(
+            fixturePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            64 * 1024,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        return await analyzer.AnalyzeAsync(stream, options, cancellationToken);
     }
 
     private static bool SemanticallyEquivalent(GCodeAnalysisResult left, GCodeAnalysisResult right)

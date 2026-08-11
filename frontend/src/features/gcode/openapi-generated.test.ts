@@ -22,6 +22,14 @@ describe("generated ForgeX OpenAPI client", () => {
       schemaVersion: "1.0",
       engine: { version: "1.0.0", source: "gcode-import" },
       input: { sha256: "a".repeat(64), bytesRead: 20, linesRead: 2 },
+      profile: {
+        machineProfileId: "corexy",
+        materialProfileId: "PLA",
+        bedSizeMm: 256,
+        coordinateOrigin: "corner",
+        filamentDensityGPerCm3: 1.24,
+        fingerprint: "f".repeat(64),
+      },
       parameters: { bedSizeMm: 256, coordinateOrigin: "corner", filamentDensityGPerCm3: 1.24 },
       summary: {
         totalLayers: 2,

@@ -19,6 +19,7 @@ The local SDK is discovered by `tools/run-dotnet.js`. CI may use a system SDK wi
 npm run dotnet:build
 npm run dotnet:golden
 npm run dotnet:jobs
+npm run dotnet:gcode-benchmark
 npm run dotnet:persistence
 npm run dotnet:analytics
 npm run dotnet:api
@@ -36,6 +37,18 @@ POST /api/v1/gcode/analyze
 ```
 
 The G-code endpoint accepts the raw `application/x-gcode` body. The first slice returns an authoritative summary only; the React Worker remains responsible for immediate 3D preview geometry.
+
+## Stage 5-A G-code Profile authority
+
+Both `POST /api/v1/gcode/analyze` and `POST /api/v1/gcode/analyses` accept optional
+`machineProfileId` and `materialProfileId` query values. Identifiers are limited to 1–80 ASCII
+letters, digits, `.`, `_`, or `-` and must start with a letter or digit. The authority response binds
+those identifiers to the effective bed size, coordinate origin, and filament density in `profile`,
+plus a deterministic lowercase SHA-256 fingerprint. Async idempotency includes this fingerprint, so
+the same bytes with different Profile inputs are distinct jobs. GoldenDiff verifies determinism,
+material sensitivity, invalid-ID rejection, malformed input, cancellation, non-seekable streams, and
+UTF-8/CRLF boundaries. The G-code engine contract version is `1.1.0`; the outer response schema
+remains `1.0` because the OpenAPI schema is the negotiated source for generated clients.
 
 The API writes JSON console logs with a bounded route template, status, elapsed milliseconds, and
 trace ID. `/metrics` emits Prometheus text with bounded method/route/status labels, request duration

@@ -5,7 +5,12 @@ import {
   type GCodeJobAcceptedResponse,
   type GCodeJobSnapshotResponse,
 } from "../../generated/forgex-api";
-import { assertAuthorityContract, parseAuthorityResponse, type AuthorityAnalysisResponse } from "./gcode-authority";
+import {
+  assertAuthorityContract,
+  buildGcodeAuthorityQuery,
+  parseAuthorityResponse,
+  type AuthorityAnalysisResponse,
+} from "./gcode-authority";
 import type { GcodeParseOptions } from "./gcode-types";
 
 export type AuthorityJobStatus = GCodeJobAcceptedResponse["status"];
@@ -177,11 +182,7 @@ async function createJob(
   retryDelay: number
 ): Promise<AcceptedJob> {
   const base = resolveNodeApiBase(env);
-  const query = new URLSearchParams({
-    bedSizeMm: String(options.bedSize),
-    coordinateOrigin: options.origin,
-    filamentDensityGPerCm3: String(options.densityG),
-  });
+  const query = buildGcodeAuthorityQuery(options);
   const key = idempotencyKey();
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt += 1) {

@@ -45,7 +45,13 @@ describe("useProfileSelection", () => {
     const { result, unmount } = renderHook(() => useProfileSelection());
     expect(result.current.value).toMatchObject({
       selection: { machineId: "corexy", materialId: "PLA" },
-      options: { bedSize: 256, densityG: 1.24, origin: "corner" },
+      options: {
+        bedSize: 256,
+        densityG: 1.24,
+        origin: "corner",
+        machineProfileId: "corexy",
+        materialProfileId: "PLA",
+      },
       dirty: false,
     });
     unmount();
@@ -55,15 +61,33 @@ describe("useProfileSelection", () => {
     const { result, unmount } = renderHook(() => useProfileSelection());
     act(() => result.current.actions.selectMachine("delta"));
     act(() => result.current.actions.selectMaterial("PETG"));
-    expect(result.current.value.options).toEqual({ bedSize: 260, densityG: 1.27, origin: "center" });
+    expect(result.current.value.options).toEqual({
+      bedSize: 260,
+      densityG: 1.27,
+      origin: "center",
+      machineProfileId: "delta",
+      materialProfileId: "PETG",
+    });
     expect(result.current.value.dirty).toBe(false);
 
     act(() => result.current.actions.setBedSize("275"));
-    expect(result.current.value.options).toEqual({ bedSize: 275, densityG: 1.27, origin: "center" });
+    expect(result.current.value.options).toEqual({
+      bedSize: 275,
+      densityG: 1.27,
+      origin: "center",
+      machineProfileId: "delta",
+      materialProfileId: "PETG",
+    });
     expect(result.current.value.dirty).toBe(true);
 
     act(() => result.current.actions.restoreProfileOptions());
-    expect(result.current.value.options).toEqual({ bedSize: 260, densityG: 1.27, origin: "center" });
+    expect(result.current.value.options).toEqual({
+      bedSize: 260,
+      densityG: 1.27,
+      origin: "center",
+      machineProfileId: "delta",
+      materialProfileId: "PETG",
+    });
     expect(result.current.value.dirty).toBe(false);
     unmount();
   });

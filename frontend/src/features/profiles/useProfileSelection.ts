@@ -127,6 +127,17 @@ export function useProfileSelection(): ProfileSelectionController {
   const material = requiredMaterial(state.catalog, state.materialId);
   const baselineOptions = useMemo(() => deriveProfileOptions(machine, material), [machine, material]);
   const validation = useMemo(() => validateProfileOptionDraft(state.draft), [state.draft]);
+  const selectedOptions = useMemo(
+    () =>
+      validation.options
+        ? Object.freeze({
+            ...validation.options,
+            machineProfileId: machine.id,
+            materialProfileId: material.id,
+          })
+        : null,
+    [machine.id, material.id, validation.options]
+  );
   const dirty =
     !validation.options ||
     validation.options.bedSize !== baselineOptions.bedSize ||
@@ -186,14 +197,14 @@ export function useProfileSelection(): ProfileSelectionController {
       material,
       draft: state.draft,
       baselineOptions,
-      options: validation.options,
+      options: selectedOptions,
       errors: validation.errors,
       dirty,
       importStatus: state.importStatus,
       importMessage: state.importMessage,
       storage: state.storage,
     }),
-    [baselineOptions, dirty, machine, material, state, validation]
+    [baselineOptions, dirty, machine, material, selectedOptions, state, validation]
   );
 
   return { value, actions };

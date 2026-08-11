@@ -41,6 +41,7 @@
     "dotnet:build": "npm run dotnet:restore && node tools/run-dotnet.js build backend/ForgeX.sln --configuration Release --no-restore -m:1 -nr:false",
     "dotnet:golden": "npm run dotnet:build && node tools/run-dotnet.js run --project backend/tests/ForgeX.GoldenDiff/ForgeX.GoldenDiff.csproj --configuration Release --no-build",
     "dotnet:jobs": "npm run dotnet:build && node tools/run-dotnet.js run --project backend/tests/ForgeX.JobGate/ForgeX.JobGate.csproj --configuration Release --no-build",
+    "dotnet:gcode-benchmark": "npm run dotnet:build && node tools/run-dotnet.js run --project backend/tests/ForgeX.GCodeBenchmark/ForgeX.GCodeBenchmark.csproj --configuration Release --no-build",
     "dotnet:persistence": "npm run dotnet:build && node tools/run-dotnet.js run --project backend/tests/ForgeX.PersistenceGate/ForgeX.PersistenceGate.csproj --configuration Release --no-build",
     "dotnet:analytics": "npm run dotnet:build && node tools/run-dotnet.js run --project backend/tests/ForgeX.AnalyticsGate/ForgeX.AnalyticsGate.csproj --configuration Release --no-build",
     "dotnet:openapi-runtime": "node tools/verify-openapi-runtime.js",

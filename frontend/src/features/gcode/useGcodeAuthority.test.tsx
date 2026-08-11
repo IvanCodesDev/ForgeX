@@ -43,6 +43,14 @@ const AUTHORITY: AuthorityAnalysisResponse = {
   schemaVersion: "1.0",
   engine: { version: "forgex-gcode-csharp/1", source: "gcode-import" },
   input: { sha256: PREVIEW.sha256, bytesRead: 20, linesRead: 2 },
+  profile: {
+    machineProfileId: "unspecified-machine",
+    materialProfileId: "unspecified-material",
+    bedSizeMm: 256,
+    coordinateOrigin: "corner",
+    filamentDensityGPerCm3: 1.24,
+    fingerprint: "f".repeat(64),
+  },
   parameters: { bedSizeMm: 256, coordinateOrigin: "corner", filamentDensityGPerCm3: 1.24 },
   summary: {
     totalLayers: 2,

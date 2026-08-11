@@ -231,7 +231,7 @@ internal static class GCodeJobEndpoints
 
     private static string Fingerprint(string sha256, GCodeAnalysisOptions options)
     {
-        var canonical = FormattableString.Invariant($"{sha256}|{options.BedSizeMm:R}|{options.CoordinateOrigin}|{options.MaterialDensityGPerCm3:R}");
+        var canonical = $"{sha256}|{GCodeProfileSummary.Create(options).Fingerprint}";
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 

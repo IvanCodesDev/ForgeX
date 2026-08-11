@@ -14,7 +14,7 @@ namespace ForgeX.Simulation;
 /// </summary>
 public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
 {
-    public const string EngineVersion = "1.0.0";
+    public const string EngineVersion = "1.1.0";
 
     private const int ReadBufferSize = 64 * 1024;
     private static readonly Encoding StrictUtf8 = new UTF8Encoding(
@@ -170,7 +170,24 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
         {
             InvalidOption(nameof(options.MaxLineLength));
         }
+
+        if (!IsValidProfileId(options.MachineProfileId))
+        {
+            InvalidOption(nameof(options.MachineProfileId));
+        }
+
+        if (!IsValidProfileId(options.MaterialProfileId))
+        {
+            InvalidOption(nameof(options.MaterialProfileId));
+        }
     }
+
+    private static bool IsValidProfileId(string value) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value.Length <= 80 &&
+        char.IsAsciiLetterOrDigit(value[0]) &&
+        value.All(static character =>
+            char.IsAsciiLetterOrDigit(character) || character is '.' or '_' or '-');
 
     private static void InvalidOption(string name) =>
         throw new GCodeAnalysisException(
@@ -369,6 +386,7 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
                 Sha256: sha256,
                 EngineVersion: StreamingGCodeAnalyzer.EngineVersion,
                 Source: "gcode-import",
+                Profile: GCodeProfileSummary.Create(_options),
                 CoordinateOrigin: _options.CoordinateOrigin,
                 BytesRead: bytesRead,
                 LinesRead: _lineCount,

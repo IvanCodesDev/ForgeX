@@ -50,6 +50,14 @@ const AUTHORITY: AuthorityAnalysisResponse = {
   schemaVersion: "1.0",
   engine: { version: "forgex-gcode-csharp/1", source: "gcode-import" },
   input: { sha256: PREVIEW.sha256, bytesRead: 20, linesRead: 2 },
+  profile: {
+    machineProfileId: "unspecified-machine",
+    materialProfileId: "unspecified-material",
+    bedSizeMm: 256,
+    coordinateOrigin: "corner",
+    filamentDensityGPerCm3: 1.24,
+    fingerprint: "f".repeat(64),
+  },
   parameters: { bedSizeMm: 256, coordinateOrigin: "corner", filamentDensityGPerCm3: 1.24 },
   summary: {
     totalLayers: 2,
@@ -84,6 +92,7 @@ describe("G-code authority adapter", () => {
       contractMatches: true,
       inputMatches: true,
       parametersMatch: true,
+      profileMatches: true,
       sha256Matches: true,
     });
     const changed: AuthorityAnalysisResponse = {
@@ -196,7 +205,7 @@ describe("G-code authority adapter", () => {
       )
     ).resolves.toEqual(AUTHORITY);
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://node.example.test/api/v1/gcode/analyze?bedSizeMm=256&coordinateOrigin=corner&filamentDensityGPerCm3=1.24",
+      "https://node.example.test/api/v1/gcode/analyze?bedSizeMm=256&coordinateOrigin=corner&filamentDensityGPerCm3=1.24&machineProfileId=unspecified-machine&materialProfileId=unspecified-material",
       expect.objectContaining({ method: "POST", body: file, credentials: "same-origin", signal: controller.signal })
     );
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
@@ -212,6 +221,8 @@ describe("G-code authority adapter", () => {
     ["bed size", { ...AUTHORITY, parameters: { ...AUTHORITY.parameters, bedSizeMm: 300 } }],
     ["origin", { ...AUTHORITY, parameters: { ...AUTHORITY.parameters, coordinateOrigin: "center" } }],
     ["density", { ...AUTHORITY, parameters: { ...AUTHORITY.parameters, filamentDensityGPerCm3: 1.25 } }],
+    ["profile values", { ...AUTHORITY, profile: { ...AUTHORITY.profile, bedSizeMm: 300 } }],
+    ["profile fingerprint", { ...AUTHORITY, profile: { ...AUTHORITY.profile, fingerprint: "invalid" } }],
     ["engine version", { ...AUTHORITY, engine: { ...AUTHORITY.engine, version: "" } }],
     ["engine source", { ...AUTHORITY, engine: { ...AUTHORITY.engine, source: "unexpected-route" } }],
   ])("rejects a %s contract mismatch", async (_label, responseBody) => {

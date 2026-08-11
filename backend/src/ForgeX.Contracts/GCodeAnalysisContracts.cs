@@ -4,6 +4,7 @@ public sealed record GCodeAnalysisResponse(
     string SchemaVersion,
     GCodeEngineDto Engine,
     GCodeInputSummaryDto Input,
+    GCodeProfileSummaryDto Profile,
     GCodeAnalyzeParametersDto Parameters,
     GCodeAnalysisSummaryDto Summary,
     GCodeBoundsDto Bounds,
@@ -14,6 +15,14 @@ public sealed record GCodeAnalysisResponse(
 public sealed record GCodeEngineDto(string Version, string Source);
 
 public sealed record GCodeInputSummaryDto(string Sha256, long BytesRead, long LinesRead);
+
+public sealed record GCodeProfileSummaryDto(
+    string MachineProfileId,
+    string MaterialProfileId,
+    double BedSizeMm,
+    string CoordinateOrigin,
+    double FilamentDensityGPerCm3,
+    string Fingerprint);
 
 public sealed record GCodeAnalyzeParametersDto(
     double BedSizeMm,

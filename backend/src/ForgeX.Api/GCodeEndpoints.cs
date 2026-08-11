@@ -11,6 +11,8 @@ internal static class GCodeEndpoints
     internal const long MaxGCodeBytes = 64L * 1024 * 1024;
     private const double DefaultBedSizeMm = 256;
     private const double DefaultDensityGPerCm3 = 1.24;
+    private const string DefaultMachineProfileId = "unspecified-machine";
+    private const string DefaultMaterialProfileId = "unspecified-material";
 
     public static async Task<IResult> AnalyzeAsync(HttpContext context, IGCodeAnalyzer analyzer)
     {
@@ -62,6 +64,13 @@ internal static class GCodeEndpoints
             "1.0",
             new GCodeEngineDto(result.EngineVersion, result.Source),
             new GCodeInputSummaryDto(result.Sha256, result.BytesRead, result.LinesRead),
+            new GCodeProfileSummaryDto(
+                result.Profile.MachineProfileId,
+                result.Profile.MaterialProfileId,
+                result.Profile.BedSizeMm,
+                result.Profile.CoordinateOrigin.ToString().ToLowerInvariant(),
+                result.Profile.FilamentDensityGPerCm3,
+                result.Profile.Fingerprint),
             new GCodeAnalyzeParametersDto(
                 options.BedSizeMm,
                 options.CoordinateOrigin.ToString().ToLowerInvariant(),
@@ -112,13 +121,49 @@ internal static class GCodeEndpoints
             validationErrors["coordinateOrigin"] = ["coordinateOrigin must be corner or center."];
         }
 
+        var machineProfileId = ParseProfileId(
+            request,
+            "machineProfileId",
+            DefaultMachineProfileId,
+            validationErrors);
+        var materialProfileId = ParseProfileId(
+            request,
+            "materialProfileId",
+            DefaultMaterialProfileId,
+            validationErrors);
+
         errors = validationErrors;
         options = new GCodeAnalysisOptions(
-            bedSize,
-            origin,
-            density,
-            MaxGCodeBytes);
+            BedSizeMm: bedSize,
+            CoordinateOrigin: origin,
+            MaterialDensityGPerCm3: density,
+            MaxInputBytes: MaxGCodeBytes,
+            MachineProfileId: machineProfileId,
+            MaterialProfileId: materialProfileId);
         return validationErrors.Count == 0;
+    }
+
+    private static string ParseProfileId(
+        HttpRequest request,
+        string name,
+        string defaultValue,
+        Dictionary<string, string[]> errors)
+    {
+        var value = request.Query[name].ToString();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return defaultValue;
+        }
+
+        if (value.Length > 80 ||
+            !char.IsAsciiLetterOrDigit(value[0]) ||
+            value.Any(static character =>
+                !char.IsAsciiLetterOrDigit(character) && character is not ('.' or '_' or '-')))
+        {
+            errors[name] = [$"{name} must contain 1-80 ASCII letters, digits, '.', '_', or '-', and start with a letter or digit."];
+        }
+
+        return value;
     }
 
     private static double ParseDouble(

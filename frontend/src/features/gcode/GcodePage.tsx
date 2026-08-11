@@ -36,12 +36,20 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
     bedSize: 256,
     densityG: 1.24,
     origin: "corner",
+    machineProfileId: "unspecified-machine",
+    materialProfileId: "unspecified-material",
   });
   const [selectedLayer, setSelectedLayer] = useState(0);
   const [gcodeRevision, setGcodeRevision] = useState(0);
 
   const fallbackOptions = useMemo<GcodeParseOptions>(
-    () => ({ bedSize, densityG, origin }),
+    () => ({
+      bedSize,
+      densityG,
+      origin,
+      machineProfileId: "unspecified-machine",
+      materialProfileId: "unspecified-material",
+    }),
     [bedSize, densityG, origin]
   );
   const options = featureFlags.profileSelectorReact ? profile.value.options : fallbackOptions;
@@ -58,7 +66,9 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
     options &&
     (options.bedSize !== submittedOptions.bedSize ||
       options.densityG !== submittedOptions.densityG ||
-      options.origin !== submittedOptions.origin)
+      options.origin !== submittedOptions.origin ||
+      options.machineProfileId !== submittedOptions.machineProfileId ||
+      options.materialProfileId !== submittedOptions.materialProfileId)
   );
 
   const reconciliationPlan = useMemo<GcodeReconciliationPlan | null>(() => {
@@ -192,15 +202,26 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
               <code>{authority.diff.sha256Matches ? "match" : "mismatch"}</code>
             </p>
             <p>
-              <span>契约 / 输入 / 参数</span>
+              <span>契约 / 输入 / 参数 / Profile</span>
               <code>
                 {authority.diff.engineMatches &&
                 authority.diff.contractMatches &&
                 authority.diff.inputMatches &&
-                authority.diff.parametersMatch
+                authority.diff.parametersMatch &&
+                authority.diff.profileMatches
                   ? "match"
                   : "mismatch"}
               </code>
+            </p>
+            <p>
+              <span>Profile</span>
+              <code>
+                {authority.result.profile.machineProfileId} / {authority.result.profile.materialProfileId}
+              </code>
+            </p>
+            <p>
+              <span>Profile 指纹</span>
+              <code>{authority.result.profile.fingerprint.slice(0, 12)}…</code>
             </p>
             <p>
               <span>字段差异</span>
@@ -228,6 +249,7 @@ export function GcodePage({ featureFlags }: GcodePageProps) {
             {!authority.diff.contractMatches ? <li>C# schemaVersion 与前端契约不一致</li> : null}
             {!authority.diff.inputMatches ? <li>C# bytesRead 与浏览器文件字节数不一致</li> : null}
             {!authority.diff.parametersMatch ? <li>C# 返回参数与本次提交参数不一致</li> : null}
+            {!authority.diff.profileMatches ? <li>C# Profile 摘要与本次提交或返回参数不一致</li> : null}
             {authority.diff.fields
               .filter((field) => !field.pass)
               .slice(0, 6)

@@ -9,6 +9,16 @@
 
 ## [Unreleased]
 
+### 新增
+
+- G-code 同步/异步权威响应新增机型与材料 Profile 标识、生效参数和确定性 SHA-256 指纹；
+  React 在接纳 C# 结果前校验 Profile 与提交参数一致。
+- GoldenDiff 增加 Profile 指纹确定性、材料敏感性和非法 ID 稳定错误码探针。
+
+### 变更
+
+- 异步 G-code 幂等指纹现在绑定完整 Profile 摘要，避免相同文件在不同机型或材料下误复用作业。
+
 ### 计划中
 
 - 新模块 ESM 化与 i18n 抽取

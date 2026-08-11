@@ -85,6 +85,24 @@
               "maximum": 20,
               "default": 1.24
             }
+          },
+          {
+            "name": "machineProfileId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$",
+              "default": "unspecified-machine"
+            }
+          },
+          {
+            "name": "materialProfileId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$",
+              "default": "unspecified-material"
+            }
           }
         ],
         "requestBody": {
@@ -171,6 +189,24 @@
               "exclusiveMinimum": 0,
               "maximum": 20,
               "default": 1.24
+            }
+          },
+          {
+            "name": "machineProfileId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$",
+              "default": "unspecified-machine"
+            }
+          },
+          {
+            "name": "materialProfileId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$",
+              "default": "unspecified-material"
             }
           }
         ],
@@ -487,6 +523,7 @@
           "schemaVersion",
           "engine",
           "input",
+          "profile",
           "parameters",
           "summary",
           "bounds",
@@ -517,6 +554,9 @@
           },
           "input": {
             "$ref": "#/components/schemas/GCodeInputSummary"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/GCodeProfileSummary"
           },
           "parameters": {
             "type": "object",
@@ -1405,6 +1445,43 @@
             "$ref": "#/components/schemas/AnalyticsReport"
           }
         }
+      },
+      "GCodeProfileSummary": {
+        "type": "object",
+        "required": [
+          "machineProfileId",
+          "materialProfileId",
+          "bedSizeMm",
+          "coordinateOrigin",
+          "filamentDensityGPerCm3",
+          "fingerprint"
+        ],
+        "properties": {
+          "machineProfileId": {
+            "type": "string"
+          },
+          "materialProfileId": {
+            "type": "string"
+          },
+          "bedSizeMm": {
+            "type": "number"
+          },
+          "coordinateOrigin": {
+            "type": "string",
+            "enum": [
+              "corner",
+              "center"
+            ]
+          },
+          "filamentDensityGPerCm3": {
+            "type": "number"
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "additionalProperties": false
       }
     }
   }

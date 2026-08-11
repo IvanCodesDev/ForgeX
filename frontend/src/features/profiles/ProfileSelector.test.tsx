@@ -26,14 +26,26 @@ describe("ProfileSelector", () => {
     expect(screen.getByLabelText("机器 Profile")).toHaveValue("corexy");
     expect(screen.getByLabelText("材料 Profile")).toHaveValue("PLA");
     expect(screen.getByTestId("options")).toHaveTextContent(
-      JSON.stringify({ bedSize: 256, densityG: 1.24, origin: "corner" })
+      JSON.stringify({
+        bedSize: 256,
+        densityG: 1.24,
+        origin: "corner",
+        machineProfileId: "corexy",
+        materialProfileId: "PLA",
+      })
     );
     expect(screen.getByTestId("dirty")).toHaveTextContent("false");
 
     fireEvent.change(screen.getByLabelText("机器 Profile"), { target: { value: "delta" } });
     fireEvent.change(screen.getByLabelText("材料 Profile"), { target: { value: "PETG" } });
     expect(screen.getByTestId("options")).toHaveTextContent(
-      JSON.stringify({ bedSize: 260, densityG: 1.27, origin: "center" })
+      JSON.stringify({
+        bedSize: 260,
+        densityG: 1.27,
+        origin: "center",
+        machineProfileId: "delta",
+        materialProfileId: "PETG",
+      })
     );
   });
 
@@ -48,7 +60,13 @@ describe("ProfileSelector", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "恢复 Profile 参数" }));
     expect(screen.getByTestId("options")).toHaveTextContent(
-      JSON.stringify({ bedSize: 256, densityG: 1.24, origin: "corner" })
+      JSON.stringify({
+        bedSize: 256,
+        densityG: 1.24,
+        origin: "corner",
+        machineProfileId: "corexy",
+        materialProfileId: "PLA",
+      })
     );
     expect(screen.getByTestId("dirty")).toHaveTextContent("false");
   });
