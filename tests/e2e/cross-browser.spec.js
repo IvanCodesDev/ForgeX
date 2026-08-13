@@ -4,8 +4,9 @@
 const { test, expect } = require("@playwright/test");
 
 async function waitBooted(page) {
+  // Firefox 在 CI 软渲染下启动最慢（WebKit 同机 12s，FF 超过 30s），预算放宽到 90s。
   await page.waitForFunction(() => window.FX && window.FX.sim && window.FX.sim.slice, null, {
-    timeout: 30_000,
+    timeout: process.env.CI ? 90_000 : 30_000,
   });
 }
 

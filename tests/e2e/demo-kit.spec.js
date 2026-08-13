@@ -7,6 +7,9 @@ const ROOT = path.resolve(__dirname, "../..");
 const demo = (rel) => path.join(ROOT, "demo", rel);
 
 test("录屏素材可通过真实界面完成整条导入链", async ({ page }) => {
+  // 整条导入链（Profile/图片/G-code/日志/校准/CSV）在 CI 软渲染下实测超过 2 分钟，
+  // 标记 slow 让预算 ×3。
+  test.slow();
   const errors = [];
   page.on("console", (msg) => {
     if (msg.type() === "error") errors.push(msg.text());

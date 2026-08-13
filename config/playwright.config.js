@@ -47,7 +47,17 @@ module.exports = defineConfig({
     {
       name: "firefox",
       testMatch: "**/cross-browser.spec.js",
-      use: { ...devices["Desktop Firefox"] },
+      use: {
+        ...devices["Desktop Firefox"],
+        launchOptions: {
+          // headless Firefox 在无 GPU 的 CI 上需要显式允许软件 WebGL，
+          // 否则 THREE 拿不到 context，应用落入 webgl-fallback，启动等待永远超时。
+          firefoxUserPrefs: {
+            "webgl.force-enabled": true,
+            "gfx.webrender.software": true,
+          },
+        },
+      },
     },
     {
       name: "webkit",

@@ -64,6 +64,9 @@ test.describe("启动", () => {
 
 test.describe("流程面板", () => {
   test("五个流程页都能打开且渲染出内容", async ({ page }) => {
+    // 全套件最重的用例：五个页面逐个渲染，洞察页还要跑整套统计。
+    // CI 的 2 核软渲染下主线程会被长时间吃满，标记 slow 让预算 ×3。
+    test.slow();
     const errors = watchErrors(page);
     await page.goto("/");
     await waitBooted(page);
