@@ -33,6 +33,14 @@
     （C# 权威接线）E2E 复验通过。
 - 旧入口（`index.html` + `js/`）保持原样，作为迁移期的像素/布局对照基线与回滚路径。
 
+### 仓库整理
+
+- Changelog 迁回仓库根目录 `CHANGELOG.md`（原 `.github/CHANGELOG.md`），同时退役需要并行
+  维护的英文摘要副本；README、英文 README、PR 模板与 `tools/release-audit.js` 的引用同步更新。
+- `optimization/` 阶段证据归档撤出版本控制。这批文件在 `.gitignore` 收录该目录之前就已被跟踪，
+  内含构建日志、基线压缩包，以及带有绝对工作区路径的验证记录，不属于公开源码仓库的内容；
+  文件保留在本地作为回滚参考。
+
 ### 新增
 
 - G-code 同步/异步权威响应新增机型与材料 Profile 标识、生效参数和确定性 SHA-256 指纹；
