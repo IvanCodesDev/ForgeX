@@ -10,7 +10,7 @@
 "use strict";
 
 const path = require("path");
-const J = (p) => path.join(__dirname, "..", "js", p);
+const J = (p) => path.join(__dirname, "..", "frontend", "classic", "js", p);
 
 require(J("util.js"));
 require(J("slicer.js"));

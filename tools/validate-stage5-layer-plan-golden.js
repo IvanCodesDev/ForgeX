@@ -4,7 +4,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
-require("../js/gcode-parser.js");
+require("../frontend/classic/js/gcode-parser.js");
 
 const ROOT = path.resolve(__dirname, "..");
 const STAGE0 = path.join(ROOT, "tests", "golden", "stage0-golden.json");

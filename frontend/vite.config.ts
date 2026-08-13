@@ -10,12 +10,12 @@ const LEGACY_ASSETS = [
     /* 设计系统原样复用。交给打包器压缩会按构建目标重写厂商前缀，
        实测 .pill-card 的标准 backdrop-filter 会被删成只剩 -webkit-，
        Firefox 只认标准属性，毛玻璃将整体失效。 */
-    source: "../css/style.css",
+    source: "./classic/css/style.css",
     asset: "assets/style.css",
     type: "text/css; charset=utf-8",
   },
   {
-    source: "../css/tokens.css",
+    source: "./classic/css/tokens.css",
     asset: "assets/tokens.css",
     type: "text/css; charset=utf-8",
   },

@@ -3,7 +3,7 @@
    覆盖：床面误差场确定性 / 探测→拟合→补偿数据链自洽 / 运行遥测 / 成品实测质量报告 */
 "use strict";
 const path = require("path");
-const J = (p) => path.join(__dirname, "..", "js", p);
+const J = (p) => path.join(__dirname, "..", "frontend", "classic", "js", p);
 
 require(J("util.js"));
 require(J("slicer.js"));

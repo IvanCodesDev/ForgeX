@@ -9,7 +9,7 @@
    现在改为：**自己构造带已知效应的数据集，检验引擎能否正确识别出该效应**。 */
 "use strict";
 const path = require("path");
-const J = (p) => path.join(__dirname, "..", "js", p);
+const J = (p) => path.join(__dirname, "..", "frontend", "classic", "js", p);
 
 require(J("util.js"));
 require(J("insight-data.js"));

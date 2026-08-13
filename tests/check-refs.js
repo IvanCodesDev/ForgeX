@@ -7,7 +7,7 @@ const root = path.join(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const ids = new Set([...html.matchAll(/id="([^"]+)"/g)].map((m) => m[1]));
 
-const js = ["js/ui.js", "js/insight.js", "js/main.js"]
+const js = ["frontend/classic/js/ui.js", "frontend/classic/js/insight.js", "frontend/classic/js/main.js"]
   .map((f) => fs.readFileSync(path.join(root, f), "utf8"))
   .join("\n");
 

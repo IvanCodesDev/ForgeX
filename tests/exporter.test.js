@@ -2,7 +2,7 @@
    覆盖：三角提取（Y-up→Z-up、缩放）/ 二进制 STL 结构 / OBJ 结构 / G-code 语义与挤出量守恒 */
 "use strict";
 const path = require("path");
-const J = (p) => path.join(__dirname, "..", "js", p);
+const J = (p) => path.join(__dirname, "..", "frontend", "classic", "js", p);
 
 require(J("util.js"));
 require(J("slicer.js"));

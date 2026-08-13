@@ -18,8 +18,8 @@ global.localStorage = {
     storage.delete(key);
   },
 };
-require(path.join(ROOT, "js", "time-calibration.js"));
-require(path.join(ROOT, "js", "calibration-registry.js"));
+require(path.join(ROOT, "frontend", "classic", "js", "time-calibration.js"));
+require(path.join(ROOT, "frontend", "classic", "js", "calibration-registry.js"));
 
 const Registry = global.FXCalibrationRegistry;
 const example = JSON.parse(fs.readFileSync(path.join(ROOT, "contracts", "calibration", "example-bundle.json"), "utf8"));
@@ -30,8 +30,8 @@ const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 const serverIndex = fs.readFileSync(path.join(ROOT, "server", "index.js"), "utf8");
 const serverService = fs.readFileSync(path.join(ROOT, "server", "services", "calibration.js"), "utf8");
 const serverRoute = fs.readFileSync(path.join(ROOT, "server", "routes", "calibration.js"), "utf8");
-const apiClient = fs.readFileSync(path.join(ROOT, "js", "api-client.js"), "utf8");
-const main = fs.readFileSync(path.join(ROOT, "js", "main.js"), "utf8");
+const apiClient = fs.readFileSync(path.join(ROOT, "frontend", "classic", "js", "api-client.js"), "utf8");
+const main = fs.readFileSync(path.join(ROOT, "frontend", "classic", "js", "main.js"), "utf8");
 
 let passed = 0;
 let failed = 0;
@@ -102,7 +102,9 @@ check("浏览器提供校准包文件入口", /id="calibration-input"/.test(html
 check("注册表先于 UI 加载", html.indexOf("calibration-registry.js") < html.indexOf("ui.js"));
 check(
   "示例 bundle 从界面可访问",
-  /calibration\/example-bundle\.json/.test(fs.readFileSync(path.join(ROOT, "js", "ui.js"), "utf8"))
+  /calibration\/example-bundle\.json/.test(
+    fs.readFileSync(path.join(ROOT, "frontend", "classic", "js", "ui.js"), "utf8")
+  )
 );
 check(
   "npm 主测试链包含校准运营门禁",

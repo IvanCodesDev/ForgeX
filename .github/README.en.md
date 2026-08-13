@@ -211,8 +211,8 @@ See [`server/.env.example`](../server/.env.example) for the complete configurati
 ## Repository layout
 
 ```text
-css/                  interface design system
-js/                   simulation, slicing, analytics and UI
+frontend/             React + TypeScript workbench
+  classic/              classic-entry styles and scripts (parity baseline)
 server/               HTTP service, providers and platform controls
 contracts/            public data contracts: schemas, examples and fixtures
   datasets/             reproducible virtual-farm datasets

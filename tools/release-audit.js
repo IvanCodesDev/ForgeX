@@ -37,7 +37,7 @@ check("CHANGELOG 含当前版本", text("CHANGELOG.md").includes(`## [${version}
 
 console.log("\n[release] Browser cache contract");
 const html = text("index.html");
-const localAssets = Array.from(html.matchAll(/(?:href|src)="((?:css|js)\/[^"]+)\?v=(\d+)"/g));
+const localAssets = Array.from(html.matchAll(/(?:href|src)="(frontend\/classic\/(?:css|js)\/[^"]+)\?v=(\d+)"/g));
 const appAssets = localAssets.filter((match) => !match[1].includes("vendor/"));
 check("发现应用 CSS/JS 缓存键", appAssets.length >= 15, String(appAssets.length));
 check(
@@ -76,8 +76,8 @@ check(
 );
 check(
   "注册表在 UI 之前加载",
-  html.indexOf("js/calibration-registry.js") > -1 &&
-    html.indexOf("js/calibration-registry.js") < html.indexOf("js/ui.js")
+  html.indexOf("classic/js/calibration-registry.js") > -1 &&
+    html.indexOf("classic/js/calibration-registry.js") < html.indexOf("classic/js/ui.js")
 );
 check("浏览器回归覆盖 P7 校准生命周期", fs.existsSync(path.join(ROOT, "tests/e2e/p7.spec.js")));
 
@@ -88,7 +88,7 @@ check("主测试链包含服务端校准审批契约", pkg.scripts.test.includes
 check("服务端组装公开校准目录", text("server/index.js").includes("routes/calibration"));
 check("审批写接口强制 API Key", /auth\.enabled/.test(calibrationRoute));
 check("审批禁止提交者自批", /提交者不能审批自己/.test(calibrationService));
-check("浏览器启动时同步审核目录", /pullCalibrations/.test(text("js/main.js")));
+check("浏览器启动时同步审核目录", /pullCalibrations/.test(text("frontend/classic/js/main.js")));
 check("浏览器回归覆盖服务端发布", fs.existsSync(path.join(ROOT, "tests/e2e/p8.spec.js")));
 
 const workflow = text(".github/workflows/ci.yml");

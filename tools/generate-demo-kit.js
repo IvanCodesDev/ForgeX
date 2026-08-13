@@ -4,8 +4,8 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
-require("../js/util.js");
-require("../js/gcode-parser.js");
+require("../frontend/classic/js/util.js");
+require("../frontend/classic/js/gcode-parser.js");
 
 const ROOT = path.resolve(__dirname, "..");
 const DEMO = path.join(ROOT, "demo");

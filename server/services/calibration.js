@@ -11,8 +11,8 @@ const path = require("path");
 const { HttpError } = require("../lib/http");
 const { JsonFile } = require("../lib/store");
 
-require("../../js/time-calibration.js");
-require("../../js/calibration-registry.js");
+require("../../frontend/classic/js/time-calibration.js");
+require("../../frontend/classic/js/calibration-registry.js");
 const Registry = globalThis.FXCalibrationRegistry;
 
 const FORMAT = "forgex-calibration-service-state";

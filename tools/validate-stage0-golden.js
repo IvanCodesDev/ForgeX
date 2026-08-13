@@ -10,10 +10,10 @@ const ROOT = path.resolve(__dirname, "..");
 const OUTPUT = path.join(ROOT, "tests", "golden", "stage0-golden.json");
 const WRITE = process.argv.includes("--write");
 
-require(path.join(ROOT, "js", "util.js"));
-require(path.join(ROOT, "js", "slicer.js"));
-require(path.join(ROOT, "js", "models.js"));
-require(path.join(ROOT, "js", "gcode-parser.js"));
+require(path.join(ROOT, "frontend", "classic", "js", "util.js"));
+require(path.join(ROOT, "frontend", "classic", "js", "slicer.js"));
+require(path.join(ROOT, "frontend", "classic", "js", "models.js"));
+require(path.join(ROOT, "frontend", "classic", "js", "gcode-parser.js"));
 const engine = require(path.join(ROOT, "server", "services", "local-engine.js"));
 
 const Slicer = globalThis.FXSlicer;
@@ -230,11 +230,11 @@ function build() {
   }
 
   const engineFiles = [
-    "js/slicer.js",
-    "js/models.js",
-    "js/gcode-parser.js",
-    "js/insight-engine.js",
-    "js/stats-kernel.js",
+    "frontend/classic/js/slicer.js",
+    "frontend/classic/js/models.js",
+    "frontend/classic/js/gcode-parser.js",
+    "frontend/classic/js/insight-engine.js",
+    "frontend/classic/js/stats-kernel.js",
   ];
   return {
     format: "forgex-stage0-golden-set",

@@ -6,7 +6,6 @@ COPY package.json package-lock.json ./
 COPY frontend/package.json ./frontend/package.json
 RUN npm ci --no-audit --no-fund
 COPY frontend ./frontend
-COPY js ./js
 RUN npm run frontend:build
 
 FROM node:22.13.1-alpine3.21 AS runtime
@@ -19,8 +18,7 @@ ENV HOST=0.0.0.0 \
 RUN mkdir -p /app/data && chown -R node:node /app
 COPY --chown=node:node index.html README.md ./
 COPY --chown=node:node server ./server
-COPY --chown=node:node css ./css
-COPY --chown=node:node js ./js
+COPY --chown=node:node frontend/classic ./frontend/classic
 COPY --chown=node:node contracts/profiles ./contracts/profiles
 COPY --chown=node:node contracts/calibration ./contracts/calibration
 COPY --chown=node:node contracts/validation ./contracts/validation

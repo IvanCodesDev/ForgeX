@@ -84,8 +84,8 @@ const MIME = {
 const STATIC_ALLOW = [
   /^\/index\.html$/,
   /^\/README\.md$/,
-  /^\/css\//,
-  /^\/js\//,
+  /^\/frontend\/classic\/css\//,
+  /^\/frontend\/classic\/js\//,
   /^\/contracts\/profiles\/(?:example-bundle|profile-bundle\.schema)\.json$/,
   /^\/contracts\/calibration\/(?:example-bundle|calibration-bundle\.schema)\.json$/,
   /^\/contracts\/validation\/(?:fixture-manifest|time-calibration-report)\.json$/,

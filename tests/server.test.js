@@ -140,8 +140,8 @@ async function main() {
   {
     const home = await jfetch(base, "/");
     check("GET / 返回前端页面", home.status === 200 && home.text.includes("FORGE·X"), String(home.status));
-    const js = await jfetch(base, "/js/util.js");
-    check("GET /js/util.js 可达", js.status === 200 && js.text.includes("FXU"));
+    const js = await jfetch(base, "/frontend/classic/js/util.js");
+    check("GET /frontend/classic/js/util.js 可达", js.status === 200 && js.text.includes("FXU"));
     const profile = await jfetch(base, "/contracts/profiles/example-bundle.json");
     check("公开 Profile 示例可达", profile.status === 200 && profile.text.includes("forgex-profile-bundle"));
     const calibrationExample = await jfetch(base, "/contracts/calibration/example-bundle.json");
@@ -158,7 +158,7 @@ async function main() {
     check("server/ 目录不可达", cfgFile.status === 404, String(cfgFile.status));
     const env = await jfetch(base, "/server/.env");
     check(".env 不可达", env.status === 404, String(env.status));
-    const trav = await jfetch(base, "/js/..%2Fserver%2Fconfig.js");
+    const trav = await jfetch(base, "/frontend/classic/js/..%2F..%2F..%2Fserver%2Fconfig.js");
     check("编码路径穿越被拒", trav.status === 404, String(trav.status));
     const docs = await jfetch(base, "/doc/architecture.md");
     check("已移除的 doc 目录不可达", docs.status === 404, String(docs.status));

@@ -7,12 +7,16 @@ const path = require("path");
 const root = path.resolve(__dirname, "..");
 const goldenPath = path.join(root, "tests", "golden", "stage4-analytics-golden.json");
 const datasetPath = path.join(root, "contracts", "datasets", "print_farm_400.csv");
-const sourcePaths = ["js/stats-kernel.js", "js/insight-data.js", "js/insight-engine.js"];
+const sourcePaths = [
+  "frontend/classic/js/stats-kernel.js",
+  "frontend/classic/js/insight-data.js",
+  "frontend/classic/js/insight-engine.js",
+];
 
-require(path.join(root, "js", "util.js"));
-require(path.join(root, "js", "stats-kernel.js"));
-require(path.join(root, "js", "insight-data.js"));
-require(path.join(root, "js", "insight-engine.js"));
+require(path.join(root, "frontend", "classic", "js", "util.js"));
+require(path.join(root, "frontend", "classic", "js", "stats-kernel.js"));
+require(path.join(root, "frontend", "classic", "js", "insight-data.js"));
+require(path.join(root, "frontend", "classic", "js", "insight-engine.js"));
 
 const stats = globalThis.FXStats;
 const data = globalThis.FXInsightData;

@@ -1,4 +1,4 @@
-/* 数据源路由：上传 CSV（JSON 携带文本，与前端 js/api-client.js 契约一致）。 */
+/* 数据源路由：上传 CSV（JSON 携带文本，与前端 frontend/classic/js/api-client.js 契约一致）。 */
 "use strict";
 const { HttpError, readJson, sendJson } = require("../lib/http");
 const { resolveIdentity } = require("../lib/identity");

@@ -5,7 +5,7 @@
    任何人都能独立核对——这是统计代码唯一站得住的验证方式。 */
 "use strict";
 const path = require("path");
-const J = (p) => path.join(__dirname, "..", "js", p);
+const J = (p) => path.join(__dirname, "..", "frontend", "classic", "js", p);
 
 require(J("stats-kernel.js"));
 const S = globalThis.FXStats;

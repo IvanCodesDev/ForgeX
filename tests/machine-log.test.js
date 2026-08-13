@@ -4,7 +4,7 @@
 const fs = require("fs");
 const path = require("path");
 
-require(path.join(__dirname, "..", "js", "machine-log.js"));
+require(path.join(__dirname, "..", "frontend", "classic", "js", "machine-log.js"));
 const Log = globalThis.FXMachineLog;
 
 let passed = 0;

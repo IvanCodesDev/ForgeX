@@ -7,7 +7,7 @@ const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
-require(path.join(ROOT, "js", "profile-registry.js"));
+require(path.join(ROOT, "frontend", "classic", "js", "profile-registry.js"));
 const Profiles = globalThis.FXProfiles;
 let passed = 0;
 let failed = 0;

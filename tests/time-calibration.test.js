@@ -2,7 +2,7 @@
 "use strict";
 
 const path = require("path");
-require(path.join(__dirname, "..", "js", "time-calibration.js"));
+require(path.join(__dirname, "..", "frontend", "classic", "js", "time-calibration.js"));
 const Cal = globalThis.FXTimeCalibration;
 
 let passed = 0;

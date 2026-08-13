@@ -42,7 +42,7 @@ const FXModels = H.FXModels;
 const FXMachineProfile = H.FXMachineProfile;
 
 // 数据层（CSV 导出与字段口径的单一真源）
-require(path.join(__dirname, "..", "js", "insight-data.js"));
+require(path.join(__dirname, "..", "frontend", "classic", "js", "insight-data.js"));
 const D = globalThis.FXInsightData;
 
 /* ── 参数解析 ─────────────────────────────── */

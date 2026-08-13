@@ -2,7 +2,7 @@
    覆盖：几何工具 / 多边形偏置 / 扫描线填充 / Marching Squares / 内置模型切片 / 图片高度场切片 */
 "use strict";
 const path = require("path");
-const J = (p) => path.join(__dirname, "..", "js", p);
+const J = (p) => path.join(__dirname, "..", "frontend", "classic", "js", p);
 
 require(J("util.js"));
 require(J("slicer.js"));

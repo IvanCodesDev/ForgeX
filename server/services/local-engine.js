@@ -4,7 +4,7 @@
 "use strict";
 const path = require("path");
 
-const JS = (p) => path.join(__dirname, "..", "..", "js", p);
+const JS = (p) => path.join(__dirname, "..", "..", "frontend", "classic", "js", p);
 require(JS("util.js"));
 require(JS("farm-dataset.js"));   // 内置机群仿真数据集（须在 insight-data 之前，Store 构造要用）
 require(JS("insight-data.js"));

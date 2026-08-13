@@ -35,6 +35,15 @@
 
 ### 仓库整理
 
+- 经典入口的 `css/` 与 `js/` 收进 `frontend/classic/`，根目录不再裸露旧版前端资产。
+  `js/` 的身份不只是浏览器脚本——Node 服务端（`local-engine` / `calibration`）在运行时
+  require 它跑服务端引擎，约 30 个 Node 测试与 tools 校验器直接加载它，两份金样本还把
+  它的路径记进指纹。搬迁同步更新：根 `index.html` 的 27 处资产引用（file:// 直开语义不变）、
+  服务端静态白名单、Vite 的 legacy-assets 源路径（顺带修正了构建阶段缺 `css/` 拷贝的
+  Dockerfile 隐患）、eslint/prettier/gitattributes 的分层规则、CI 工作流的内联 require，
+  以及 stage0 金样本的 `engineSourceSha256`（该指纹把源文件路径卷入哈希，重生成后
+  24 个用例逐字节一致，仅指纹一个字段变化，证明引擎输出零漂移）。`npm run check` 45/0，
+  E2E 12 条全过（含旧入口 file:// 直开与两入口像素级一致）。
 - 五个数据契约目录（`calibration` / `datasets` / `logs` / `profiles` / `validation`）收敛到
   `contracts/` 之下。它们本就是同一类东西——对外承诺的 schema、示例载荷与验证基线，此前平铺在
   根目录，把仓库首屏挤成了一份目录清单。搬迁牵动 44 个文件：schema `$id` 与互相之间的

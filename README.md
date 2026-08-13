@@ -303,9 +303,8 @@ npm run dotnet:api
 ## 项目结构
 
 ```text
-css/          界面样式
-js/           切片、仿真、分析和前端交互
 frontend/     React + TypeScript 新工作台
+  classic/      经典入口的样式与脚本（旧版对照基线）
 backend/      .NET 10 权威计算核心、API 与 GoldenDiff
 server/       HTTP 服务、登录、存储和 AI provider
 contracts/    对外数据契约：schema、示例与夹具

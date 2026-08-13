@@ -1,8 +1,8 @@
 /* ESLint 扁平配置（v9）。
    本项目有三类源码，运行环境与语法基线各不相同，必须分开配置：
-     1. js/*.js       浏览器经典脚本（非 module），ES2017 基线，全局命名空间
-     2. server/, tests/  Node CommonJS，可用现代语法
-     3. js/vendor/    第三方 vendored 产物，不检查 */
+     1. frontend/classic/js/*.js  浏览器经典脚本（非 module），ES2017 基线，全局命名空间
+     2. server/, tests/           Node CommonJS，可用现代语法
+     3. frontend/classic/js/vendor/  第三方 vendored 产物，不检查 */
 "use strict";
 
 const js = require("@eslint/js");
@@ -119,9 +119,9 @@ const COMMON_RULES = {
 module.exports = [
   {
     ignores: [
-      "js/vendor/**",
+      "frontend/classic/js/vendor/**",
       // 自动生成（node tools/farm-sim.js --emit-js），内嵌大段 CSV，不手工维护
-      "js/farm-dataset.js",
+      "frontend/classic/js/farm-dataset.js",
       "node_modules/**",
       ".dotnet/**",
       ".dotnet-home/**",
@@ -144,7 +144,7 @@ module.exports = [
 
   // ── 前端：浏览器经典脚本 ──
   {
-    files: ["js/**/*.js"],
+    files: ["frontend/classic/js/**/*.js"],
     languageOptions: {
       ecmaVersion: 2017, // 与 index.html 的兼容性守卫基线一致
       sourceType: "script",

@@ -128,9 +128,9 @@
   "engine": {
     "name": "legacy-js-statistics",
     "sourcePaths": [
-      "js/stats-kernel.js",
-      "js/insight-data.js",
-      "js/insight-engine.js"
+      "frontend/classic/js/stats-kernel.js",
+      "frontend/classic/js/insight-data.js",
+      "frontend/classic/js/insight-engine.js"
     ],
     "sourceSha256": "4d7d4d872327c45b6db124293bfe584c1c012662309049fe87dd180f5003675c"
   },

@@ -12,8 +12,8 @@ const { createApp } = require("../server/index");
 const { resolveIdentity } = require("../server/lib/identity");
 
 if (!globalThis.crypto) globalThis.crypto = crypto.webcrypto;
-require("../js/gcode-parser.js");
-require("../js/machine-log.js");
+require("../frontend/classic/js/gcode-parser.js");
+require("../frontend/classic/js/machine-log.js");
 
 const CSV = [
   "任务编号,日期,机台,模型,材料,层高,耗时,耗材克重,成本元,状态,故障类型,能耗",
@@ -220,7 +220,7 @@ async function main() {
   assert.strictEqual(missing.status, "missing");
 
   console.log("[Stage0-4] Delta、file:// 与源码可审计性");
-  const uiSource = fs.readFileSync(path.join(__dirname, "..", "js", "ui.js"), "utf8");
+  const uiSource = fs.readFileSync(path.join(__dirname, "..", "frontend", "classic", "js", "ui.js"), "utf8");
   assert(/KIN_TAG \|\| ""\)\.toLowerCase\(\) === "delta"/.test(uiSource), "Delta 标记应大小写归一");
   let authCalls = 0;
   const authSandbox = {
@@ -230,7 +230,7 @@ async function main() {
     FXApiClient: { base: "", authMe: () => { authCalls++; return Promise.resolve({}); } },
     window: { URLSearchParams },
   };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "js", "auth.js"), "utf8"), authSandbox);
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "frontend", "classic", "js", "auth.js"), "utf8"), authSandbox);
   assert.strictEqual(authCalls, 0, "file:// 启动不应请求认证 API");
   assert.strictEqual(authSandbox.window.FXAuth.integration, "offline");
   assert.deepStrictEqual(noNulBytes(path.join(__dirname, "..", "server")), []);

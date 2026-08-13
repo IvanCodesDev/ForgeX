@@ -10,9 +10,9 @@ const MANIFEST_REL = "contracts/validation/fixture-manifest.json";
 const REPORT_REL = "contracts/validation/time-calibration-report.json";
 const WRITE_REPORT = process.argv.includes("--write-report");
 
-require(path.join(ROOT, "js", "gcode-parser.js"));
-require(path.join(ROOT, "js", "machine-log.js"));
-require(path.join(ROOT, "js", "time-calibration.js"));
+require(path.join(ROOT, "frontend", "classic", "js", "gcode-parser.js"));
+require(path.join(ROOT, "frontend", "classic", "js", "machine-log.js"));
+require(path.join(ROOT, "frontend", "classic", "js", "time-calibration.js"));
 const Gcode = globalThis.FXGcodeParser;
 const MachineLog = globalThis.FXMachineLog;
 const Calibration = globalThis.FXTimeCalibration;

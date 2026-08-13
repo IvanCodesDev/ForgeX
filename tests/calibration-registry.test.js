@@ -9,8 +9,8 @@ globalThis.localStorage = {
   setItem: (key, value) => { store[key] = value; },
   removeItem: (key) => { delete store[key]; },
 };
-require(path.join(__dirname, "..", "js", "time-calibration.js"));
-require(path.join(__dirname, "..", "js", "calibration-registry.js"));
+require(path.join(__dirname, "..", "frontend", "classic", "js", "time-calibration.js"));
+require(path.join(__dirname, "..", "frontend", "classic", "js", "calibration-registry.js"));
 const Registry = globalThis.FXCalibrationRegistry;
 
 let passed = 0;

@@ -12,7 +12,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { TextDecoder } = require("util");
-const J = (p) => path.join(__dirname, "..", "js", p);
+const J = (p) => path.join(__dirname, "..", "frontend", "classic", "js", p);
 
 require(J("util.js"));
 require(J("slicer.js"));

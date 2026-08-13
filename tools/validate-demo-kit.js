@@ -5,13 +5,13 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
-require("../js/util.js");
-require("../js/gcode-parser.js");
-require("../js/machine-log.js");
-require("../js/time-calibration.js");
-require("../js/profile-registry.js");
-require("../js/calibration-registry.js");
-require("../js/insight-data.js");
+require("../frontend/classic/js/util.js");
+require("../frontend/classic/js/gcode-parser.js");
+require("../frontend/classic/js/machine-log.js");
+require("../frontend/classic/js/time-calibration.js");
+require("../frontend/classic/js/profile-registry.js");
+require("../frontend/classic/js/calibration-registry.js");
+require("../frontend/classic/js/insight-data.js");
 
 const ROOT = path.resolve(__dirname, "..");
 const DEMO = path.join(ROOT, "demo");

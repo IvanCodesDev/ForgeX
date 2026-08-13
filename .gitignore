@@ -15,6 +15,7 @@ Thumbs.db
 # IDE / 智能体配置（非项目代码，不入公开仓库）
 .cursor/
 .vscode/
+.codex/
 
 # 冗余备份
 *.bak

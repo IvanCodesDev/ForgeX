@@ -17,7 +17,7 @@
 
 const path = require("path");
 const H = require(path.join(__dirname, "..", "tools", "headless-sim.js"));
-require(path.join(__dirname, "..", "js", "insight-data.js"));
+require(path.join(__dirname, "..", "frontend", "classic", "js", "insight-data.js"));
 
 const P = H.FXMachineProfile;
 const D = globalThis.FXInsightData;
