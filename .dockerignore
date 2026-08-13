@@ -30,8 +30,6 @@ logs
 tests
 tools
 .tmp-data-*
-doc/_render_*
-doc/_tmp_*
 _tmp_render*
 *.log
 *.pid

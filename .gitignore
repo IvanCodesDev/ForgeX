@@ -14,6 +14,7 @@ Thumbs.db
 
 # IDE / 智能体配置（非项目代码，不入公开仓库）
 .cursor/
+.vscode/
 
 # 冗余备份
 *.bak
@@ -22,9 +23,9 @@ Thumbs.db
 .tmp-*
 tests/.tmp-*
 
-# 内部文档：比赛策略与竞品分析，与工程无关，不入公开仓库。
-# 其中的技术设计部分已脱敏拆分为 doc/architecture.md（已入库）。
-doc/开发文档.md
+# 内部研发文档：优化开发手册、视觉校验记录、比赛策略与竞品分析。
+# 属于研发过程记录而非面向使用者的说明，留在本地，不入公开仓库。
+doc/
 
 # 覆盖率与 E2E 产物
 coverage/
@@ -33,10 +34,7 @@ test-results/
 playwright-report/
 
 # 文档渲染与本地迁移审计产物
-doc/_render_*/
-doc/_tmp_*/
 _tmp_render*/
-_tmp_render2/
 # 本地迁移、截图和验证证据包含绝对工作区路径，不进入公开源码仓库。
 optimization/
 dist/
