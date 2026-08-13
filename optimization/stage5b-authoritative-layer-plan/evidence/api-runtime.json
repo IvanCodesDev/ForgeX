@@ -1,6 +1,0 @@
-﻿{
-  "command": "POST http://127.0.0.1:8793/api/v1/gcode/analyze?bedSizeMm=256&coordinateOrigin=corner&filamentDensityGPerCm3=1.24&machineProfileId=corexy&materialProfileId=PLA",
-  "input": "validation/fixtures/cura-marlin.gcode",
-  "literalOutput": {"schema":"1.0","engine":"1.2.0","layers":2,"firstIndex":0,"firstPaths":1,"secondZ":0.4,"totalLayers":2,"openapiMaxItems":20000,"sha256":"0881cfdac2ef41f6df48f7f5e0f47fd632dcddec8238955ce3a59a6bd754cf07"},
-  "exitStatus": 0
-}

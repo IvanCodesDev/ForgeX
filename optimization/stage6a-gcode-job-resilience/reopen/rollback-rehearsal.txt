@@ -1,4 +1,0 @@
-﻿PATCH_APPLY_CHECK=PASS
-PATCH_PRODUCT_FILES=21
-APPLIED restored=18 removed=3 target=E:\Projects\3dprint\optimization\stage6a-gcode-job-resilience\reopen\rollback-rehearsal baselineSha256=6cc1514e5dfd3e0ed0a6f4a3caa7f483e7d0402edbd8ca7d26c91c18a63ad6e3
-VERIFIED baselineFiles=18 newFilesRemoved=3 result=PASS

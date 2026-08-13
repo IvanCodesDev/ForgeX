@@ -1,7 +1,0 @@
-sandbox=E:\C\c_tmp\forgex-stage5b-verify-3a391cfee32c4f859927ec6c88178d0f
-patchCheck=0
-patchApply=0
-reverseCheck=0
-rollback=0
-baselinePatchCheck=0
-newFilesAbsent=True
