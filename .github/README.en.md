@@ -230,7 +230,7 @@ tests/                unit, contract and end-to-end tests
 
 FORGE·X Insight is designed for digital simulation, process exploration, education, and production-data analysis. It exports manufacturing files but does not directly connect to or control physical printers.
 
-Release history is available in [`CHANGELOG.md`](./CHANGELOG.md).
+Release history is available in [`CHANGELOG.md`](../CHANGELOG.md).
 
 ## Contributing
 

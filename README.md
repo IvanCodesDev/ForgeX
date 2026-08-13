@@ -323,7 +323,7 @@ tests/        单元、契约和端到端测试
 
 FORGE·X Insight 面向打印前预演、工艺比较、教学演示、真机任务复盘和生产数据分析。它可以导出制造文件，但不直接连接或控制实体打印机，也不对未经真机验证的参数作生产安全承诺。
 
-版本变化见 [`.github/CHANGELOG.md`](./.github/CHANGELOG.md)，贡献说明见 [`.github/CONTRIBUTING.md`](./.github/CONTRIBUTING.md)。
+版本变化见 [`CHANGELOG.md`](./CHANGELOG.md)，贡献说明见 [`.github/CONTRIBUTING.md`](./.github/CONTRIBUTING.md)。
 
 ## License
 
