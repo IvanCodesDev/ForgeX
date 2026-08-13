@@ -5,9 +5,30 @@ const { test, expect } = require("@playwright/test");
 
 async function waitBooted(page) {
   // Firefox 在 CI 软渲染下启动最慢（WebKit 同机 12s，FF 超过 30s），预算放宽到 90s。
-  await page.waitForFunction(() => window.FX && window.FX.sim && window.FX.sim.slice, null, {
-    timeout: process.env.CI ? 90_000 : 30_000,
-  });
+  try {
+    await page.waitForFunction(() => window.FX && window.FX.sim && window.FX.sim.slice, null, {
+      timeout: process.env.CI ? 90_000 : 30_000,
+    });
+  } catch (error) {
+    // 超时不只报"没等到"：把启动卡点如实带出（兼容守卫结论、WebGL 可用性、fallback 文案），
+    // 否则无 GPU CI 上的失败只能靠猜。
+    const diagnostics = await page
+      .evaluate(() => {
+        const canvas = document.createElement("canvas");
+        const fallback = document.getElementById("webgl-fallback");
+        const reason = document.getElementById("fb-reason");
+        return JSON.stringify({
+          compat: window.FX_COMPAT || null,
+          webgl1: !!canvas.getContext("webgl"),
+          webgl2: !!canvas.getContext("webgl2"),
+          fallbackShown: !!fallback && !fallback.hidden,
+          fallbackReason: reason ? reason.textContent : null,
+          fxKeys: Object.keys(window.FX || {}),
+        });
+      })
+      .catch(() => "diagnostics unavailable");
+    throw new Error(`应用启动等待超时；diagnostics=${diagnostics}`, { cause: error });
+  }
 }
 
 test.describe("P6 cross-browser contract", () => {

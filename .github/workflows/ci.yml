@@ -345,7 +345,9 @@ jobs:
 
       # Chromium 跑全量；Firefox / WebKit 跑启动与 G-code→日志关键链路。
       # React 工作台与旧入口的一致性由 react-parity 门禁把关。
-      - run: npm run test:e2e
+      # xvfb-run：Firefox 在 CI 走有头模式取软件 WebGL（见 playwright.config.js），
+      # 其余 headless 浏览器不受虚拟显示影响。
+      - run: xvfb-run --auto-servernum -- npm run test:e2e
 
       - name: React 工作台 C# 权威接线专项
         run: npm run test:e2e:chromium -- tests/e2e/workbench-authority.spec.js

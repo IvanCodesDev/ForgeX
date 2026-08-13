@@ -49,9 +49,11 @@ module.exports = defineConfig({
       testMatch: "**/cross-browser.spec.js",
       use: {
         ...devices["Desktop Firefox"],
+        // 无 GPU 的 Linux CI 上 headless Firefox 拿不到 WebGL context（本机 Windows 无此问题），
+        // 应用会落入 webgl-fallback，启动等待必超时。CI 改走 Xvfb 有头模式（官方推荐），
+        // 由 Mesa 软渲染提供 GL；工作流的 E2E 步骤已用 xvfb-run 包裹。
+        ...(process.env.CI ? { headless: false } : {}),
         launchOptions: {
-          // headless Firefox 在无 GPU 的 CI 上需要显式允许软件 WebGL，
-          // 否则 THREE 拿不到 context，应用落入 webgl-fallback，启动等待永远超时。
           firefoxUserPrefs: {
             "webgl.force-enabled": true,
             "gfx.webrender.software": true,

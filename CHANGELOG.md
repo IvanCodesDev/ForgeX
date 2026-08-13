@@ -104,10 +104,13 @@
   实测贴着 60s 上限（本地独跑 17s 的用例在批跑中即超时）。分两层处理：
   CI 环境下用例与断言超时预算翻倍（120s/20s，本地不变）；两条实测超过
   2 分钟的最重用例（五流程页遍历、演示套件整条导入链）按实情标注
-  `test.slow()`（预算 ×3）。Firefox 侧另有两处：跨浏览器用例内部写死的
-  30s 启动等待在 CI 放宽到 90s，并为 headless Firefox 显式开启软件
-  WebGL（`webgl.force-enabled` + `gfx.webrender.software`），否则无 GPU
-  的 runner 上 THREE 拿不到 context，应用落入 fallback 导致启动等待必超时。
+  `test.slow()`（预算 ×3）。Firefox 侧问题更深：无 GPU 的 Linux runner 上
+  headless Firefox 拿不到 WebGL context（软件 WebGL prefs 亦无效，本机
+  Windows 无此问题），应用落入 fallback 导致启动等待必超时——CI 改由
+  `xvfb-run` 包裹 E2E、Firefox 项目在 CI 走有头模式取 Mesa 软渲染 GL
+  （Playwright 官方推荐路径）；用例内部写死的 30s 启动等待在 CI 放宽到
+  90s，且超时时转储启动诊断（兼容守卫结论、WebGL1/2 可用性、fallback
+  文案），失败不再只能靠猜。
 
 ### 计划中
 
