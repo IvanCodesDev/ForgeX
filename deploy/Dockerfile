@@ -21,9 +21,9 @@ COPY --chown=node:node index.html README.md ./
 COPY --chown=node:node server ./server
 COPY --chown=node:node css ./css
 COPY --chown=node:node js ./js
-COPY --chown=node:node profiles ./profiles
-COPY --chown=node:node calibration ./calibration
-COPY --chown=node:node validation ./validation
+COPY --chown=node:node contracts/profiles ./contracts/profiles
+COPY --chown=node:node contracts/calibration ./contracts/calibration
+COPY --chown=node:node contracts/validation ./contracts/validation
 COPY --from=frontend-build --chown=node:node /src/dist/react ./dist/react
 
 EXPOSE 8787

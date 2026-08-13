@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/IvanCodesDev/ForgeX/raw/main/calibration/calibration-bundle.schema.json",
+  "$id": "https://github.com/IvanCodesDev/ForgeX/raw/main/contracts/calibration/calibration-bundle.schema.json",
   "title": "FORGE·X time-calibration bundle",
   "type": "object",
   "additionalProperties": false,

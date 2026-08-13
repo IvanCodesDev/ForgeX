@@ -6,8 +6,8 @@ const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
-const MANIFEST_REL = "validation/fixture-manifest.json";
-const REPORT_REL = "validation/time-calibration-report.json";
+const MANIFEST_REL = "contracts/validation/fixture-manifest.json";
+const REPORT_REL = "contracts/validation/time-calibration-report.json";
 const WRITE_REPORT = process.argv.includes("--write-report");
 
 require(path.join(ROOT, "js", "gcode-parser.js"));
@@ -51,7 +51,7 @@ function roundDeep(value) {
 
 console.log("\n[P6 validation] Contracts");
 try {
-  report(!!readJson("validation/fixture-manifest.schema.json"), "fixture manifest schema 是有效 JSON");
+  report(!!readJson("contracts/validation/fixture-manifest.schema.json"), "fixture manifest schema 是有效 JSON");
 } catch (e) {
   report(false, "fixture manifest schema 是有效 JSON", e.message);
 }

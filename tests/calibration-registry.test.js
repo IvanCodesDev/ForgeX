@@ -63,7 +63,7 @@ function activeBundle(overrides) {
 console.log("\n[1] 示例与安全边界");
 Registry.clear();
 const example = JSON.parse(
-  fs.readFileSync(path.join(__dirname, "..", "calibration", "example-bundle.json"), "utf8")
+  fs.readFileSync(path.join(__dirname, "..", "contracts", "calibration", "example-bundle.json"), "utf8")
 );
 const exampleCheck = Registry.validateBundle(example);
 check("仓库示例通过运行时白名单", exampleCheck.ok, exampleCheck.errors.join("|"));

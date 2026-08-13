@@ -142,14 +142,14 @@ async function main() {
     check("GET / 返回前端页面", home.status === 200 && home.text.includes("FORGE·X"), String(home.status));
     const js = await jfetch(base, "/js/util.js");
     check("GET /js/util.js 可达", js.status === 200 && js.text.includes("FXU"));
-    const profile = await jfetch(base, "/profiles/example-bundle.json");
+    const profile = await jfetch(base, "/contracts/profiles/example-bundle.json");
     check("公开 Profile 示例可达", profile.status === 200 && profile.text.includes("forgex-profile-bundle"));
-    const calibrationExample = await jfetch(base, "/calibration/example-bundle.json");
+    const calibrationExample = await jfetch(base, "/contracts/calibration/example-bundle.json");
     check(
       "公开校准包示例可达且标记为 demonstration",
       calibrationExample.status === 200 && calibrationExample.text.includes("demonstration-only")
     );
-    const validation = await jfetch(base, "/validation/time-calibration-report.json");
+    const validation = await jfetch(base, "/contracts/validation/time-calibration-report.json");
     check(
       "公开校准报告可达且保留 provenance",
       validation.status === 200 && validation.text.includes("synthetic-conformance")

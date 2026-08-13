@@ -10,7 +10,7 @@ const path = require("path");
 const { test, expect } = require("@playwright/test");
 
 const ROOT = path.resolve(__dirname, "../..");
-const GCODE_FIXTURE = path.join(ROOT, "validation", "fixtures", "cura-marlin.gcode");
+const GCODE_FIXTURE = path.join(ROOT, "contracts", "validation", "fixtures", "cura-marlin.gcode");
 const FIXTURE_BYTES = 350;
 const JOB_ID = "3".repeat(32);
 const SHA256 = "0881cfdac2ef41f6df48f7f5e0f47fd632dcddec8238955ce3a59a6bd754cf07";

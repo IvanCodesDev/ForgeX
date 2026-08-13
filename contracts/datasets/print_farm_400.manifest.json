@@ -10,7 +10,7 @@
   "source": {
     "type": "generator",
     "path": "tools/farm-sim.js",
-    "command": "node tools/farm-sim.js --machines 8 --jobs 400 --seed 20260726 --out datasets/print_farm_400.csv --json datasets/print_farm_400_telemetry.json",
+    "command": "node tools/farm-sim.js --machines 8 --jobs 400 --seed 20260726 --out contracts/datasets/print_farm_400.csv --json contracts/datasets/print_farm_400_telemetry.json",
     "seed": 20260726
   },
   "privacy": {
@@ -20,7 +20,7 @@
   },
   "files": [
     {
-      "path": "datasets/print_farm_400.csv",
+      "path": "contracts/datasets/print_farm_400.csv",
       "role": "table",
       "mediaType": "text/csv",
       "sha256": "85f09e4594b10a4dac914c05c3b2ece227b5b181617e17c13d4d9203179888fd",
@@ -41,7 +41,7 @@
       ]
     },
     {
-      "path": "datasets/print_farm_400_telemetry.json",
+      "path": "contracts/datasets/print_farm_400_telemetry.json",
       "role": "telemetry",
       "mediaType": "application/json",
       "sha256": "d5515f3affadd4f4d37dc69c1b9a0268aa527eee74cfbd32c619ccac0f054f59"

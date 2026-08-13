@@ -96,7 +96,7 @@ const SLICE_PROFILES = [
 const GCODE_FIXTURES = [
   {
     id: "cura-marlin",
-    path: "validation/fixtures/cura-marlin.gcode",
+    path: "contracts/validation/fixtures/cura-marlin.gcode",
     machineProfile: "FX-256",
     firmware: "Marlin",
     bedSize: 256,
@@ -104,7 +104,7 @@ const GCODE_FIXTURES = [
   },
   {
     id: "orca-klipper",
-    path: "validation/fixtures/orca-klipper.gcode",
+    path: "contracts/validation/fixtures/orca-klipper.gcode",
     machineProfile: "FX-256",
     firmware: "Klipper",
     bedSize: 256,
@@ -112,7 +112,7 @@ const GCODE_FIXTURES = [
   },
   {
     id: "prusa-marlin",
-    path: "validation/fixtures/prusa-marlin.gcode",
+    path: "contracts/validation/fixtures/prusa-marlin.gcode",
     machineProfile: "FX-220",
     firmware: "Marlin",
     bedSize: 220,
@@ -120,7 +120,7 @@ const GCODE_FIXTURES = [
   },
   {
     id: "superslicer-rrf",
-    path: "validation/fixtures/superslicer-rrf.gcode",
+    path: "contracts/validation/fixtures/superslicer-rrf.gcode",
     machineProfile: "FX-500",
     firmware: "RepRapFirmware",
     bedSize: 500,

@@ -35,6 +35,13 @@
 
 ### 仓库整理
 
+- 五个数据契约目录（`calibration` / `datasets` / `logs` / `profiles` / `validation`）收敛到
+  `contracts/` 之下。它们本就是同一类东西——对外承诺的 schema、示例载荷与验证基线，此前平铺在
+  根目录，把仓库首屏挤成了一份目录清单。搬迁牵动 44 个文件：schema `$id` 与互相之间的
+  `$schema` 引用、服务端静态白名单（`server/lib/http.js`）、前端两个入口的下载链接、
+  Dockerfile 与 `.dockerignore`、`tools/` 下的校验器，以及三份金样本里内容寻址的路径字段；
+  `contracts/calibration/example-bundle.json` 的 `trainingSetSha256` 因指向的 fixture manifest
+  换了路径而重新绑定。`npm run check`（45 项发布门禁）与 `react-parity` / `boot` E2E 全绿。
 - Changelog 迁回仓库根目录 `CHANGELOG.md`（原 `.github/CHANGELOG.md`），同时退役需要并行
   维护的英文摘要副本；README、英文 README、PR 模板与 `tools/release-audit.js` 的引用同步更新。
 - `optimization/` 阶段证据归档撤出版本控制。这批文件在 `.gitignore` 收录该目录之前就已被跟踪，

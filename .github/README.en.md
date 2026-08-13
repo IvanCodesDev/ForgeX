@@ -167,8 +167,8 @@ npm run format:check
 
 Coverage includes slicing, G-code, machine logs, time calibration, profiles, leveling, simulation, exports, statistics, insights, virtual-farm datasets, backend contracts, and critical UI flows across three browser engines.
 
-See [`validation/README.md`](../validation/README.md) for dialect fixtures and
-the real-data contribution workflow, and [`calibration/README.md`](../calibration/README.md)
+See [`contracts/validation/README.md`](../contracts/validation/README.md) for dialect fixtures and
+the real-data contribution workflow, and [`contracts/calibration/README.md`](../contracts/calibration/README.md)
 for the P7/P8 bundle, admission, reviewed-release, and drift lifecycle. Bundled reports and models
 are `synthetic-conformance` and never match user jobs automatically.
 
@@ -214,11 +214,12 @@ See [`server/.env.example`](../server/.env.example) for the complete configurati
 css/                  interface design system
 js/                   simulation, slicing, analytics and UI
 server/               HTTP service, providers and platform controls
-datasets/             reproducible virtual-farm datasets
-profiles/             machine/material profile schema and examples
-logs/                 machine-log schema and examples
-validation/           paired G-code/log fixtures and calibration reports
-calibration/          versioned calibration bundle schema and demonstration
+contracts/            public data contracts: schemas, examples and fixtures
+  datasets/             reproducible virtual-farm datasets
+  profiles/             machine/material profile schema and examples
+  logs/                 machine-log schema and examples
+  validation/           paired G-code/log fixtures and calibration reports
+  calibration/          versioned calibration bundle schema and demonstration
 demo/                 video-ready sample files and Chinese narration script
 deploy/               Docker image and Compose deployment definitions
 .github/               community policies, release history and English overview

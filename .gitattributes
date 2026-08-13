@@ -18,8 +18,8 @@
 
 # 自动生成的产物：在 diff 中折叠，避免淹没真实变更
 js/farm-dataset.js              linguist-generated=true
-datasets/*.csv                  linguist-generated=true
-datasets/*_telemetry.json       linguist-generated=true
+contracts/datasets/*.csv              linguist-generated=true
+contracts/datasets/*_telemetry.json   linguist-generated=true
 package-lock.json               linguist-generated=true
 
 # vendored 第三方库不计入语言统计

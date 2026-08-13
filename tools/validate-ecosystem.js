@@ -36,7 +36,7 @@ function sha256(full) {
 }
 
 console.log("\n[ecosystem] Profile bundle");
-for (const rel of ["profiles/profile-bundle.schema.json", "profiles/example-bundle.json"]) {
+for (const rel of ["contracts/profiles/profile-bundle.schema.json", "contracts/profiles/example-bundle.json"]) {
   try {
     const json = readJson(rel);
     report(!!json && typeof json === "object", `${rel} 是有效 JSON`);
@@ -50,7 +50,7 @@ for (const rel of ["profiles/profile-bundle.schema.json", "profiles/example-bund
 }
 
 console.log("\n[ecosystem] Machine log contract");
-for (const rel of ["logs/machine-log.schema.json", "logs/example-machine-log.json"]) {
+for (const rel of ["contracts/logs/machine-log.schema.json", "contracts/logs/example-machine-log.json"]) {
   try {
     const json = readJson(rel);
     report(!!json && typeof json === "object", `${rel} 是有效 JSON`);
@@ -66,11 +66,11 @@ for (const rel of ["logs/machine-log.schema.json", "logs/example-machine-log.jso
 
 console.log("\n[ecosystem] Dataset manifests");
 try {
-  report(!!readJson("datasets/dataset-manifest.schema.json"), "数据集 manifest schema 是有效 JSON");
+  report(!!readJson("contracts/datasets/dataset-manifest.schema.json"), "数据集 manifest schema 是有效 JSON");
 } catch (e) {
   report(false, "数据集 manifest schema 是有效 JSON", e.message);
 }
-const datasetDir = path.join(ROOT, "datasets");
+const datasetDir = path.join(ROOT, "contracts", "datasets");
 const manifests = fs
   .readdirSync(datasetDir)
   .filter((name) => /\.manifest\.json$/i.test(name))
@@ -78,7 +78,7 @@ const manifests = fs
 report(manifests.length > 0, "至少存在一个数据集 manifest");
 
 for (const name of manifests) {
-  const rel = path.posix.join("datasets", name);
+  const rel = path.posix.join("contracts", "datasets", name);
   let manifest;
   try {
     manifest = readJson(rel);

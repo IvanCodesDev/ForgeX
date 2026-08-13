@@ -308,11 +308,12 @@ js/           切片、仿真、分析和前端交互
 frontend/     React + TypeScript 新工作台
 backend/      .NET 10 权威计算核心、API 与 GoldenDiff
 server/       HTTP 服务、登录、存储和 AI provider
-datasets/     可复现的虚拟机群数据
-profiles/     机器与材料 Profile
-logs/         真机日志格式与示例
-validation/   G-code/日志配对夹具与校准报告
-calibration/  校准包格式、审核和漂移生命周期
+contracts/    对外数据契约：schema、示例与夹具
+  datasets/     可复现的虚拟机群数据
+  profiles/     机器与材料 Profile
+  logs/         真机日志格式与示例
+  validation/   G-code/日志配对夹具与校准报告
+  calibration/  校准包格式、审核和漂移生命周期
 demo/         录屏演示素材
 deploy/       Docker 部署文件
 tools/        数据生成和校验工具

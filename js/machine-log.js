@@ -1,7 +1,7 @@
 /* FORGE·X — 真机任务日志解析与 G-code 计划/实测对比（纯逻辑）
  *
  * 支持：
- *   1. forgex-machine-log v1 JSON（完整契约见 logs/machine-log.schema.json）；
+ *   1. forgex-machine-log v1 JSON（完整契约见 contracts/logs/machine-log.schema.json）；
  *   2. 常见列名的 CSV 遥测：time_s / nozzle_c / bed_c，并可附带任务汇总字段。
  *
  * 这里只做数据归一和差异计算，不把运动时间估算包装成真值。

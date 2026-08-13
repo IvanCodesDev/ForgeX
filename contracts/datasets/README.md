@@ -16,8 +16,8 @@
 
 ```bash
 node tools/farm-sim.js --machines 8 --jobs 400 --seed 20260726 \
-  --out datasets/print_farm_400.csv \
-  --json datasets/print_farm_400_telemetry.json
+  --out contracts/datasets/print_farm_400.csv \
+  --json contracts/datasets/print_farm_400_telemetry.json
 ```
 
 8 台虚拟机器，每台有一组**确定性的固有物理特征**（由机台编号派生，同编号永远相同）：

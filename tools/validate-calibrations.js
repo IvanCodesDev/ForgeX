@@ -22,8 +22,10 @@ require(path.join(ROOT, "js", "time-calibration.js"));
 require(path.join(ROOT, "js", "calibration-registry.js"));
 
 const Registry = global.FXCalibrationRegistry;
-const example = JSON.parse(fs.readFileSync(path.join(ROOT, "calibration", "example-bundle.json"), "utf8"));
-const schema = JSON.parse(fs.readFileSync(path.join(ROOT, "calibration", "calibration-bundle.schema.json"), "utf8"));
+const example = JSON.parse(fs.readFileSync(path.join(ROOT, "contracts", "calibration", "example-bundle.json"), "utf8"));
+const schema = JSON.parse(
+  fs.readFileSync(path.join(ROOT, "contracts", "calibration", "calibration-bundle.schema.json"), "utf8")
+);
 const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 const serverIndex = fs.readFileSync(path.join(ROOT, "server", "index.js"), "utf8");
 const serverService = fs.readFileSync(path.join(ROOT, "server", "services", "calibration.js"), "utf8");
@@ -63,7 +65,7 @@ check(
 check("示例说明不冒充生产模型", /not a production|不是生产/i.test(example.source.note));
 
 console.log("\n[P7 calibration] Provenance and integrity");
-const manifestBytes = fs.readFileSync(path.join(ROOT, "validation", "fixture-manifest.json"));
+const manifestBytes = fs.readFileSync(path.join(ROOT, "contracts", "validation", "fixture-manifest.json"));
 const manifestSha = crypto.createHash("sha256").update(manifestBytes).digest("hex");
 check(
   "示例训练集指纹绑定 P6 fixture manifest",

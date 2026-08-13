@@ -276,10 +276,10 @@ console.log("\n[9] 增量解析与全量解析严格等价");
 {
   const rootDir = path.join(__dirname, "..");
   const baselineHashes = {
-    "validation/fixtures/cura-marlin.gcode": "6411394a713979a8a4abd89946c925d9d1a7b6b27b81495cedcd69425187e4b9",
-    "validation/fixtures/orca-klipper.gcode": "e2c4dab94b573cb7cc072b89d8c557b5d0df2365d29e4e896a5cf253063ac1ac",
-    "validation/fixtures/prusa-marlin.gcode": "619212b848b7f35013eb3e6e244f3a92e5bc61981744ef4ea55bce9882bcba0a",
-    "validation/fixtures/superslicer-rrf.gcode": "7c3631189f2aff5a4a0e578a1a078c3feb2a7062359790a1bac1d8342e5b9571",
+    "contracts/validation/fixtures/cura-marlin.gcode": "6411394a713979a8a4abd89946c925d9d1a7b6b27b81495cedcd69425187e4b9",
+    "contracts/validation/fixtures/orca-klipper.gcode": "e2c4dab94b573cb7cc072b89d8c557b5d0df2365d29e4e896a5cf253063ac1ac",
+    "contracts/validation/fixtures/prusa-marlin.gcode": "619212b848b7f35013eb3e6e244f3a92e5bc61981744ef4ea55bce9882bcba0a",
+    "contracts/validation/fixtures/superslicer-rrf.gcode": "7c3631189f2aff5a4a0e578a1a078c3feb2a7062359790a1bac1d8342e5b9571",
     "demo/replay/03-demo-turbine.gcode": "5e30462491cb3cb6eb7d19f5a29f0c4f147d0b4a95d76f3837b8ce652805e657",
   };
 

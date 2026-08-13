@@ -37,7 +37,7 @@
         "maxBias": 0.12,
         "minDriftSamples": 5
       },
-      "trainingSetSha256": "553d94228b7cdb15f384a42fa4465fa1ae1e1cb93429fd37a493d55e30e2563b"
+      "trainingSetSha256": "8b1108341caba6436f35d9331a644d971fc9ee881f3feca257c6cae174ab12ed"
     }
   ]
 }

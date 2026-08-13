@@ -21,7 +21,7 @@ POST {{ForgeX_Api}}/api/v1/gcode/analyze?bedSizeMm=256&coordinateOrigin=corner&f
 Content-Type: application/x-gcode
 Accept: application/json
 
-< ../../../validation/fixtures/cura-marlin.gcode
+< ../../../contracts/validation/fixtures/cura-marlin.gcode
 
 ### Stable problem+json example (unsupported media type)
 POST {{ForgeX_Api}}/api/v1/gcode/analyze

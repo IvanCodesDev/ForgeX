@@ -90,7 +90,7 @@ async function collectSse(path, timeoutMs) {
   check("GET / → 200 且含品牌", home.status === 200 && home.text.includes("FORGE·X"), "HTTP " + home.status);
   const jsOk = await jfetch("/js/util.js");
   check("GET /js/util.js → 200", jsOk.status === 200, "HTTP " + jsOk.status);
-  const profileOk = await jfetch("/profiles/example-bundle.json");
+  const profileOk = await jfetch("/contracts/profiles/example-bundle.json");
   check("公开 Profile 示例可下载", profileOk.status === 200 && profileOk.text.includes("forgex-profile-bundle"), "HTTP " + profileOk.status);
   const envHidden = await jfetch("/server/.env");
   check("server/.env 不可达", envHidden.status === 404, "HTTP " + envHidden.status);

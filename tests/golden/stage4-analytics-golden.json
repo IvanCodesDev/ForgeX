@@ -122,7 +122,7 @@
       },
       "rowCount": 400
     },
-    "path": "datasets/print_farm_400.csv",
+    "path": "contracts/datasets/print_farm_400.csv",
     "sha256": "85f09e4594b10a4dac914c05c3b2ece227b5b181617e17c13d4d9203179888fd"
   },
   "engine": {
@@ -1178,7 +1178,7 @@
       },
       "id": "farm-machine-fault-report",
       "input": {
-        "datasetPath": "datasets/print_farm_400.csv",
+        "datasetPath": "contracts/datasets/print_farm_400.csv",
         "provenance": null,
         "question": "哪台机台故障率最高，需要优先保养？"
       }
@@ -1306,7 +1306,7 @@
       },
       "id": "farm-material-comparison-report",
       "input": {
-        "datasetPath": "datasets/print_farm_400.csv",
+        "datasetPath": "contracts/datasets/print_farm_400.csv",
         "provenance": null,
         "question": "PLA、PETG、ABS、TPU 材料失败率对比差多少？"
       }
@@ -1399,7 +1399,7 @@
       },
       "id": "farm-correlation-report",
       "input": {
-        "datasetPath": "datasets/print_farm_400.csv",
+        "datasetPath": "contracts/datasets/print_farm_400.csv",
         "provenance": null,
         "question": "层高与打印时长的相关性如何？"
       }
@@ -1492,7 +1492,7 @@
       },
       "id": "farm-failure-root-report",
       "input": {
-        "datasetPath": "datasets/print_farm_400.csv",
+        "datasetPath": "contracts/datasets/print_farm_400.csv",
         "provenance": null,
         "question": "失败批次有什么共性，主要原因如何归因？"
       }
@@ -1569,7 +1569,7 @@
       },
       "id": "farm-overview-unmatched-report",
       "input": {
-        "datasetPath": "datasets/print_farm_400.csv",
+        "datasetPath": "contracts/datasets/print_farm_400.csv",
         "provenance": null,
         "question": "请总结一下当前情况"
       }
@@ -1742,7 +1742,7 @@
       },
       "id": "farm-cost-trend-report",
       "input": {
-        "datasetPath": "datasets/print_farm_400.csv",
+        "datasetPath": "contracts/datasets/print_farm_400.csv",
         "provenance": null,
         "question": "本月单件成本与耗材成本趋势如何？"
       }

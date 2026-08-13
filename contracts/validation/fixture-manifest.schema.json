@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/IvanCodesDev/ForgeX/raw/main/validation/fixture-manifest.schema.json",
+  "$id": "https://github.com/IvanCodesDev/ForgeX/raw/main/contracts/validation/fixture-manifest.schema.json",
   "title": "FORGE·X validation fixture set",
   "type": "object",
   "additionalProperties": false,

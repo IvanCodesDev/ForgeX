@@ -50,9 +50,9 @@ check(
 );
 
 console.log("\n[release] P6 validation contract");
-const manifest = json("validation/fixture-manifest.json");
-const calibration = json("validation/time-calibration-report.json");
-check("校准报告绑定 fixture manifest", calibration.sourceManifest === "validation/fixture-manifest.json");
+const manifest = json("contracts/validation/fixture-manifest.json");
+const calibration = json("contracts/validation/time-calibration-report.json");
+check("校准报告绑定 fixture manifest", calibration.sourceManifest === "contracts/validation/fixture-manifest.json");
 check("报告保留 provenance", calibration.provenance === manifest.provenance);
 check(
   "合成兼容性夹具不冒充真机精度",
@@ -61,8 +61,8 @@ check(
 check("发布脚本包含完整验证入口", pkg.scripts["release:check"] === "npm run check && npm run test:e2e");
 
 console.log("\n[release] P7 calibration lifecycle");
-const bundle = json("calibration/example-bundle.json");
-const bundleSchema = json("calibration/calibration-bundle.schema.json");
+const bundle = json("contracts/calibration/example-bundle.json");
+const bundleSchema = json("contracts/calibration/calibration-bundle.schema.json");
 check("校准示例使用受控 bundle 格式", bundle.format === "forgex-calibration-bundle" && bundle.version === 1);
 check(
   "合成模型只能作为 demonstration",

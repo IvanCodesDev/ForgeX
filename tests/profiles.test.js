@@ -27,7 +27,7 @@ function check(name, cond, detail) {
 
 function example() {
   return JSON.parse(
-    fs.readFileSync(path.join(__dirname, "..", "profiles", "example-bundle.json"), "utf8")
+    fs.readFileSync(path.join(__dirname, "..", "contracts", "profiles", "example-bundle.json"), "utf8")
   );
 }
 

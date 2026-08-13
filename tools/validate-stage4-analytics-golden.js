@@ -6,7 +6,7 @@ const path = require("path");
 
 const root = path.resolve(__dirname, "..");
 const goldenPath = path.join(root, "tests", "golden", "stage4-analytics-golden.json");
-const datasetPath = path.join(root, "datasets", "print_farm_400.csv");
+const datasetPath = path.join(root, "contracts", "datasets", "print_farm_400.csv");
 const sourcePaths = ["js/stats-kernel.js", "js/insight-data.js", "js/insight-engine.js"];
 
 require(path.join(root, "js", "util.js"));
@@ -203,7 +203,7 @@ function createGolden() {
       id: "farm-machine-fault-report",
       input: {
         question: "哪台机台故障率最高，需要优先保养？",
-        datasetPath: "datasets/print_farm_400.csv",
+        datasetPath: "contracts/datasets/print_farm_400.csv",
         provenance: null,
       },
       rows: dataset.rows,
@@ -212,7 +212,7 @@ function createGolden() {
       id: "farm-material-comparison-report",
       input: {
         question: "PLA、PETG、ABS、TPU 材料失败率对比差多少？",
-        datasetPath: "datasets/print_farm_400.csv",
+        datasetPath: "contracts/datasets/print_farm_400.csv",
         provenance: null,
       },
       rows: dataset.rows,
@@ -221,7 +221,7 @@ function createGolden() {
       id: "farm-correlation-report",
       input: {
         question: "层高与打印时长的相关性如何？",
-        datasetPath: "datasets/print_farm_400.csv",
+        datasetPath: "contracts/datasets/print_farm_400.csv",
         provenance: null,
       },
       rows: dataset.rows,
@@ -230,7 +230,7 @@ function createGolden() {
       id: "farm-failure-root-report",
       input: {
         question: "失败批次有什么共性，主要原因如何归因？",
-        datasetPath: "datasets/print_farm_400.csv",
+        datasetPath: "contracts/datasets/print_farm_400.csv",
         provenance: null,
       },
       rows: dataset.rows,
@@ -239,7 +239,7 @@ function createGolden() {
       id: "farm-overview-unmatched-report",
       input: {
         question: "请总结一下当前情况",
-        datasetPath: "datasets/print_farm_400.csv",
+        datasetPath: "contracts/datasets/print_farm_400.csv",
         provenance: null,
       },
       rows: dataset.rows,
@@ -248,7 +248,7 @@ function createGolden() {
       id: "farm-cost-trend-report",
       input: {
         question: "本月单件成本与耗材成本趋势如何？",
-        datasetPath: "datasets/print_farm_400.csv",
+        datasetPath: "contracts/datasets/print_farm_400.csv",
         provenance: null,
       },
       rows: dataset.rows,
@@ -383,7 +383,7 @@ function createGolden() {
       expected: stats.rankByRate(rankGroups, { minSample: 5, alpha: 0.05 }),
     },
     dataset: {
-      path: "datasets/print_farm_400.csv",
+      path: "contracts/datasets/print_farm_400.csv",
       sha256: sha256(datasetBytes),
       expected: {
         rowCount: dataset.rows.length,

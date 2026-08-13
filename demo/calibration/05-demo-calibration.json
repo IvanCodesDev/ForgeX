@@ -1,5 +1,5 @@
 {
-  "$schema": "../../calibration/calibration-bundle.schema.json",
+  "$schema": "../../contracts/calibration/calibration-bundle.schema.json",
   "format": "forgex-calibration-bundle",
   "version": 1,
   "id": "forgex-video-demonstration",

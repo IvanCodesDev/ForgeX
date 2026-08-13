@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/IvanCodesDev/ForgeX/raw/main/logs/machine-log.schema.json",
+  "$id": "https://github.com/IvanCodesDev/ForgeX/raw/main/contracts/logs/machine-log.schema.json",
   "title": "FORGE·X machine log",
   "type": "object",
   "additionalProperties": false,

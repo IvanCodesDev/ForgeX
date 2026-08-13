@@ -1,5 +1,5 @@
 {
-  "$schema": "../../logs/machine-log.schema.json",
+  "$schema": "../../contracts/logs/machine-log.schema.json",
   "format": "forgex-machine-log",
   "version": 1,
   "job": {

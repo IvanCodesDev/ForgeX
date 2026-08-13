@@ -127,7 +127,7 @@ function ProfileSection() {
         >
           导入 Profile JSON
         </button>
-        <a className="btn btn-ghost" href="profiles/example-bundle.json" target="_blank" rel="noopener">
+        <a className="btn btn-ghost" href="contracts/profiles/example-bundle.json" target="_blank" rel="noopener">
           查看示例
         </a>
       </div>
@@ -153,7 +153,7 @@ function CalibrationSection() {
         >
           导入校准包 JSON
         </button>
-        <a className="btn btn-ghost" href="calibration/example-bundle.json" target="_blank" rel="noopener">
+        <a className="btn btn-ghost" href="contracts/calibration/example-bundle.json" target="_blank" rel="noopener">
           查看示例
         </a>
       </div>

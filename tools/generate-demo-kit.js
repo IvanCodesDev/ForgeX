@@ -179,7 +179,7 @@ function buildProductionCsv() {
 }
 
 const profile = {
-  $schema: "../../profiles/profile-bundle.schema.json",
+  $schema: "../../contracts/profiles/profile-bundle.schema.json",
   format: "forgex-profile-bundle",
   version: 1,
   machines: [
@@ -226,7 +226,7 @@ const actualTime = Math.round(parsed.stats.timeSec * 1.12 + 38);
 const actualFilamentMm = Math.round(parsed.stats.filamentM * 1000 * 1.015);
 const actualFilamentG = Number((parsed.stats.filamentG * 1.02).toFixed(2));
 const log = {
-  $schema: "../../logs/machine-log.schema.json",
+  $schema: "../../contracts/logs/machine-log.schema.json",
   format: "forgex-machine-log",
   version: 1,
   job: {
@@ -253,7 +253,7 @@ const log = {
 };
 
 const calibration = {
-  $schema: "../../calibration/calibration-bundle.schema.json",
+  $schema: "../../contracts/calibration/calibration-bundle.schema.json",
   format: "forgex-calibration-bundle",
   version: 1,
   id: "forgex-video-demonstration",

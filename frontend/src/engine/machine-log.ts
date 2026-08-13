@@ -2,7 +2,7 @@
    自 js/machine-log.js 机械迁移：算法逐行保留，仅换模块壳并加类型。
 
    支持：
-     1. forgex-machine-log v1 JSON（完整契约见 logs/machine-log.schema.json）；
+     1. forgex-machine-log v1 JSON（完整契约见 contracts/logs/machine-log.schema.json）；
      2. 常见列名的 CSV 遥测：time_s / nozzle_c / bed_c，并可附带任务汇总字段。
    这里只做数据归一和差异计算，不把运动时间估算包装成真值。 */
 import type { ParsedGcodeResult } from "./gcode-parser.ts";

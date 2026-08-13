@@ -444,7 +444,7 @@
       profileUpload.id = "profile-upload";
       profileUpload.addEventListener("click", () => $("#profile-input").click());
       const profileExample = el("a", "btn btn-ghost", "查看示例");
-      profileExample.href = "profiles/example-bundle.json";
+      profileExample.href = "contracts/profiles/example-bundle.json";
       profileExample.target = "_blank";
       profileExample.rel = "noopener";
       profileRow.append(profileUpload, profileExample);
@@ -460,7 +460,7 @@
       calibrationUpload.id = "calibration-upload";
       calibrationUpload.addEventListener("click", () => $("#calibration-input").click());
       const calibrationExample = el("a", "btn btn-ghost", "查看示例");
-      calibrationExample.href = "calibration/example-bundle.json";
+      calibrationExample.href = "contracts/calibration/example-bundle.json";
       calibrationExample.target = "_blank";
       calibrationExample.rel = "noopener";
       calibrationRow.append(calibrationUpload, calibrationExample);

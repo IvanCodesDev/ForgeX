@@ -1,5 +1,5 @@
 {
-  "$schema": "../../profiles/profile-bundle.schema.json",
+  "$schema": "../../contracts/profiles/profile-bundle.schema.json",
   "format": "forgex-profile-bundle",
   "version": 1,
   "machines": [

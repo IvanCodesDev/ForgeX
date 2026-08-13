@@ -23,10 +23,10 @@ test-results
 optimization
 data
 config
-datasets
+contracts/datasets
+contracts/logs
 demo
 doc
-logs
 tests
 tools
 .tmp-data-*

@@ -673,7 +673,7 @@
       "category": "gcode",
       "input": {
         "type": "file",
-        "path": "validation/fixtures/cura-marlin.gcode",
+        "path": "contracts/validation/fixtures/cura-marlin.gcode",
         "sha256": "0881cfdac2ef41f6df48f7f5e0f47fd632dcddec8238955ce3a59a6bd754cf07"
       },
       "machineProfile": "FX-256",
@@ -724,7 +724,7 @@
       "category": "gcode",
       "input": {
         "type": "file",
-        "path": "validation/fixtures/cura-marlin.gcode",
+        "path": "contracts/validation/fixtures/cura-marlin.gcode",
         "sha256": "0881cfdac2ef41f6df48f7f5e0f47fd632dcddec8238955ce3a59a6bd754cf07"
       },
       "machineProfile": "FX-256",
@@ -775,7 +775,7 @@
       "category": "gcode",
       "input": {
         "type": "file",
-        "path": "validation/fixtures/orca-klipper.gcode",
+        "path": "contracts/validation/fixtures/orca-klipper.gcode",
         "sha256": "bc39cbac84e164415eb9902586f52cf186c1116bc270260958a2b8694dc13324"
       },
       "machineProfile": "FX-256",
@@ -826,7 +826,7 @@
       "category": "gcode",
       "input": {
         "type": "file",
-        "path": "validation/fixtures/orca-klipper.gcode",
+        "path": "contracts/validation/fixtures/orca-klipper.gcode",
         "sha256": "bc39cbac84e164415eb9902586f52cf186c1116bc270260958a2b8694dc13324"
       },
       "machineProfile": "FX-256",
@@ -877,7 +877,7 @@
       "category": "gcode",
       "input": {
         "type": "file",
-        "path": "validation/fixtures/prusa-marlin.gcode",
+        "path": "contracts/validation/fixtures/prusa-marlin.gcode",
         "sha256": "079510b978079066a4a4328cd583bf375508a7706eb8031dafe5c4d903e4828c"
       },
       "machineProfile": "FX-220",
@@ -927,7 +927,7 @@
       "category": "gcode",
       "input": {
         "type": "file",
-        "path": "validation/fixtures/prusa-marlin.gcode",
+        "path": "contracts/validation/fixtures/prusa-marlin.gcode",
         "sha256": "079510b978079066a4a4328cd583bf375508a7706eb8031dafe5c4d903e4828c"
       },
       "machineProfile": "FX-220",
@@ -977,7 +977,7 @@
       "category": "gcode",
       "input": {
         "type": "file",
-        "path": "validation/fixtures/superslicer-rrf.gcode",
+        "path": "contracts/validation/fixtures/superslicer-rrf.gcode",
         "sha256": "1c652a1ff1802277cf54500764c4b78e2436c8a2a9bbaf62825ffa467cf4fac0"
       },
       "machineProfile": "FX-500",
@@ -1027,7 +1027,7 @@
       "category": "gcode",
       "input": {
         "type": "file",
-        "path": "validation/fixtures/superslicer-rrf.gcode",
+        "path": "contracts/validation/fixtures/superslicer-rrf.gcode",
         "sha256": "1c652a1ff1802277cf54500764c4b78e2436c8a2a9bbaf62825ffa467cf4fac0"
       },
       "machineProfile": "FX-500",

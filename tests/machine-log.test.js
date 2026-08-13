@@ -21,7 +21,7 @@ function check(name, cond, detail) {
 
 console.log("\n[1] 标准 JSON 真机日志");
 const sample = fs.readFileSync(
-  path.join(__dirname, "..", "logs", "example-machine-log.json"),
+  path.join(__dirname, "..", "contracts", "logs", "example-machine-log.json"),
   "utf8"
 );
 const json = Log.parse(sample, { name: "example-machine-log.json" });

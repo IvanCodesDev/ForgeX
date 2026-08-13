@@ -26,7 +26,7 @@
    用法：
      node tools/farm-sim.js                                  # 默认 8 台机 × 200 单
      node tools/farm-sim.js --machines 12 --jobs 500 --seed 7
-     node tools/farm-sim.js --out datasets/farm.csv --json datasets/farm-telemetry.json
+     node tools/farm-sim.js --out contracts/datasets/farm.csv --json contracts/datasets/farm-telemetry.json
      node tools/farm-sim.js --jobs 40 --quiet                # 只输出汇总
 
    注意：随机性只用于**排产**（这一单派给哪台机、用什么材料、什么参数），
