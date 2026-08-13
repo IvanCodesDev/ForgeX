@@ -1,4 +1,15 @@
 {
   "claudeCodeChatUI.mcp.enabled": false,
-  "claudeCodeChatUI.mcp.servers": []
+  "claudeCodeChatUI.mcp.servers": [],
+
+  // 资源管理器隐藏纯机器管理的目录（SDK、依赖、构建/测试产物、历史证据档案）。
+  // 需要临时查看时，把对应条目改为 false 即可。
+  "files.exclude": {
+    ".dotnet": true,
+    ".dotnet-home": true,
+    "node_modules": true,
+    "dist": true,
+    "test-results": true,
+    "optimization": true
+  }
 }
