@@ -605,6 +605,8 @@ G-code、日志、CSV 和知识文档采用 SHA-256 内容摘要：
 
 **退出门槛**：主用户流程全部进入 React；旧 DOM 事件绑定不再控制新页面；Three.js 资源释放测试通过。
 
+> **实施记录（2026-08-13 / 前端引擎收尾）**：`js/*.js` 25 个模块全部完成 TS 化（`frontend/src/engine/*.ts`，THREE 经 npm r152 同版引入）。最后一个经典脚本 `ui.js` 收编完成：其在 React 入口仍存活的引擎联动职责迁入类型化 `WorkbenchUi`（toast/confirm 事件化、renderCtx 页级刷新、state→ghost 联动、成品导出、内置模型目录），品牌 SVG 与全屏按钮改由 React 渲染；`models`/`insight-data`/`profile-registry` 的过渡期全局读取换为直接 import；`globals-bridge` 删除。React 入口零经典脚本、零 `FX*` 全局（仅保留 `window.FX` 调试句柄）。旧入口 `index.html + js/` 按 13.3 保留为回滚路径。验证：TS strict 通过、前端 lint/32 项单测通过、`react-parity`（布局契约 + 整屏像素）与 `workbench-authority`（C# 权威接线）E2E 通过。
+
 ### 9.5 阶段 3：建立 C# 平台底座（2～3 周）
 
 **工作项**

@@ -9,6 +9,30 @@
 
 ## [Unreleased]
 
+### 变更（引擎 TS 迁移）
+
+- 引擎层持续从 `js/` 经典脚本迁移到 `frontend/src/engine/*.ts`，React 工作台改为直接消费
+  TS 模块，未迁脚本经 `globals-bridge` 读取同一实现；每个模块迁移均通过与 JS 原版的
+  逐位数值对比（切片全量输出、G-code 解析、STL 二进制、分析报告等 130+ 项断言）。
+  - 第二批：`slicer` / `models` / `gcode-parser` / `machine-log` / `time-calibration` /
+    `calibration-registry`。
+  - 第三批：`exporter` / `api-client` / `insight-data` / `farm-dataset` / `insight-engine`；
+    `auth.js` 收编为 React `useAuth` hook（登录门与账号胶囊改受控渲染，顺带修复
+    logout 按钮在 React 入口下未绑定监听的时序问题）。
+  - 第四批：`orbit` / `fleet-view` / `scene` / `printer3d` / `printers` / `sim` /
+    `profile-registry`；THREE 改由 npm 包（`three@0.152.2`，与原 vendor r152 同版）引入，
+    React 入口不再预载 `three.min.js` 经典脚本。
+  - 收尾批：`ui.js` 收编完成——其在 React 入口仍存活的引擎联动职责（toast/confirm 事件化、
+    renderCtx 页级刷新、state→ghost 联动、成品导出、内置模型目录）迁入类型化的
+    `WorkbenchUi`（`frontend/src/workbench/workbench-ui.ts`），品牌 SVG 与全屏按钮改由
+    React 组件渲染；`models` / `insight-data` / `profile-registry` 的过渡期全局读取
+    （`THREE` / `FXFarmDataset` / `FXInsightData`）全部换成直接 import；`globals-bridge`
+    随最后一个消费者消失而删除。React 入口自此零经典脚本、零 `FX*` 全局
+    （仅保留 `window.FX` 调试句柄），`legacy/engine.ts` 成为纯类型收窄与服务聚合边界。
+    两入口一致性由 `react-parity`（布局契约 + 整屏像素）与 `workbench-authority`
+    （C# 权威接线）E2E 复验通过。
+- 旧入口（`index.html` + `js/`）保持原样，作为迁移期的像素/布局对照基线与回滚路径。
+
 ### 新增
 
 - G-code 同步/异步权威响应新增机型与材料 Profile 标识、生效参数和确定性 SHA-256 指纹；

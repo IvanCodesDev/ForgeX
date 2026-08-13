@@ -1,0 +1,134 @@
+import { describe, expect, it } from "vitest";
+import {
+  forgeXApiOperations,
+  forgeXApiPath,
+  type GCodeAnalysisResponse,
+  type GCodeJobAcceptedResponse,
+} from "../generated/forgex-api";
+
+describe("generated ForgeX OpenAPI client", () => {
+  it("exposes stable G-code routes and encodes path parameters", () => {
+    expect(forgeXApiOperations.analyzeGCode).toEqual({ method: "POST", path: "/api/v1/gcode/analyze" });
+    expect(forgeXApiOperations.createGCodeAnalysisJob).toEqual({
+      method: "POST",
+      path: "/api/v1/gcode/analyses",
+    });
+    expect(forgeXApiPath("getGCodeAnalysisJob", { id: "a/b" })).toBe("/api/v1/jobs/a%2Fb");
+    expect(() => forgeXApiPath("getGCodeAnalysisJob")).toThrow("Missing OpenAPI path parameter: id");
+  });
+
+  it("keeps authority and accepted-job DTOs connected to generated schemas", () => {
+    const result: GCodeAnalysisResponse = {
+      schemaVersion: "1.0",
+      engine: { version: "1.0.0", source: "gcode-import" },
+      input: { sha256: "a".repeat(64), bytesRead: 20, linesRead: 2 },
+      profile: {
+        machineProfileId: "corexy",
+        materialProfileId: "PLA",
+        bedSizeMm: 256,
+        coordinateOrigin: "corner",
+        filamentDensityGPerCm3: 1.24,
+        materialPriceCnyPerKg: 0,
+        nozzleTemperatureMinC: 0,
+        nozzleTemperatureMaxC: 500,
+        bedTemperatureMinC: 0,
+        materialMaxSpeedMmPerSecond: 1000,
+        materialMaxFlowMm3PerSecond: 100,
+        fingerprint: "f".repeat(64),
+      },
+      parameters: {
+        bedSizeMm: 256,
+        coordinateOrigin: "corner",
+        filamentDensityGPerCm3: 1.24,
+        materialPriceCnyPerKg: 0,
+        nozzleTemperatureMinC: 0,
+        nozzleTemperatureMaxC: 500,
+        bedTemperatureMinC: 0,
+        materialMaxSpeedMmPerSecond: 1000,
+        materialMaxFlowMm3PerSecond: 100,
+      },
+      summary: {
+        totalLayers: 2,
+        heightMm: 0.4,
+        extrusionLengthMm: 10,
+        travelLengthMm: 3,
+        estimatedTimeSeconds: 2,
+        volumeCm3: 0.1,
+        filamentLengthM: 0.4,
+        filamentMassG: 0.124,
+      },
+      material: {
+        materialProfileId: "PLA",
+        filamentDiameterMm: 1.75,
+        densityGPerCm3: 1.24,
+        volumeCm3: 0.1,
+        filamentLengthM: 0.4,
+        filamentMassG: 0.124,
+        priceCnyPerKg: 0,
+        materialCostCny: 0,
+      },
+      risk: {
+        level: "low",
+        score: 0,
+        nozzleTemperatureC: null,
+        bedTemperatureC: null,
+        maxExtrusionSpeedMmPerSecond: 5,
+        maxVolumetricFlowMm3PerSecond: 2,
+        findings: [],
+      },
+      bounds: { minX: 0, maxX: 10, minY: 1, maxY: 11 },
+      layers: [
+        {
+          index: 0,
+          zMm: 0.2,
+          pathCount: 1,
+          extrusionLengthMm: 6,
+          travelLengthMm: 1,
+          timeSeconds: 1,
+          filamentLengthMm: 240,
+          pathTypeCounts: { perimeter: 1 },
+        },
+        {
+          index: 1,
+          zMm: 0.4,
+          pathCount: 1,
+          extrusionLengthMm: 4,
+          travelLengthMm: 2,
+          timeSeconds: 1,
+          filamentLengthMm: 160,
+          pathTypeCounts: { infill: 1 },
+        },
+      ],
+      visualization: {
+        encoding: "forgex-toolpath-f32le-v1",
+        recordStrideBytes: 20,
+        sourceSegmentCount: 0,
+        segmentCount: 0,
+        truncated: false,
+        samplingStride: 1,
+        pathTypes: ["infill"],
+        layers: [
+          { index: 0, sourceSegmentCount: 0, segmentOffset: 0, segmentCount: 0 },
+          { index: 1, sourceSegmentCount: 0, segmentOffset: 0, segmentCount: 0 },
+        ],
+        dataBase64: "",
+      },
+      claims: {},
+      pathTypeCounts: {},
+      warnings: [],
+    };
+    const accepted: GCodeJobAcceptedResponse = {
+      schemaVersion: "1.0",
+      jobId: "1".repeat(32),
+      status: "queued",
+      input: result.input,
+      links: {
+        status: `/api/v1/jobs/${"1".repeat(32)}`,
+        events: `/api/v1/jobs/${"1".repeat(32)}/events`,
+        cancel: `/api/v1/jobs/${"1".repeat(32)}/cancel`,
+      },
+    };
+
+    expect(accepted.input).toBe(result.input);
+  });
+});

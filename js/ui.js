@@ -36,10 +36,14 @@
   ];
 
   class FXUI {
-    constructor(sim, fx, bus) {
+    /* options.adopted：已由宿主（React 工作台）接管的区域名集合。
+       被接管区域的事件绑定与周期写入在此跳过，避免两套代码争抢同一批节点。
+       旧入口不传该参数，行为与迁移前完全一致。 */
+    constructor(sim, fx, bus, options) {
       this.sim = sim;
       this.fx = fx;
       this.bus = bus;
+      this.adopted = new Set((options && options.adopted) || []);
       this.currentNav = "import";
       this._disposers = [];
       this._ctrls = [];          // 参数控件同步注册表
@@ -66,7 +70,8 @@
       $("#brand-mark").innerHTML =
         `<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#2c323e"/>
          <path d="M11 12h10l-3.4 6h-3.2z" fill="#eef1f6"/><rect x="14.6" y="19.5" width="2.8" height="4.5" fill="#ff6a2b"/></svg>`;
-      // 进度环渐变定义
+      // 进度环渐变定义。宿主接管 Dock 时由其自行渲染，避免注入的节点被宿主的差异比对移除。
+      if (this._isAdopted("cockpit")) return;
       const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
       defs.innerHTML = `<linearGradient id="ring-grad" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0%" stop-color="#f0561a"/><stop offset="100%" stop-color="#ff8a52"/></linearGradient>`;
@@ -74,6 +79,7 @@
     }
 
     _buildNav() {
+      if (this._isAdopted("nav")) return; // 流程胶囊与面板开合由宿主渲染
       const railEl = $("#flow-pills");
       NAVS.forEach((n, i) => {
         const item = el("button", "flow-pill" + (n.accent ? " fp-accent" : ""),
@@ -115,29 +121,38 @@
       else { panel.hidden = true; if (btn) btn.classList.remove("on"); }
     }
     _closeCtx() {
+      /* 面板归宿主管时改发事件：insight 面板互斥收起等旧调用路径
+         仍然生效，但唯一的开合真相源保持在宿主一侧。 */
+      if (this._isAdopted("nav")) { this.bus.emit("ctx-close-request"); return; }
       $("#ctx-panel").hidden = true;
       FXU.$$(".flow-pill").forEach((p) => p.classList.remove("on"));
       this.sim.printer.hideSlicePreview();   // 收起面板时同步清掉视口路径预览
     }
 
+    _isAdopted(zone) {
+      return this.adopted.has(zone);
+    }
+
     _bindTopbar() {
-      // 仿真倍率
-      FXU.$$("#speed-seg button").forEach((b) => {
-        b.addEventListener("click", () => {
-          FXU.$$("#speed-seg button").forEach((x) => x.classList.remove("on"));
-          b.classList.add("on");
-          this.sim.simMult = +b.dataset.v;
-          this.toast(`仿真时间倍率 ${b.dataset.v}×`, "info");
+      if (!this._isAdopted("cockpit")) {
+        // 仿真倍率
+        FXU.$$("#speed-seg button").forEach((b) => {
+          b.addEventListener("click", () => {
+            FXU.$$("#speed-seg button").forEach((x) => x.classList.remove("on"));
+            b.classList.add("on");
+            this.sim.simMult = +b.dataset.v;
+            this.toast(`仿真时间倍率 ${b.dataset.v}×`, "info");
+          });
         });
-      });
-      // 相机
-      FXU.$$("#hud-cam button").forEach((b) => {
-        b.addEventListener("click", () => {
-          FXU.$$("#hud-cam button").forEach((x) => x.classList.remove("on"));
-          b.classList.add("on");
-          this.fx.setCameraPreset(b.dataset.v);
+        // 相机
+        FXU.$$("#hud-cam button").forEach((b) => {
+          b.addEventListener("click", () => {
+            FXU.$$("#hud-cam button").forEach((x) => x.classList.remove("on"));
+            b.classList.add("on");
+            this.fx.setCameraPreset(b.dataset.v);
+          });
         });
-      });
+      }
       $("#btn-fullscreen").addEventListener("click", () => {
         // 全屏 API 前缀兼容：Chromium <71 / 老 Safari 仅有 webkit 前缀版本
         const doc = document, de = doc.documentElement;
@@ -151,29 +166,37 @@
           else this.toast("当前浏览器不支持网页全屏", "warn");
         }
       });
-      $("#btn-about").addEventListener("click", () => this._aboutModal());
-      // 浮动面板开关
-      $("#btn-params").addEventListener("click", () => this._togglePanel($("#param-panel"), $("#btn-params")));
-      $("#btn-monitor").addEventListener("click", () => this._togglePanel($("#monitor-pop"), $("#btn-monitor")));
-      $("#ctx-close").addEventListener("click", () => this._closeCtx());
-      $("#param-close").addEventListener("click", () => this._togglePanel($("#param-panel"), $("#btn-params")));
-      $("#mon-close").addEventListener("click", () => this._togglePanel($("#monitor-pop"), $("#btn-monitor")));
-      // 打印控制
-      $("#btn-start").addEventListener("click", () => this.sim.start());
-      $("#btn-pause").addEventListener("click", () => {
-        const s = this.sim.state;
-        if (s === "pause" || s === "fault") this.sim.resume();
-        else this.sim.pause();
-      });
-      $("#btn-stop").addEventListener("click", () => {
-        this._confirm("确认停止当前任务？", "打印进程将中止，平台复位，已成形部分将被清除（模拟）。", () => this.sim.stop());
-      });
-      $("#log-clear").addEventListener("click", () => { $("#log-list").innerHTML = ""; });
+      if (!this._isAdopted("overlays")) {
+        $("#btn-about").addEventListener("click", () => this._aboutModal());
+        // 浮动面板开关
+        $("#btn-params").addEventListener("click", () => this._togglePanel($("#param-panel"), $("#btn-params")));
+        $("#btn-monitor").addEventListener("click", () => this._togglePanel($("#monitor-pop"), $("#btn-monitor")));
+      }
+      if (!this._isAdopted("nav")) $("#ctx-close").addEventListener("click", () => this._closeCtx());
+      if (!this._isAdopted("overlays")) {
+        $("#param-close").addEventListener("click", () => this._togglePanel($("#param-panel"), $("#btn-params")));
+        $("#mon-close").addEventListener("click", () => this._togglePanel($("#monitor-pop"), $("#btn-monitor")));
+      }
+      if (!this._isAdopted("cockpit")) {
+        // 打印控制
+        $("#btn-start").addEventListener("click", () => this.sim.start());
+        $("#btn-pause").addEventListener("click", () => {
+          const s = this.sim.state;
+          if (s === "pause" || s === "fault") this.sim.resume();
+          else this.sim.pause();
+        });
+        $("#btn-stop").addEventListener("click", () => {
+          this._confirm("确认停止当前任务？", "打印进程将中止，平台复位，已成形部分将被清除（模拟）。", () => this.sim.stop());
+        });
+      }
+      if (!this._isAdopted("overlays"))
+        $("#log-clear").addEventListener("click", () => { $("#log-list").innerHTML = ""; });
     }
 
     /* ══ 右侧参数面板 ═══════════════════════ */
 
     _buildParamPanel() {
+      if (this._isAdopted("params")) return; // 参数面板内容由宿主渲染
       const body = $("#param-body");
       const sim = this.sim, st = sim.settings;
 
@@ -350,9 +373,11 @@
     _applyLocks() {
       const busy = this._printLocked();
       const imported = !!this.sim.importedToolpath;
-      const tag = $("#param-lock-tag");
-      tag.hidden = !busy && !imported;
-      tag.textContent = busy ? "打印中锁定" : "G-code 几何已固化";
+      if (!this._isAdopted("params")) {
+        const tag = $("#param-lock-tag");
+        tag.hidden = !busy && !imported;
+        tag.textContent = busy ? "打印中锁定" : "G-code 几何已固化";
+      }
       for (const L of this._lockables)
         L.elx.classList.toggle("locked", (busy && L.geom) || (imported && L.imported));
     }
@@ -370,9 +395,15 @@
       this.currentNav = id;
       for (const d of this._disposers) d();
       this._disposers = [];
+      /* 页级接管：内容已迁宿主的页面只保留上面的状态清理与 currentNav 同步，
+         不再写 DOM。遗留内部的重渲调用点（参数防抖 → 质量页、sliced → 切片页等）
+         统一转发为刷新事件，由宿主页面订阅后自行回读引擎重渲。 */
+      if (this._isAdopted("ctx:" + id)) { this.bus.emit("ctx-page-refresh", id); return; }
       const idx = NAVS.findIndex((n) => n.id === id);
-      $("#ctx-title").textContent = NAVS[idx].title;
-      $("#ctx-step").textContent = "0" + (idx + 1);
+      if (!this._isAdopted("nav")) {
+        $("#ctx-title").textContent = NAVS[idx].title;
+        $("#ctx-step").textContent = "0" + (idx + 1);
+      }
       const body = $("#ctx-body");
       body.innerHTML = "";
       // 清理已随旧面板销毁的控件注册项
@@ -684,6 +715,24 @@
       return this._builtinCache;
     }
 
+    /* 供宿主复用的导出入口：逻辑只依赖引擎与 toast，不碰面板 DOM。 */
+    exportModel(fmt) {
+      this._exportModel(fmt);
+    }
+
+    /* G-code 导入固化几何后，参数面板的锁定标签与控件状态需要立即刷新。 */
+    refreshLocks() {
+      this._applyLocks();
+    }
+
+    /* Profile 导入后参数面板需要按新机型/材料清单重建（面板仍属遗留层）。 */
+    rebuildParamPanel() {
+      $("#param-body").innerHTML = "";
+      this._ctrls = [];
+      this._lockables = [];
+      this._buildParamPanel();
+    }
+
     /* 成品导出：stl / obj（模型三角网格）· gcode（真实切片路径） */
     _exportModel(fmt) {
       const sim = this.sim;
@@ -746,6 +795,7 @@
     }
 
     _bindUpload() {
+      if (this._isAdopted("uploads")) return; // 文件接入与上传状态由宿主管理（csv-input 仍归洞察面板）
       $("#file-input").addEventListener("change", (e) => {
         const f = e.target.files && e.target.files[0];
         if (f) this._handleFile(f);
@@ -918,10 +968,7 @@
       rd.onload = () => {
         try {
           const added = FXProfiles.importBundle(JSON.parse(rd.result));
-          $("#param-body").innerHTML = "";
-          this._ctrls = [];
-          this._lockables = [];
-          this._buildParamPanel();
+          this.rebuildParamPanel();
           if (this.currentNav === "import") this.renderCtx("import");
           this.toast(`Profile 已导入：${added.machines.length} 个机型 · ${added.materials.length} 种材料`, "ok");
         } catch (e) {
@@ -1155,6 +1202,7 @@
     /* ══ 监控浮层 ═══════════════════════════ */
 
     _bindMonitor() {
+      if (this._isAdopted("overlays")) return; // 监控浮层的图表、日志与故障演练由宿主渲染
       this.chartCv = $("#chart-canvas");
       // 故障演练入口（原「打印监控」页并入监控浮层）
       const body = $("#monitor-pop .mon-body");
@@ -1174,12 +1222,13 @@
     }
 
     _bindBus() {
-      this.bus.on("log", ({ lv, msg }) => this._appendLog(lv, msg));
       this.bus.on("state", () => this._onState());
       this.bus.on("sliced", () => {
         if (this.currentNav === "slice") this.renderCtx("slice");
       });
       this.bus.on("settings", () => this._syncAllCtrls());
+      if (this._isAdopted("overlays")) return; // 日志、故障提示与完成提示由宿主订阅
+      this.bus.on("log", ({ lv, msg }) => this._appendLog(lv, msg));
       this.bus.on("fault", (f) => {
         this.toast(`故障：${f.name}`, "err");
         this._openPanel($("#monitor-pop"), $("#btn-monitor"));   // 故障时自动展开日志，便于排查
@@ -1189,20 +1238,22 @@
 
     _onState() {
       const s = this.sim.state;
-      const pill = $("#status-pill");
-      pill.className = "status-pill pill-card st-" + { idle: "idle", heat: "heat", level: "level", print: "print", pause: "pause", done: "done", fault: "err" }[s];
-      $(".sp-text", pill).textContent = {
-        idle: "系统就绪", heat: "预热中", level: "自动调平", print: "打印进行中",
-        pause: "已暂停", done: "任务完成", fault: "故障暂停",
-      }[s];
-      const bs = $("#btn-start"), bp = $("#btn-pause"), bx = $("#btn-stop");
-      bs.disabled = !(s === "idle" || s === "done");
-      bs.innerHTML = `<span class="bi bi-play"></span>${s === "done" ? "再次打印" : "开始打印"}`;
-      bp.disabled = !["print", "pause", "fault", "heat", "level"].includes(s);
-      const resuming = s === "pause" || s === "fault";
-      bp.innerHTML = `<span class="bi ${resuming ? "bi-play" : "bi-pause"}"></span>`;
-      bp.title = s === "pause" ? "继续" : s === "fault" ? "排除故障并恢复" : "暂停";
-      bx.disabled = ["idle", "done"].includes(s);
+      if (!this._isAdopted("cockpit")) {
+        const pill = $("#status-pill");
+        pill.className = "status-pill pill-card st-" + { idle: "idle", heat: "heat", level: "level", print: "print", pause: "pause", done: "done", fault: "err" }[s];
+        $(".sp-text", pill).textContent = {
+          idle: "系统就绪", heat: "预热中", level: "自动调平", print: "打印进行中",
+          pause: "已暂停", done: "任务完成", fault: "故障暂停",
+        }[s];
+        const bs = $("#btn-start"), bp = $("#btn-pause"), bx = $("#btn-stop");
+        bs.disabled = !(s === "idle" || s === "done");
+        bs.innerHTML = `<span class="bi bi-play"></span>${s === "done" ? "再次打印" : "开始打印"}`;
+        bp.disabled = !["print", "pause", "fault", "heat", "level"].includes(s);
+        const resuming = s === "pause" || s === "fault";
+        bp.innerHTML = `<span class="bi ${resuming ? "bi-play" : "bi-pause"}"></span>`;
+        bp.title = s === "pause" ? "继续" : s === "fault" ? "排除故障并恢复" : "暂停";
+        bx.disabled = ["idle", "done"].includes(s);
+      }
       this._applyLocks();
       this.sim.printer.showGhost(s === "idle");
       if (this.currentNav === "import" && !$("#ctx-panel").hidden) this.renderCtx("import");
@@ -1218,7 +1269,7 @@
 
     /* 周期 UI 刷新（低频文本 + 图表） */
     _startUiLoop() {
-      setInterval(() => {
+      if (!this._isAdopted("telemetry")) setInterval(() => {
         if (document.hidden) return;
         const sim = this.sim;
         // 进度环
@@ -1259,7 +1310,8 @@
           `X ${(sim.headPos.x + half).toFixed(1)} · Y ${(sim.headPos.y + half).toFixed(1)} · Z ${z.toFixed(2)}`;
       }, 240);
 
-      // 温度采样 + 绘图
+      // 温度采样 + 绘图（overlays 接管时由宿主执行）
+      if (this._isAdopted("overlays")) return;
       setInterval(() => {
         if (document.hidden) return;
         const sim = this.sim;
@@ -1318,6 +1370,8 @@
     /* ══ 浮层 ═══════════════════════════════ */
 
     toast(msg, type) {
+      /* 浮层接管时汇入宿主的 toast 队列：遗留内部调用（导出、上传等）与宿主提示走同一实现。 */
+      if (this._isAdopted("overlays")) { this.bus.emit("toast", { msg, type }); return; }
       const box = $("#toasts");
       const t = el("div", "toast t-" + (type || "info"), FXU.esc(msg));
       box.appendChild(t);
@@ -1326,7 +1380,13 @@
       while (box.children.length > 4) box.removeChild(box.firstChild);
     }
 
+    /* 供宿主复用的确认弹层：接管 Dock 的宿主仍需与旧入口一致的停止二次确认。 */
+    confirmAction(title, text, onOk) {
+      this._confirm(title, text, onOk);
+    }
+
     _confirm(title, text, onOk) {
+      if (this._isAdopted("overlays")) { this.bus.emit("confirm", { title, text, onOk }); return; }
       const mask = el("div", "modal-mask");
       mask.innerHTML = `<div class="modal"><h3><span class="ph-tick"></span>${title}</h3><p>${text}</p>
         <div class="m-btns"><button class="btn btn-ghost" data-a="no">取消</button>
