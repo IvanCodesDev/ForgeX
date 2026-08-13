@@ -61,6 +61,7 @@ docker run -d \
   --security-opt no-new-privileges:true \
   --mount "type=volume,src=${api_volume},dst=/app/data" \
   -e InternalAuth__SharedSecret="$secret" \
+  -e AllowedHosts="localhost;127.0.0.1;forgex-api" \
   "$api_image" >/dev/null
 wait_healthy "$api_name"
 

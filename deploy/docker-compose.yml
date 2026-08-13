@@ -14,6 +14,8 @@ services:
       - forgex-authority-data:/app/data
     environment:
       Kestrel__Endpoints__Http__Url: "http://0.0.0.0:8788"
+      # 网关经服务别名访问，Host 头为 forgex-api；不加入白名单会被主机过滤拒为 400。
+      AllowedHosts: "localhost;127.0.0.1;forgex-api"
       Storage__Root: "/app/data"
       Persistence__Provider: "file"
       InternalAuth__SharedSecret: "${GCODE_AUTHORITY_INTERNAL_SECRET:?Set a random secret of at least 32 bytes}"

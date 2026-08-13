@@ -18,9 +18,10 @@ const path = require("path");
 module.exports = defineConfig({
   testDir: path.resolve(__dirname, "../tests/e2e"),
   outputDir: path.resolve(__dirname, "../test-results"),
-  // 3D 场景初始化比纯 DOM 慢，给足超时；但也别太长，否则挂起的用例会拖垮 CI
-  timeout: 60_000,
-  expect: { timeout: 10_000 },
+  // 3D 场景初始化比纯 DOM 慢，给足超时；但也别太长，否则挂起的用例会拖垮 CI。
+  // CI 的免费 runner 只有 2 核且走 SwiftShader 软渲染，重 3D 用例实测贴着 60s 上限，预算翻倍。
+  timeout: process.env.CI ? 120_000 : 60_000,
+  expect: { timeout: process.env.CI ? 20_000 : 10_000 },
   fullyParallel: false, // 用例会起后端实例，串行更好排查
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
