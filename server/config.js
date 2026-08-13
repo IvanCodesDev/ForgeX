@@ -135,9 +135,9 @@ function getConfig(overrides) {
       // Node 与 C# sidecar 的进程间信任边界。浏览器永远不接触该值；
       // 配置后，Node 才会向 C# 注入经过身份解析的匿名化 tenant/owner 上下文。
       gcodeAuthorityInternalSecret: env.GCODE_AUTHORITY_INTERNAL_SECRET || "",
-      // ── C# Analytics 影子计算 ─────────────────
+      // ── C# Analytics 对照/权威计算 ─────────────
       // 与 G-code 共用同一 sidecar origin，但使用独立开关、超时和 5 MiB JSON 上限。
-      // 浏览器默认仍走 JS；只有显式 shadow 配置才会调用该路由。
+      // 浏览器默认仍走 JS；VITE_ANALYTICS_AUTHORITY=shadow/dotnet 时才会调用该路由。
       analyticsAuthorityEnabled: env.ANALYTICS_AUTHORITY_ENABLED !== "0",
       analyticsAuthorityTimeoutMs: num(env.ANALYTICS_AUTHORITY_TIMEOUT_MS, 30000),
       analyticsAuthorityMaxBytes: ANALYTICS_AUTHORITY_HARD_MAX_BYTES,

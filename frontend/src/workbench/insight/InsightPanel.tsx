@@ -27,13 +27,24 @@ function engineLabel(id?: string): string {
       return "后端规则引擎（无 AI）";
     case "local-rules":
       return "本地规则引擎（无 AI）";
+    case "dotnet-authority":
+      return "C# 权威统计引擎（无 AI）";
     default:
       return id ? String(id) : "未知引擎";
   }
 }
 
-function EngineNote({ mode }: { readonly mode: Insight["engineMode"] }) {
+function EngineNote({ mode, authority }: { readonly mode: Insight["engineMode"]; readonly authority: boolean }) {
   const { apiClient } = legacyInsightServices();
+  if (authority) {
+    return (
+      <div className="note">
+        统计计算由 <b>C# 权威引擎</b>执行（VITE_ANALYTICS_AUTHORITY=dotnet）。<b>它不是 AI</b>
+        ：算法与本地规则引擎逐字段镜像（同一套 Wilson 置信区间 / Fisher 精确检验），由金样本双跑保证一致；
+        权威服务不可用时自动回退浏览器本地计算并在报告中明示。
+      </div>
+    );
+  }
   return (
     <div className="note">
       {mode === "local" ? (
@@ -185,6 +196,9 @@ function ReportView({ insight, ui }: { readonly insight: Insight; readonly ui: L
       {report.fallbackFrom === "backend" ? (
         <div className="rp-prov warnline">后端不可用，本报告由浏览器本地规则引擎计算。</div>
       ) : null}
+      {report.fallbackFrom === "dotnet-authority" ? (
+        <div className="rp-prov warnline">C# 权威服务不可用，本报告由浏览器本地规则引擎计算。</div>
+      ) : null}
 
       <div className="verdict">{report.verdict || ""}</div>
 
@@ -282,8 +296,15 @@ export function InsightPanel({ insight, ui }: InsightPanelProps) {
   const insightEngine = services?.insightEngine ?? null;
   void insight.storeVersion; // 数据集变化驱动重渲
 
-  const engineTag =
-    insight.engineMode === "local" ? "本地规则" : insight.engineMode === "ai" ? "AI + 统计核" : "后端规则";
+  /* dotnet 权威只接管规则计算；真 AI 管线保持原标识（叙述能力优先级更高，见 useInsight 调度）。 */
+  const authorityActive = insight.authorityMode === "dotnet" && insight.engineMode !== "ai";
+  const engineTag = authorityActive
+    ? "C# 权威"
+    : insight.engineMode === "local"
+      ? "本地规则"
+      : insight.engineMode === "ai"
+        ? "AI + 统计核"
+        : "后端规则";
 
   const onAskKey = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") insight.ask(insight.question);
@@ -310,7 +331,7 @@ export function InsightPanel({ insight, ui }: InsightPanelProps) {
       <div className="panel-body" id="insight-body">
         {store && ui && insightData && insightEngine ? (
           <>
-            <EngineNote mode={insight.engineMode} />
+            <EngineNote mode={insight.engineMode} authority={authorityActive} />
             {insight.engineMode === "ai" ? <KnowledgeBox ui={ui} question={insight.question} /> : null}
 
             <div className="sec-label">数据接入</div>

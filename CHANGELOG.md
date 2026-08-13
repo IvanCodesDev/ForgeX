@@ -70,6 +70,15 @@
   little-endian 记录传输，按层提供连续切片，并在 100,000 段硬预算内流式均匀抽样。
 - React `dotnet` 模式会在切换摘要前校验完整工具路径载荷，并把选中层直接解码为
   Three.js BufferGeometry；`browser` 与 `shadow` 继续使用原 Worker 预览作为回滚路径。
+- 智造洞察接入 C# Analytics 权威（阶段 4 收尾）：`VITE_ANALYTICS_AUTHORITY` 此前只有
+  类型声明与示例文档，本次补齐实现——`browser` 零请求维持本地 TS 规则引擎；`shadow`
+  同一份数据后台送 `/api/v1/analytics/reports` 并按 stage4 金样本容差（abs/rel 1e-9）
+  逐字段对照，差异只进控制台不改展示；`dotnet` 下 C# 结果经完整结构校验与行数回声核对后
+  原子成为展示报告（引擎标识「C# 权威统计引擎（无 AI）」），失败或数据集超出契约
+  （>5000 行、非法 status、问题超 500 字）自动回退本地并在报告中明示。调度上真 AI
+  管线保持最高优先——权威接管的是规则计算腿（本地与 Node 规则），不是叙述能力。
+  新增 `frontend/src/authority/analytics-authority.ts` 与 17 项 vitest（模式解析、
+  行清洗、响应收窄、问题+json 错误映射、双跑容差、报告映射）。
 
 ### 变更
 

@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import {
+  AnalyticsAuthorityUnsupportedError,
+  compareAnalyticsReports,
+  requestAnalyticsAuthorityReport,
+  resolveAnalyticsAuthorityMode,
+  toInsightReport,
+  type AnalyticsAuthorityMode,
+} from "../../authority/analytics-authority";
+import {
   legacyInsightServices,
   legacyUtil,
   type DatasetProvenance,
@@ -39,6 +47,7 @@ export interface Insight {
   readonly report: InsightReport | null;
   readonly history: ReadonlyArray<HistoryEntry>;
   readonly engineMode: EngineMode;
+  readonly authorityMode: AnalyticsAuthorityMode;
   readonly fleetOn: boolean;
   readonly question: string;
   setQuestion(value: string): void;
@@ -69,6 +78,8 @@ export function useInsight(handles: WorkbenchHandles | null, closeContextPanel: 
   const [fleetOn, setFleetOn] = useState(false);
   const [question, setQuestion] = useState("");
   const [storeVersion, bumpStore] = useReducer((version: number) => version + 1, 0);
+  /* C# Analytics 权威三态（构建期常量）：browser 零请求；shadow 双跑对照；dotnet 权威优先。 */
+  const authorityMode = resolveAnalyticsAuthorityMode(import.meta.env);
 
   const storeRef = useRef<InsightStore | null>(null);
   const stageSeq = useRef(0);
@@ -176,6 +187,31 @@ export function useInsight(handles: WorkbenchHandles | null, closeContextPanel: 
       const { insightEngine, apiClient, insightData } = legacyInsightServices();
       const provenance: DatasetProvenance = store.provenance();
 
+      /* shadow 双跑：同一份数据后台送 C# 权威并逐字段对照（阶段 4 双跑标准）。
+         只挂在本地规则引擎的计算腿上——它才是 C# 引擎的镜像对象；
+         对照结果只进控制台，绝不改变展示（与 G-code shadow 不切主的纪律一致）。 */
+      const shadowCompare = (localReport: InsightReport) => {
+        if (authorityMode !== "shadow") return;
+        requestAnalyticsAuthorityReport(q, rows, import.meta.env)
+          .then((authority) => {
+            const diff = compareAnalyticsReports(localReport, authority.report);
+            if (diff.pass) {
+              console.info(
+                `[insight shadow] C# 权威对照一致（engine ${authority.engine.version} · ${rows.length} 行）`
+              );
+            } else {
+              console.warn(`[insight shadow] C# 权威对照发现 ${diff.mismatches.length} 处差异`, diff.mismatches);
+            }
+          })
+          .catch((error) => {
+            if (error instanceof AnalyticsAuthorityUnsupportedError) {
+              console.info("[insight shadow] 数据集不在 C# 权威契约内，跳过对照：" + (error as Error).message);
+            } else {
+              console.warn("[insight shadow] C# 权威对照请求失败", error);
+            }
+          });
+      };
+
       /* 本地规则引擎：同步计算，毫秒级返回。不插入任何人造延时或假分步。 */
       const askLocal = (fallbackFrom?: string) => {
         const t0 = Date.now();
@@ -186,6 +222,7 @@ export function useInsight(handles: WorkbenchHandles | null, closeContextPanel: 
           finishAsk();
           pushHistory(q);
           setReport(localReport);
+          shadowCompare(localReport);
         } catch (error) {
           console.error("[insight]", error);
           finishAsk();
@@ -193,8 +230,36 @@ export function useInsight(handles: WorkbenchHandles | null, closeContextPanel: 
         }
       };
 
-      if (!apiClient.available) {
-        askLocal();
+      /* dotnet 权威：完整校验通过后原子成为展示结果；失败回退本地规则并明示。 */
+      const askAuthority = () => {
+        const t0 = Date.now();
+        pushStage(`提交 C# 权威分析（${rows.length} 行）`, 0.2);
+        requestAnalyticsAuthorityReport(q, rows, import.meta.env)
+          .then((authority) => {
+            pushStage(`完成 · 耗时 ${((Date.now() - t0) / 1000).toFixed(1)}s`, 1);
+            finishAsk();
+            pushHistory(q);
+            setReport(toInsightReport(authority, { provenance, elapsedMs: Date.now() - t0 }));
+          })
+          .catch((error) => {
+            if (error instanceof AnalyticsAuthorityUnsupportedError) {
+              // 超出契约（行数/字段/长度）不是故障：本地规则引擎本就是这类数据集的归宿
+              console.info("[insight authority] " + (error as Error).message + "，改用本地规则引擎");
+              askLocal();
+              return;
+            }
+            console.error("[insight authority]", error);
+            ui.toast(`C# 权威分析失败（${(error as Error).message}），已回退浏览器本地规则引擎`, "warn");
+            askLocal("dotnet-authority");
+          });
+      };
+
+      /* 调度：真 AI 管线是叙述能力，保留最高优先；规则计算在 dotnet 模式下以 C# 权威为默认
+         （取代本地与 Node 规则腿），browser/shadow 维持原有本地行为。 */
+      const wantAuthority = authorityMode === "dotnet" && engineMode !== "ai";
+      if (!apiClient.available || wantAuthority) {
+        if (wantAuthority) askAuthority();
+        else askLocal();
         return;
       }
 
@@ -238,7 +303,7 @@ export function useInsight(handles: WorkbenchHandles | null, closeContextPanel: 
           askLocal("backend");
         });
     },
-    [handles, store, ui, pushStage, finishAsk, pushHistory]
+    [handles, store, ui, pushStage, finishAsk, pushHistory, authorityMode, engineMode]
   );
 
   const handleCsvFile = useCallback(
@@ -372,6 +437,7 @@ export function useInsight(handles: WorkbenchHandles | null, closeContextPanel: 
     report,
     history,
     engineMode,
+    authorityMode,
     fleetOn,
     question,
     setQuestion,
