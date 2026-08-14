@@ -10,6 +10,7 @@ const { resolveIdentity } = require("../lib/identity");
 const ANALYZE_PATH = "/api/v1/gcode/analyze";
 const ANALYSES_PATH = "/api/v1/gcode/analyses";
 const ANALYTICS_PATH = "/api/v1/analytics/reports";
+const CALIBRATION_PATH = "/api/v1/calibration/train";
 const RESPONSE_HEADERS = [
   "content-type",
   "traceparent",
@@ -87,10 +88,23 @@ function responseHeaders(upstream, reqId) {
 function proxyAnalyze(req, res, rc, ctx, targetPath) {
   const { cfg, log } = ctx;
   const analytics = targetPath === ANALYTICS_PATH;
-  const authorityLabel = analytics ? "C# Analytics 影子计算" : "C# G-code 权威计算";
-  const maxBytes = analytics ? cfg.analyticsAuthorityMaxBytes : cfg.gcodeAuthorityMaxBytes;
-  const timeoutMs = analytics ? cfg.analyticsAuthorityTimeoutMs : cfg.gcodeAuthorityTimeoutMs;
-  const tooLargeTitle = analytics ? "Analytics JSON 超过 5 MiB 上限" : "G-code 超过 64 MiB 上限";
+  const calibration = targetPath === CALIBRATION_PATH;
+  const authorityLabel = analytics ? "C# Analytics 影子计算" : calibration ? "C# 校准训练" : "C# G-code 权威计算";
+  const maxBytes = analytics
+    ? cfg.analyticsAuthorityMaxBytes
+    : calibration
+      ? cfg.calibrationAuthorityMaxBytes
+      : cfg.gcodeAuthorityMaxBytes;
+  const timeoutMs = analytics
+    ? cfg.analyticsAuthorityTimeoutMs
+    : calibration
+      ? cfg.calibrationAuthorityTimeoutMs
+      : cfg.gcodeAuthorityTimeoutMs;
+  const tooLargeTitle = analytics
+    ? "Analytics JSON 超过 5 MiB 上限"
+    : calibration
+      ? "Calibration JSON 超过 2 MiB 上限"
+      : "G-code 超过 64 MiB 上限";
   // 与其他写接口共用同一身份优先级和同一 IP 冷却窗口；守卫与限流都在
   // 创建 sidecar 连接前执行，拒绝的请求不会向权威计算进程泄漏任何字节。
   const identity = resolveIdentity(req, rc, ctx);
@@ -98,6 +112,11 @@ function proxyAnalyze(req, res, rc, ctx, targetPath) {
 
   if (analytics && !cfg.analyticsAuthorityEnabled) {
     sendProblem(res, 503, "analytics_authority_disabled", "C# Analytics 影子计算已关闭", rc.reqId);
+    req.resume();
+    return Promise.resolve();
+  }
+  if (calibration && !cfg.calibrationAuthorityEnabled) {
+    sendProblem(res, 503, "calibration_authority_disabled", "C# 校准训练已关闭", rc.reqId);
     req.resume();
     return Promise.resolve();
   }
@@ -345,6 +364,9 @@ function register(router, ctx) {
   });
   router.add("POST", /^\/api\/v1\/analytics\/reports$/, (req, res, _match, rc) => {
     return proxyAnalyze(req, res, rc, ctx, ANALYTICS_PATH);
+  });
+  router.add("POST", /^\/api\/v1\/calibration\/train$/, (req, res, _match, rc) => {
+    return proxyAnalyze(req, res, rc, ctx, CALIBRATION_PATH);
   });
   router.add("GET", /^\/api\/v1\/jobs\/([a-f0-9]{32})$/, (req, res, match, rc) => {
     return proxyJobControl(req, res, rc, ctx, `/api/v1/jobs/${match[1]}`, false);

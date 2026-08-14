@@ -70,7 +70,7 @@ class TaskStore {
     this.gate = gate || null; // 成本闸门；null 表示不限（本地开发）
     this.map = new Map();
     this.provider = createProvider(cfg, log, { infini });
-    this.fallback = createProvider(Object.assign({}, cfg, { provider: "local" }), log, { infini });
+    this.fallback = createProvider(Object.assign({}, cfg, { provider: "local" }), log, { infini, forceLocal: true });
     this.cache = new ResultCache(cfg);
     this.onTerminal = null;
   }

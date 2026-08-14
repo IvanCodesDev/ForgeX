@@ -26,6 +26,93 @@
 const engine = require("./local-engine");
 const { buildBrief } = require("./brief");
 
+function authorityRow(row) {
+  const value = row || {};
+  const number = (name, fallback) => {
+    const candidate = value[name];
+    return typeof candidate === "number" && Number.isFinite(candidate) ? candidate : fallback;
+  };
+  return {
+    job_id: typeof value.job_id === "string" ? value.job_id : typeof value.jobId === "string" ? value.jobId : null,
+    date: typeof value.date === "string" ? value.date : null,
+    machine_id: typeof value.machine_id === "string" ? value.machine_id : typeof value.machineId === "string" ? value.machineId : null,
+    model_name: typeof value.model_name === "string" ? value.model_name : typeof value.modelName === "string" ? value.modelName : null,
+    material: typeof value.material === "string" ? value.material : null,
+    layer_height_mm: number("layer_height_mm", number("layerHeightMm", null)),
+    duration_min: number("duration_min", number("durationMin", null)),
+    filament_g: number("filament_g", number("filamentG", null)),
+    cost_fen: number("cost_fen", number("costFen", null)),
+    status: value.status === "fail" ? "fail" : "success",
+    fail_reason: typeof value.fail_reason === "string" ? value.fail_reason : typeof value.failReason === "string" ? value.failReason : null,
+    energy_kwh: number("energy_kwh", number("energyKwh", null)),
+  };
+}
+
+function csharpAnalyticsProvider(cfg) {
+  return {
+    id: "server-rules",
+    label: "C# Analytics 权威规则引擎",
+    capabilities: { ai: false, streaming: false, structuredOutput: true },
+
+    async probe() {
+      if (!cfg.gcodeAuthorityUrl || !cfg.analyticsAuthorityEnabled) {
+        return { ok: false, detail: "C# Analytics authority is not configured" };
+      }
+      try {
+        const response = await fetch(new URL("/health/live", cfg.gcodeAuthorityUrl), {
+          signal: AbortSignal.timeout(cfg.analyticsAuthorityTimeoutMs),
+        });
+        return response.ok
+          ? { ok: true, detail: "C# Analytics authority reachable" }
+          : { ok: false, detail: "HTTP " + response.status };
+      } catch (error) {
+        return { ok: false, detail: error && error.message ? error.message : String(error) };
+      }
+    },
+
+    async analyze({ question, dataset, onProgress }) {
+      if (!cfg.gcodeAuthorityUrl || !cfg.analyticsAuthorityEnabled) {
+        throw new Error("C# Analytics authority is not configured");
+      }
+      onProgress({ stage: "authority", message: "调用 C# Analytics 权威规则引擎", progress: 0.25 });
+      const body = {
+        schemaVersion: "1.0",
+        question: String(question || "").trim(),
+        rows: (dataset.rows || []).map(authorityRow),
+        provenance: null,
+      };
+      const response = await fetch(new URL("/api/v1/analytics/reports", cfg.gcodeAuthorityUrl), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(cfg.analyticsAuthorityTimeoutMs),
+      });
+      if (!response.ok) {
+        const detail = await response.text().catch(() => "");
+        throw new Error("C# Analytics authority HTTP " + response.status + (detail ? ": " + detail.slice(0, 240) : ""));
+      }
+      const payload = await response.json();
+      if (
+        !payload ||
+        !payload.engine ||
+        payload.engine.name !== "forgex-analytics-csharp" ||
+        !payload.report ||
+        payload.report.engine !== "local-rules" ||
+        payload.report.rowCount !== body.rows.length
+      ) {
+        throw new Error("C# Analytics authority response contract is invalid");
+      }
+      const report = Object.assign({}, payload.report, {
+        engine: "server-rules",
+        authorityEngine: payload.engine,
+        statsBy: "csharp-analytics-authority",
+      });
+      onProgress({ stage: "complete", message: "C# Analytics 权威结果已返回", progress: 1 });
+      return report;
+    },
+  };
+}
+
 /* ══ 本地规则引擎 provider ═══════════════════ */
 
 function localProvider(cfg) {
@@ -284,6 +371,15 @@ function openaiProvider(cfg, log) {
 function createProvider(cfg, log, deps) {
   if (cfg.provider === "infinisynapse") return infiniProvider(cfg, log, deps.infini);
   if (cfg.provider === "openai") return openaiProvider(cfg, log);
+  if (
+    !(deps && deps.forceLocal) &&
+    !cfg.forceMock &&
+    cfg.gcodeAuthorityUrl &&
+    cfg.analyticsAuthorityEnabled &&
+    cfg.serverRulesAuthority !== false
+  ) {
+    return csharpAnalyticsProvider(cfg);
+  }
   return localProvider(cfg);
 }
 
@@ -292,6 +388,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 module.exports = {
   createProvider,
   localProvider,
+  csharpAnalyticsProvider,
   infiniProvider,
   openaiProvider,
   mergeWithLocal,

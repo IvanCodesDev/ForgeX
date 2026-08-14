@@ -19,7 +19,7 @@ target environment.
 | active jobs per owner | 4 | noisy-owner containment |
 | active jobs per tenant | 16 | tenant fairness |
 | worker parallelism | 1 | single durable file-repository writer |
-| accepted body | 16 MiB | existing request boundary |
+| benchmark fixture body | 16 MiB | measured streaming benchmark; runtime G-code hard cap is 64 MiB |
 
 Keep `tenant >= owner`. Invalid or unbounded values fail startup. A 429 response and
 `Retry-After: 5` are overload signals, not failures to retry in a tight loop.

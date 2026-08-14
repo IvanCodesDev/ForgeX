@@ -10,6 +10,14 @@
       "sha256": "e89ee97a3844fee1f452d0234ca690639fc681f432900bbfce3980b2143c22b3",
       "transactional": true,
       "rollbackPolicy": "retain-schema"
+    },
+    {
+      "version": 2,
+      "name": "calibration_governance",
+      "file": "migrations/0002_calibration_governance.sql",
+      "sha256": "c5f50d88519c383542669ada463462a8c9b652964d0e52d00da37c3eccbb1fa5",
+      "transactional": true,
+      "rollbackPolicy": "retain-schema"
     }
   ]
 }

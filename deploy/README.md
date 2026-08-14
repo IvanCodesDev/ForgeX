@@ -1,8 +1,8 @@
 # FORGE·X container deployment
 
-This deployment runs the zero-runtime-dependency Node gateway and the .NET 10 authority as separate
-containers. The gateway is the only published service; authority port `8788` stays on the Compose
-network.
+This deployment runs the Node gateway and the .NET 10 authority as separate containers. The gateway
+is the only published service; authority port `8788` stays on the Compose network. The default file
+provider remains lightweight; the optional PostgreSQL profile loads the pinned `pg` driver.
 
 ## First start
 
@@ -66,9 +66,12 @@ authority metrics, and restart readiness.
 6. If the authority is being removed entirely, set the React build to browser authority before
    stopping `forgex-api`; the legacy `/` page remains the product rollback boundary.
 
-The current PostgreSQL files are a frozen migration contract only. This Compose deployment keeps
-`Persistence__Provider=file`; selecting `postgresql` remains a fail-fast configuration until the
-pinned runtime driver and PostgreSQL integration gate are delivered.
+The Node gateway now supports an optional PostgreSQL runtime for calibration governance. The default
+Compose profile remains `PERSISTENCE_PROVIDER=file` for the single-host rollback path. To enable the
+shared calibration store, apply `backend/database/postgresql/migrations/` in order, set
+`PERSISTENCE_PROVIDER=postgres`, `POSTGRES_URL`, and (for managed TLS) `POSTGRES_SSL=1` in the Node
+environment, then verify `/healthz` reports `persistence=postgres`. Datasources, knowledge, shares,
+and Node analysis tasks remain on the file provider until their own migration slices land.
 
 Production objectives and alert response are defined in [`SLO.md`](./SLO.md),
 [`alerts/forgex.rules.yml`](./alerts/forgex.rules.yml), and [`RUNBOOK.md`](./RUNBOOK.md). Before each

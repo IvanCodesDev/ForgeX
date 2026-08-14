@@ -107,6 +107,10 @@ function getConfig(overrides) {
       // ── 持久化 ──────────────────────────────
       // 重启不再丢一切。设为空字符串可显式关闭（回到纯内存）。
       dataDir: env.DATA_DIR === "" ? "" : env.DATA_DIR || path.resolve(__dirname, "..", "data"),
+      persistenceProvider: String(env.PERSISTENCE_PROVIDER || "file").trim().toLowerCase(),
+      postgresUrl: env.POSTGRES_URL || env.DATABASE_URL || "",
+      postgresPoolMax: num(env.POSTGRES_POOL_MAX, 10),
+      postgresSsl: env.POSTGRES_SSL === "1",
 
       // ── 成本闸门（公网部署的生死线，见 server/lib/quota.js）──
       // 规则引擎不受任何闸门限制——它不花钱。这里限的只有 AI provider 调用。
@@ -168,6 +172,14 @@ function getConfig(overrides) {
     ANALYTICS_AUTHORITY_HARD_MAX_BYTES,
     Math.max(1, num(cfg.analyticsAuthorityMaxBytes, ANALYTICS_AUTHORITY_HARD_MAX_BYTES))
   );
+  if (!["file", "postgres", "postgresql"].includes(cfg.persistenceProvider)) {
+    throw new Error("PERSISTENCE_PROVIDER must be file or postgres");
+  }
+  if (cfg.persistenceProvider !== "file" && !String(cfg.postgresUrl || "").trim()) {
+    throw new Error("POSTGRES_URL is required when PERSISTENCE_PROVIDER=postgres");
+  }
+  cfg.postgresPoolMax = Math.min(50, Math.max(1, num(cfg.postgresPoolMax, 10)));
+  cfg.postgresSsl = cfg.postgresSsl === true || cfg.postgresSsl === "1";
 
   /* ── provider 选择 ──────────────────────────
      优先级：强制降级 > 显式指定 > 自动探测（InfiniSynapse > OpenAI 兼容 > 本地规则）。

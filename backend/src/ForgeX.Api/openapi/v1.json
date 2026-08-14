@@ -536,6 +536,46 @@
           }
         }
       }
+    },
+    "/api/v1/calibration/train": {
+      "post": {
+        "operationId": "trainCalibrationModel",
+        "summary": "Fit a deterministic Theil-Sen time calibration candidate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalibrationTrainingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "C# calibration training result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationAuthorityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1651,6 +1691,76 @@
           "report": {
             "$ref": "#/components/schemas/AnalyticsReport"
           }
+        }
+      },
+      "CalibrationTrainingRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schemaVersion", "scope", "samples"],
+        "properties": {
+          "schemaVersion": { "type": "string", "const": "1.0" },
+          "scope": { "$ref": "#/components/schemas/CalibrationScope" },
+          "samples": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 500,
+            "items": { "$ref": "#/components/schemas/CalibrationSample" }
+          },
+          "holdout_samples": {
+            "type": "array",
+            "maxItems": 500,
+            "items": { "$ref": "#/components/schemas/CalibrationSample" }
+          },
+          "thresholds": { "$ref": "#/components/schemas/CalibrationThresholds" }
+        }
+      },
+      "CalibrationScope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["machine_id", "firmware"],
+        "properties": {
+          "machine_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "firmware": { "type": "string", "minLength": 1, "maxLength": 256 }
+        }
+      },
+      "CalibrationSample": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "maxLength": 256 },
+          "planned_time_sec": { "type": "number", "exclusiveMinimum": 0 },
+          "planned_sec": { "type": "number", "exclusiveMinimum": 0 },
+          "actual_time_sec": { "type": "number", "exclusiveMinimum": 0 },
+          "actual_sec": { "type": "number", "exclusiveMinimum": 0 },
+          "machine_id": { "type": "string", "maxLength": 256 },
+          "firmware": { "type": "string", "maxLength": 256 }
+        }
+      },
+      "CalibrationThresholds": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "min_drift_samples": { "type": "integer", "minimum": 3, "maximum": 500 },
+          "max_mape": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+          "max_bias": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+        }
+      },
+      "CalibrationAuthorityResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schemaVersion", "engine", "training"],
+        "properties": {
+          "schemaVersion": { "type": "string", "const": "1.0" },
+          "engine": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "version"],
+            "properties": {
+              "name": { "type": "string", "const": "forgex-calibration-csharp" },
+              "version": { "type": "string" }
+            }
+          },
+          "training": { "type": "object" }
         }
       },
       "GCodeProfileSummary": {

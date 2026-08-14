@@ -33,23 +33,23 @@ function reviewer(req, auth) {
 function register(router, ctx) {
   const { calibrations, auth } = ctx;
 
-  router.add("GET", /^\/api\/calibrations$/, (_req, res) => {
+  router.add("GET", /^\/api\/calibrations$/, async (_req, res) => {
     sendJson(res, 200, {
       format: "forgex-calibration-catalog",
       version: 1,
-      items: calibrations.listApproved(),
+      items: await calibrations.listApproved(),
     });
   });
 
-  router.add("GET", /^\/api\/calibrations\/submissions$/, (req, res) => {
+  router.add("GET", /^\/api\/calibrations\/submissions$/, async (req, res) => {
     reviewer(req, auth);
-    sendJson(res, 200, { submissions: calibrations.listSubmissions() });
+    sendJson(res, 200, { submissions: await calibrations.listSubmissions() });
   });
 
   router.add("POST", /^\/api\/calibrations\/submissions$/, async (req, res, _m, rc) => {
     const actor = submitter(req, rc, auth);
     const body = await readJson(req, 2 * 1024 * 1024 + 64 * 1024);
-    const record = calibrations.submit(body.bundle, actor, body.note);
+    const record = await calibrations.submit(body.bundle, actor, body.note);
     sendJson(res, 201, {
       id: record.id,
       revision: record.revision,
@@ -65,7 +65,7 @@ function register(router, ctx) {
     async (req, res, m) => {
       const actor = reviewer(req, auth);
       const body = await readJson(req, 16 * 1024);
-      const record = calibrations.review(m[1], Number(m[2]), body.decision, actor, body.reason);
+      const record = await calibrations.review(m[1], Number(m[2]), body.decision, actor, body.reason);
       sendJson(res, 200, {
         id: record.id,
         revision: record.revision,

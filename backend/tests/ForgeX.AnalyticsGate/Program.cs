@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ForgeX.Analytics;
+using ForgeX.Analytics.Calibration;
 
 return await AnalyticsGateProgram.RunAsync(CancellationToken.None);
 
@@ -33,6 +34,7 @@ internal static class AnalyticsGateProgram
             CompareStatistics(golden, fields, absTolerance, relTolerance);
             await CompareDatasetAsync(root, golden, fields, absTolerance, relTolerance, cancellationToken);
             await CompareReportsAsync(root, golden, fields, absTolerance, relTolerance, cancellationToken);
+            CompareCalibration(fields, absTolerance, relTolerance);
 
             var passed = fields.Count(static field => field.Pass);
             var report = new AnalyticsGateReport(
@@ -393,6 +395,30 @@ internal static class AnalyticsGateProgram
                 absTolerance,
                 relTolerance);
         }
+    }
+
+    private static void CompareCalibration(List<FieldDiff> fields, double absTolerance, double relTolerance)
+    {
+        var samples = new[]
+        {
+            new CalibrationSample("job-1", 100, 215, "FX-TEST", "Marlin"),
+            new CalibrationSample("job-2", 200, 340, "FX-TEST", "Marlin"),
+            new CalibrationSample("job-3", 400, 590, "FX-TEST", "Marlin"),
+            new CalibrationSample("job-4", 800, 1090, "FX-TEST", "Marlin"),
+        };
+        var result = CalibrationTrainer.Train(samples, new CalibrationScope("FX-TEST", "Marlin"));
+        AddExact(fields, "calibration/exact", "format", "forgex-time-calibration", result.Format);
+        AddExact(fields, "calibration/exact", "method", "theil-sen", result.Method);
+        AddExact(fields, "calibration/exact", "scope.machineId", "FX-TEST", result.Scope.MachineId);
+        AddExact(fields, "calibration/exact", "scope.firmware", "Marlin", result.Scope.Firmware);
+        AddNumber(fields, "calibration/exact", "coefficients.motionScale", 1.25, result.Coefficients.MotionScale, absTolerance, relTolerance);
+        AddNumber(fields, "calibration/exact", "coefficients.fixedOverheadSec", 90, result.Coefficients.FixedOverheadSec, absTolerance, relTolerance);
+        AddNumber(fields, "calibration/exact", "trainingMetrics.maeSec", 0, result.TrainingMetrics.MaeSec, absTolerance, relTolerance);
+        AddExact(fields, "calibration/exact", "crossValidation.sampleCount", 4, result.CrossValidation?.SampleCount);
+        var outlier = samples.Append(new CalibrationSample("paused-job", 600, 3000, "FX-TEST", "Marlin")).ToArray();
+        var robust = CalibrationTrainer.Train(outlier, new CalibrationScope("FX-TEST", "Marlin"));
+        AddNumber(fields, "calibration/outlier", "coefficients.motionScale", 1.25, robust.Coefficients.MotionScale, 0.05, relTolerance);
+        fields.Add(new FieldDiff("calibration/outlier", "trainingMetrics.maxApe", ">0.5", robust.TrainingMetrics.MaxApe.ToString("G15", System.Globalization.CultureInfo.InvariantCulture), null, null, 0, robust.TrainingMetrics.MaxApe > 0.5));
     }
 
     private static void CompareNode(

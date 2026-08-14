@@ -187,16 +187,16 @@ Node.js service :8787
                               ├─ StreamingGCodeAnalyzer
                               ├─ 持久异步作业、有限重试、死信、恢复、SSE 与幂等键
                               ├─ 文件仓库健康探针与可校验备份/恢复
-                              ├─ PostgreSQL v1 迁移契约（运行时驱动待接入）
+                              ├─ PostgreSQL v1/v2 迁移契约与校准治理运行时（可选）
                               ├─ 确定性摘要、单位与稳定错误码
                               └─ GoldenDiff + JobGate + PersistenceGate 门禁
 ```
 
 - **前端**：旧页面继续可用；React 已落地共享身份头、Profile 选择、G-code/日志对账、数据分析与校准治理等垂直切片，G-code 在 Worker 中解析；
-- **业务后端**：Node.js 原生 `http`，零运行时依赖，并只对白名单路由提供 C# 同源代理；
+- **业务后端**：Node.js 原生 `http`；file 模式保持轻量回退，启用 PostgreSQL 共享持久化时加载固定版本 `pg`，并只对白名单路由提供 C# 同源代理；
 - **G-code 计算边界**：.NET 10 sidecar 保留同步接口，并新增 `POST /api/v1/gcode/analyses`、作业快照、SSE 事件与幂等取消接口；同步与异步结果都返回机型/材料 Profile 标识、生效参数、确定性 SHA-256 Profile 指纹、最多 20,000 层的完整逐层计划，以及最多 100,000 段的 C# 有界二进制工具路径。引擎 1.4.0 还把材料价格、喷嘴温区、床温下限、最大速度和最大体积流量纳入 Profile v2 指纹，输出直接耗材成本与 low/medium/high 打印前风险；当前成本不包含尚无审计输入的能耗和机时。React Worker 在显示采样前生成同结构逐层摘要，`shadow / dotnet` 会逐字段核验；`dotnet` 校验并按层解码 C# 工具路径给 Three.js，同时采用 C# 成本与风险，`browser / shadow` 保留原 Worker 几何和主摘要作为回滚。Three.js 只负责显示，不参与权威计算；异步作业继续支持断线续传与轮询兜底。Stage 6 把尝试次数、预算、下次执行时间和死信时间持久化；瞬态故障有限退避，预算耗尽进入稳定 `failed / dead-letter` 终态，进程重启会把未完成的 `running` 作业重新排队。原子 owner/tenant 活动作业配额返回稳定 429，当前/前一内部密钥支持有界轮换窗口。Node 会把已核验身份匿名化为稳定 `tenant/owner`，再通过独立内部密钥交给 C#，任务查询、SSE 与取消均按该边界过滤；
 - **契约边界**：`backend/src/ForgeX.Api/openapi/v1.json` 是 API 单一来源，构建前生成 TypeScript DTO、操作路径和路径参数函数；CI 通过源文件 SHA 与生成器复跑阻止前后端契约漂移；
-- **存储**：默认 `Persistence:Provider=file` 写入 `data/`，容器部署可挂载持久化卷；文件作业仓库提供逐条 SHA-256 的版本化备份、全量预检恢复和就绪探针。`backend/database/postgresql/` 已冻结 PostgreSQL v1 迁移、租户/归属键、事件表、幂等唯一约束与 RLS 策略，但本阶段未启用 PostgreSQL 运行时驱动，误配为 `postgresql` 会在启动时明确终止。
+- **存储**：默认 `PERSISTENCE_PROVIDER=file` 写入 `data/`，容器部署可挂载持久化卷；文件作业仓库提供逐条 SHA-256 的版本化备份、全量预检恢复和就绪探针。设置 `PERSISTENCE_PROVIDER=postgres` 与 `POSTGRES_URL` 后，校准治理提交/审核/发布会使用 PostgreSQL v2 表和事务/RLS；其余 Node 领域仍按 file 回退，直到各自迁移完成。`backend/database/postgresql/` 的迁移必须先应用并通过 `npm run postgres:migrations:check`。
 - **可观测性**：C# 输出单行 JSON 请求日志，包含稳定路由模板、状态码、耗时与 trace ID；`/metrics` 提供有界标签的 Prometheus 文本指标，并公开队列、持久化状态、作业耗时及 retry、recovery、dead-letter、quota 计数，不把具体作业 ID 放入标签。部署目录提供 SLO、六类告警和逐项运行手册。
 - **分析迁移**：Stage 4-F 已把 CSV 归一、统计核、KPI 和六类确定性规则报告迁入零 NuGet 的 `ForgeX.Analytics`。`POST /api/v1/analytics/reports` 只接受归一化且带来源证据的最多 5000 行 JSON，并由 Node 同源白名单代理。线上默认 `dotnet`：React 先保留浏览器即时结果，C# 回包通过逐字段一致性门禁后才成为报告与导出的权威来源；差异、超时或错误会显式降级到 JS。`shadow` 继续只比对不切换，`browser` 在一个发布周期内保留为零请求回退，离线模式始终使用浏览器结果。
 

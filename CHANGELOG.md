@@ -9,6 +9,10 @@
 
 ## [Unreleased]
 
+### 阶段 3：共享持久化首片
+- 新增可选 `PERSISTENCE_PROVIDER=postgres`：Node 校准治理提交、四眼审核、发布目录和审计事件使用 PostgreSQL v2 迁移、事务与 RLS；未配置时继续使用 file 存储。
+- 新增 `pg` 固定版本运行时依赖、连接池/事务封装、健康检查持久化状态和 PostgreSQL v2 迁移门禁。数据源、知识库、分享和 Node 分析任务仍待后续迁移。
+
 ### 变更（引擎 TS 迁移）
 
 - 引擎层持续从 `js/` 经典脚本迁移到 `frontend/src/engine/*.ts`，React 工作台改为直接消费

@@ -37,6 +37,15 @@ const requiredV1Fragments = [
   "current_setting('app.owner_id', true)",
   "INSERT INTO forgex.schema_migrations",
 ];
+const requiredV2Fragments = [
+  "CREATE TABLE IF NOT EXISTS forgex.calibration_submissions",
+  "CREATE TABLE IF NOT EXISTS forgex.calibration_releases",
+  "UNIQUE (tenant_id, owner_id, bundle_id, revision)",
+  "calibration_submissions_tenant_owner_policy",
+  "calibration_releases_tenant_policy",
+  "current_setting('app.tenant_id', true)",
+  "current_setting('app.owner_id', true)",
+];
 
 const checks = [];
 for (const [index, migration] of manifest.migrations.entries()) {
@@ -66,6 +75,11 @@ for (const [index, migration] of manifest.migrations.entries()) {
   if (migration.version === 1) {
     for (const fragment of requiredV1Fragments) {
       if (!sql.includes(fragment)) fail(`migration 1 missing required contract: ${fragment}`);
+    }
+  }
+  if (migration.version === 2) {
+    for (const fragment of requiredV2Fragments) {
+      if (!sql.includes(fragment)) fail(`migration 2 missing required contract: ${fragment}`);
     }
   }
   checks.push({ version: migration.version, file: migration.file, sha256: actualSha256, bytes: bytes.length });

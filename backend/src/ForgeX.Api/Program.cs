@@ -270,6 +270,18 @@ app.MapPost(
     .Produces<ApiProblem>(StatusCodes.Status415UnsupportedMediaType, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status500InternalServerError, "application/problem+json");
 
+app.MapPost(
+        "/api/v1/calibration/train",
+        (Func<HttpContext, Task<IResult>>)CalibrationEndpoints.TrainAsync)
+    .WithName("TrainCalibrationModel")
+    .Accepts<CalibrationTrainingRequestDto>("application/json")
+    .Produces<CalibrationAuthorityResponseDto>()
+    .Produces<ApiProblem>(StatusCodes.Status400BadRequest, "application/problem+json")
+    .Produces<ApiProblem>(StatusCodes.Status413PayloadTooLarge, "application/problem+json")
+    .Produces<ApiProblem>(StatusCodes.Status415UnsupportedMediaType, "application/problem+json")
+    .Produces<ApiProblem>(StatusCodes.Status422UnprocessableEntity, "application/problem+json")
+    .Produces<ApiProblem>(StatusCodes.Status500InternalServerError, "application/problem+json");
+
 app.MapPost("/api/v1/gcode/analyses", GCodeJobEndpoints.CreateAsync)
     .WithName("CreateGCodeAnalysisJob")
     .Accepts<Stream>("application/x-gcode")

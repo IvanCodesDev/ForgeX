@@ -202,4 +202,4 @@ class CalibrationStore {
   }
 }
 
-module.exports = { CalibrationStore, digest };
+module.exports = { CalibrationStore, digest, validateBundle: (bundle) => Registry.validateBundle(bundle) };

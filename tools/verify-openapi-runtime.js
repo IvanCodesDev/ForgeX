@@ -224,6 +224,35 @@ async function main() {
       throw new Error(`readiness persistence evidence invalid: ${JSON.stringify(readiness)}`);
     }
 
+    const calibrationResponse = await request(`${baseUrl}${operationPaths.get("trainCalibrationModel")}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        schemaVersion: "1.0",
+        scope: { machine_id: "FX-TEST", firmware: "Marlin" },
+        samples: [
+          { id: "job-1", planned_time_sec: 100, actual_time_sec: 215 },
+          { id: "job-2", planned_time_sec: 200, actual_time_sec: 340 },
+          { id: "job-3", planned_time_sec: 400, actual_time_sec: 590 },
+          { id: "job-4", planned_time_sec: 800, actual_time_sec: 1090 },
+        ],
+      }),
+    });
+    if (calibrationResponse.status !== 200) {
+      throw new Error(
+        `calibration training returned ${calibrationResponse.status}: ${await calibrationResponse.text()}`
+      );
+    }
+    const calibration = await calibrationResponse.json();
+    if (
+      calibration?.engine?.name !== "forgex-calibration-csharp" ||
+      calibration?.training?.method !== "theil-sen" ||
+      Math.abs(calibration.training.coefficients.motionScale - 1.25) > 1e-9 ||
+      Math.abs(calibration.training.coefficients.fixedOverheadSec - 90) > 1e-9
+    ) {
+      throw new Error(`calibration training contract mismatch: ${JSON.stringify(calibration)}`);
+    }
+
     const gcode = Buffer.from("G90\nM82\nG28\nM104 S250\nM140 S40\nG1 X0 Y0 Z0.2 F1200\nG1 X10 Y0 E1 F600\n", "utf8");
     const query =
       "bedSizeMm=256&coordinateOrigin=corner&filamentDensityGPerCm3=1.24" +
