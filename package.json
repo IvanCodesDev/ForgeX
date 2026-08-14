@@ -78,7 +78,7 @@
     "@eslint/js": "^10.0.0",
     "@playwright/test": "^1.62.0",
     "eslint": "^10.0.0",
-    "jsdom": "29.0.1",
+    "jsdom": "30.0.1",
     "prettier": "^3.4.2",
     "typescript-eslint": "8.65.0"
   },
