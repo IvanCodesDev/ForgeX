@@ -27,9 +27,9 @@ console.log("\n[release] Version and metadata");
 const pkg = json("package.json");
 const lock = json("package-lock.json");
 const version = pkg.version;
-const cacheVersion = String(Number(version.split(".")[1]));
+const cacheVersion = String(pkg.assetCacheVersion ?? Number(version.split(".")[1]));
 check("package 与 lock 根版本一致", lock.version === version && lock.packages[""].version === version);
-check("版本采用稳定 semver", /^0\.\d+\.\d+$/.test(version), version);
+check("版本采用稳定 semver", /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version), version);
 for (const rel of ["README.md", ".github/README.en.md"]) {
   check(`${rel} 徽章版本一致`, text(rel).includes(`version-${version}-`));
 }

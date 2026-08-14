@@ -3,7 +3,7 @@
 ### 打印前验证参数与路径，打印后用真机数据校准和复盘
 
 [![CI](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml/badge.svg)](https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.19.0-2563eb)
+![Version](https://img.shields.io/badge/version-1.0.0-2563eb)
 ![Node](https://img.shields.io/badge/Node.js-%E2%89%A522.13-16a34a)
 ![Node service dependencies](https://img.shields.io/badge/Node_service_runtime_dependencies-0-0f172a)
 [![License](https://img.shields.io/badge/license-Apache--2.0-f97316)](./LICENSE)
@@ -297,6 +297,10 @@ node server/index.js
 ```bash
 npm run dotnet:api
 ```
+
+Stage 4 的规则与校准权威尾项已接线：`SERVER_RULES_AUTHORITY=0` 可回退 Node 规则腿，
+`CALIBRATION_AUTHORITY_ENABLED` 与 `CALIBRATION_AUTHORITY_TIMEOUT_MS` 控制 C# 校准训练代理；
+校准请求体硬上限为 2 MiB，相关边界测试已纳入主测试门禁。
 
 常用配置见 [`server/.env.example`](./server/.env.example) 与 [`frontend/.env.example`](./frontend/.env.example)。Node 会先执行统一的 Partner SSO/API Key 身份守卫，再把 G-code 同步分析、开启的异步作业以及可选 Analytics shadow 白名单路由流式代理到 `GCODE_AUTHORITY_URL`；浏览器 Cookie、API Key 与 Authorization 均不会转发给 C# sidecar。Analytics shadow 另受 `ANALYTICS_AUTHORITY_ENABLED`、`ANALYTICS_AUTHORITY_TIMEOUT_MS` 和不超过 5 MiB 的 `ANALYTICS_AUTHORITY_MAX_BYTES` 约束。生产环境应同时配置同一个至少 32 字节的 `GCODE_AUTHORITY_INTERNAL_SECRET` 与 C# `InternalAuth__SharedSecret`：Node 仅转发匿名化的 `tn_/ow_` 标识，C# 不接受浏览器自报租户。轮换时短暂配置 `InternalAuth__PreviousSharedSecret`，网关切换完成后立即清空。`GCODE_ASYNC_JOBS_ENABLED=0` 可独立关闭异步路由而保留同步分析。C# 作业韧性与准入可通过 `GCodeJobs__QueueCapacity`、`GCodeJobs__Retry__*`、`GCodeJobs__Admission__MaxActivePerOwner` 与 `GCodeJobs__Admission__MaxActivePerTenant` 调整，越界值会在启动时终止。React 默认使用同源 HttpOnly Cookie；只有在凭据允许随浏览器产物分发时，才使用 `VITE_NODE_API_KEY` 或 `VITE_NODE_BEARER`。部署完成后可访问 Node `/healthz` 与 `/metrics`，并在内部网络访问 C# `/health/ready` 与 `/metrics` 检查仓库、队列、Worker、请求耗时和 CallerContext 状态。SLO、告警、容量与处置步骤见 [`deploy/SLO.md`](./deploy/SLO.md)、[`deploy/capacity-plan.md`](./deploy/capacity-plan.md) 和 [`deploy/RUNBOOK.md`](./deploy/RUNBOOK.md)。
 

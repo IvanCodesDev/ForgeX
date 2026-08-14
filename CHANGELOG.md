@@ -3,11 +3,15 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与
 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-`0.x` 为演进期，次版本号可能包含破坏性变更。
+`0.x` 为演进期；`1.0.0` 固化 README 所声明的可交付产品边界，后续多租户工业平台能力作为 2.0 路线演进。
 
 ---
 
-## [Unreleased]
+## [1.0.0] — 2026-08-14
+
+### Release boundary
+- 1.0 includes the offline `file://` experience, Docker one-command deployment, deterministic FDM simulation and process exploration, C# G-code and Analytics authority with browser/shadow rollback modes, calibration governance, optional PostgreSQL persistence, sharing, task recovery, SLO/runbook evidence, and the release/CI gates documented in the README.
+- 1.0 does not directly control printers. Real STL/3MF mesh import, multi-tenant industrial-platform features, multi-replica coordination, and energy or machine-time costing without auditable power/rate inputs remain 2.0 or later work. The classic entrypoint remains a documented rollback baseline.
 
 ### Stage 3 data source persistence slice
 - Added PostgreSQL v3 datasource storage with tenant/owner RLS, normalized CSV content hashes, deduplication, TTL expiry, and fail-closed readiness checks. The Node gateway keeps the existing file provider as the default and only enables the PostgreSQL datasource path when `PERSISTENCE_PROVIDER=postgres` is selected.
@@ -20,6 +24,9 @@
 
 ### Stage 3 analysis task persistence slice
 - Added PostgreSQL v6 Node analysis task history with tenant/owner RLS, event/report snapshots, TTL cleanup, and explicit recovery of in-flight tasks after restart. The file provider remains the default fallback.
+
+### Stage 4 authority tail closure
+- Completed the Node rules-authority and C# calibration-training configuration contract. Calibration proxy enablement, timeout, and the hard 2 MiB request budget are now defined in `getConfig`; both authority boundary tests are part of the main test chain, and `SERVER_RULES_AUTHORITY=0` is an explicit Node-rules rollback switch.
 
 ### 阶段 3：共享持久化首片
 - 新增可选 `PERSISTENCE_PROVIDER=postgres`：Node 校准治理提交、四眼审核、发布目录和审计事件使用 PostgreSQL v2 迁移、事务与 RLS；未配置时继续使用 file 存储。

@@ -195,6 +195,11 @@ comparison-only mode; `browser` remains the one-release rollback and offline pat
 Set `ANALYTICS_AUTHORITY_ENABLED=0` to close the proxy independently. Rollback restores Stage 4-E
 without changing the frozen golden or stored user data.
 
+Stage 4 tail configuration is explicit as well: `CALIBRATION_AUTHORITY_ENABLED` controls the C#
+calibration-training proxy, `CALIBRATION_AUTHORITY_TIMEOUT_MS` bounds its upstream wait, and the
+request body is hard-capped at 2 MiB. `SERVER_RULES_AUTHORITY=0` is the documented rollback switch
+for the Node rules leg; the default keeps the configured C# Analytics authority online.
+
 Async job endpoints are tenant/owner scoped. In production, configure the same secret as Node's
 `GCODE_AUTHORITY_INTERNAL_SECRET` through `InternalAuth__SharedSecret`. Node resolves the browser
 session or API key first, derives opaque `tn_` / `ow_` identifiers, and sends those values over the

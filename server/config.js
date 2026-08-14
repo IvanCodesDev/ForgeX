@@ -28,6 +28,7 @@ function num(v, dflt) {
 
 const GCODE_AUTHORITY_HARD_MAX_BYTES = 64 * 1024 * 1024;
 const ANALYTICS_AUTHORITY_HARD_MAX_BYTES = 5 * 1024 * 1024;
+const CALIBRATION_AUTHORITY_HARD_MAX_BYTES = 2 * 1024 * 1024;
 
 function normalizeAuthorityOrigin(value, allowRemote) {
   const raw = String(value || "").trim();
@@ -145,6 +146,10 @@ function getConfig(overrides) {
       analyticsAuthorityEnabled: env.ANALYTICS_AUTHORITY_ENABLED !== "0",
       analyticsAuthorityTimeoutMs: num(env.ANALYTICS_AUTHORITY_TIMEOUT_MS, 30000),
       analyticsAuthorityMaxBytes: ANALYTICS_AUTHORITY_HARD_MAX_BYTES,
+      calibrationAuthorityEnabled: env.CALIBRATION_AUTHORITY_ENABLED !== "0",
+      calibrationAuthorityTimeoutMs: num(env.CALIBRATION_AUTHORITY_TIMEOUT_MS, 30000),
+      calibrationAuthorityMaxBytes: CALIBRATION_AUTHORITY_HARD_MAX_BYTES,
+      serverRulesAuthority: env.SERVER_RULES_AUTHORITY !== "0",
 
       // 启动时探活 provider，失败自动降级为规则引擎（取代人工 INFINI_VERIFIED 门禁的下一步）
       probeProvider: env.PROBE_PROVIDER !== "0",
@@ -172,6 +177,14 @@ function getConfig(overrides) {
     ANALYTICS_AUTHORITY_HARD_MAX_BYTES,
     Math.max(1, num(cfg.analyticsAuthorityMaxBytes, ANALYTICS_AUTHORITY_HARD_MAX_BYTES))
   );
+  cfg.calibrationAuthorityEnabled =
+    cfg.calibrationAuthorityEnabled !== false && cfg.calibrationAuthorityEnabled !== "0";
+  cfg.calibrationAuthorityTimeoutMs = Math.max(1, num(cfg.calibrationAuthorityTimeoutMs, 30000));
+  cfg.calibrationAuthorityMaxBytes = Math.min(
+    CALIBRATION_AUTHORITY_HARD_MAX_BYTES,
+    Math.max(1, num(cfg.calibrationAuthorityMaxBytes, CALIBRATION_AUTHORITY_HARD_MAX_BYTES))
+  );
+  cfg.serverRulesAuthority = cfg.serverRulesAuthority !== false && cfg.serverRulesAuthority !== "0";
   if (!["file", "postgres", "postgresql"].includes(cfg.persistenceProvider)) {
     throw new Error("PERSISTENCE_PROVIDER must be file or postgres");
   }
@@ -219,4 +232,9 @@ function getConfig(overrides) {
   return cfg;
 }
 
-module.exports = { getConfig, GCODE_AUTHORITY_HARD_MAX_BYTES, ANALYTICS_AUTHORITY_HARD_MAX_BYTES };
+module.exports = {
+  getConfig,
+  GCODE_AUTHORITY_HARD_MAX_BYTES,
+  ANALYTICS_AUTHORITY_HARD_MAX_BYTES,
+  CALIBRATION_AUTHORITY_HARD_MAX_BYTES,
+};
