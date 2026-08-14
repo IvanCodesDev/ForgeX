@@ -20,7 +20,7 @@ function register(router, ctx) {
     const identity = resolveIdentity(req, rc, ctx);
     const body = await readJson(req, 600 * 1024);
     if (typeof body.text !== "string") throw new HttpError(400, "text 字段不能为空");
-    const doc = knowledge.create(body.name, body.text, identity.tenantId);
+    const doc = await knowledge.create(body.name, body.text, identity.tenantId);
     const aiEnabled = !!(tasks && tasks.provider && tasks.provider.capabilities.ai);
     sendJson(res, 201, {
       knowledgeId: doc.id,
@@ -30,9 +30,9 @@ function register(router, ctx) {
       retrievalEnabled: aiEnabled,
       note: aiEnabled
         ? "已登记。提问时会按问题检索相关片段注入 AI 提示词（BM25 关键词检索，检索不到则不注入）。" +
-          "存储为内存态，进程重启或 TTL 到期即失效。"
+          "存储由当前持久化 provider 管理，TTL 到期后失效。"
         : "已登记，但**当前配置下不会被使用**：正在运行的是规则引擎（确定性统计，不读自然语言知识）。" +
-          "配置 AI provider（INFINI_API_KEY 或 OPENAI_API_KEY）后检索才会生效。存储为内存态。",
+          "配置 AI provider（INFINI_API_KEY 或 OPENAI_API_KEY）后检索才会生效。存储由当前持久化 provider 管理，TTL 到期后失效。",
     });
   });
 
@@ -42,6 +42,7 @@ function register(router, ctx) {
     const body = await readJson(req, 8 * 1024);
     const q = String(body.question || "").trim();
     if (!q) throw new HttpError(400, "question 不能为空");
+    if (typeof knowledge.ready === "function") await knowledge.ready(identity.tenantId);
     const docs = knowledge.all(identity.tenantId);
     const hits = retrieve(docs, q, { topK: Number(body.topK) || 4 });
     sendJson(res, 200, {

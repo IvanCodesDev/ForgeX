@@ -11,6 +11,7 @@ const crypto = require("crypto");
 const { FileStore } = require("../lib/store");
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_SHARES = 2000;
 
 class ShareStore {
   constructor(cfg, log) {
@@ -19,7 +20,7 @@ class ShareStore {
       dir: (cfg && cfg.dataDir) || "",
       name: "shares",
       ttlMs: this.ttlMs,
-      max: 2000,
+      max: MAX_SHARES,
       log: log,
     });
   }
@@ -72,4 +73,4 @@ class ShareStore {
   }
 }
 
-module.exports = { ShareStore };
+module.exports = { ShareStore, DEFAULT_TTL_MS, MAX_SHARES };

@@ -6,11 +6,12 @@ const { resolveIdentity, requireOwner } = require("../lib/identity");
 const MAX_QUESTION = 500;
 
 function register(router, ctx) {
-  const { tasks, datasources, log, gate, metrics } = ctx;
+  const { tasks, datasources, knowledge, log, gate, metrics } = ctx;
 
   router.add("POST", /^\/api\/analyze$/, async (req, res, m, rc) => {
     // 先统一 SSO/API Key 身份，再做限流和资源授权；有效 SSO 不再被 API Key 守卫误拒。
     const identity = resolveIdentity(req, rc, ctx);
+    if (typeof tasks.ready === "function") await tasks.ready(identity.tenantId);
     const partnerIdentity = identity.partner;
     if (partnerIdentity && !partnerIdentity.apiKey) {
       throw new HttpError(409, "该账号未能签发 Partner API Key，请清理 InfiniSynapse API Key 后重新登录");
@@ -21,9 +22,10 @@ function register(router, ctx) {
     const question = String(body.question || "").trim();
     if (!question) throw new HttpError(400, "question 不能为空");
     if (question.length > MAX_QUESTION) throw new HttpError(400, "question 超过 " + MAX_QUESTION + " 字");
-    const ds = datasources.get(body.datasourceId || "sample");
+    const ds = await datasources.get(body.datasourceId || "sample", identity.tenantId);
     if (!ds) throw new HttpError(404, "数据源不存在或已过期，请重新上传");
     if (!ds.builtin) requireOwner(ds, identity, ctx, "datasource", ds.id);
+    if (typeof knowledge.ready === "function") await knowledge.ready(identity.tenantId);
 
     // 配额预检：提前把「会不会降级」告诉调用方，而不是等报告出来才发现没有 AI 叙述
     const willUseAi = !!(partnerIdentity || tasks.usesAi);
@@ -33,6 +35,7 @@ function register(router, ctx) {
       infiniKey: partnerIdentity ? partnerIdentity.apiKey : "",
       credentialScope: identity.tenantId,
     });
+    if (typeof tasks.persist === "function") await tasks.persist(task);
     metrics.tasks++;
 
     sendJson(res, 202, {
@@ -47,32 +50,35 @@ function register(router, ctx) {
     });
   });
 
-  router.add("GET", /^\/api\/analyze\/([A-Za-z0-9_]+)\/stream$/, (req, res, m, rc) => {
+  router.add("GET", /^\/api\/analyze\/([A-Za-z0-9_]+)\/stream$/, async (req, res, m, rc) => {
     const identity = resolveIdentity(req, rc, ctx);
+    if (typeof tasks.ready === "function") await tasks.ready(identity.tenantId);
     const task = tasks.get(m[1]);
     if (!task) throw new HttpError(404, "任务不存在或已过期");
-    requireOwner({ owner: task.caller }, identity, ctx, "analysis-task", task.id);
+    requireOwner({ owner: task.caller, ownerId: task.ownerId }, identity, ctx, "analysis-task", task.id);
     sseStart(res);
     const unsubscribe = tasks.subscribe(task, res);
     req.on("close", unsubscribe);
   });
 
-  router.add("GET", /^\/api\/analyze\/([A-Za-z0-9_]+)\/result$/, (req, res, m, rc) => {
+  router.add("GET", /^\/api\/analyze\/([A-Za-z0-9_]+)\/result$/, async (req, res, m, rc) => {
     const identity = resolveIdentity(req, rc, ctx);
+    if (typeof tasks.ready === "function") await tasks.ready(identity.tenantId);
     const task = tasks.get(m[1]);
     if (!task) throw new HttpError(404, "任务不存在或已过期");
-    requireOwner({ owner: task.caller }, identity, ctx, "analysis-task", task.id);
+    requireOwner({ owner: task.caller, ownerId: task.ownerId }, identity, ctx, "analysis-task", task.id);
     if (task.status === "running") return sendJson(res, 202, { status: "running" });
     if (task.status === "failed") return sendJson(res, 502, { error: task.error || "分析失败" });
     sendJson(res, 200, task.report);
   });
 
   // 轮询兜底（SSE 不可用的网络环境，doc §4.2「优雅降级」）
-  router.add("GET", /^\/api\/analyze\/([A-Za-z0-9_]+)$/, (req, res, m, rc) => {
+  router.add("GET", /^\/api\/analyze\/([A-Za-z0-9_]+)$/, async (req, res, m, rc) => {
     const identity = resolveIdentity(req, rc, ctx);
+    if (typeof tasks.ready === "function") await tasks.ready(identity.tenantId);
     const task = tasks.get(m[1]);
     if (!task) throw new HttpError(404, "任务不存在或已过期");
-    requireOwner({ owner: task.caller }, identity, ctx, "analysis-task", task.id);
+    requireOwner({ owner: task.caller, ownerId: task.ownerId }, identity, ctx, "analysis-task", task.id);
     const last = task.events[task.events.length - 1] || null;
     sendJson(res, 200, {
       taskId: task.id,

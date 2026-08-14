@@ -1,8 +1,9 @@
 # ForgeX PostgreSQL migration contract
 
-The SQL in `migrations/` is a forward-only, transactional schema contract for the durable G-code
-job repository. Stage 3-E keeps `Persistence:Provider=file` as the executable default while the
-runtime PostgreSQL driver and an isolated PostgreSQL test service are introduced separately.
+The SQL in `migrations/` is a forward-only, transactional schema contract for durable G-code jobs,
+calibration governance, datasource records, knowledge documents, share snapshots, and Node analysis task history. The Node runtime keeps
+`PERSISTENCE_PROVIDER=file` as the executable default; selecting `postgres` enables the pinned `pg`
+runtime for the migrated domains while the remaining domains continue to use their file stores.
 
 Before deployment, validate the pinned migration bytes:
 
@@ -11,8 +12,10 @@ npm run postgres:migrations:check
 ```
 
 The command checks `manifest.json`, SHA-256, sequential versions, transactional boundaries,
-tenant/owner isolation fields, idempotency uniqueness, event persistence, RLS policies, and rejects
-destructive `DROP` or `TRUNCATE` statements.
+tenant/owner isolation fields, idempotency uniqueness, event persistence, datasource deduplication,
+knowledge-document limits, RLS policies, and rejects destructive `DROP` or `TRUNCATE` statements.
+The share migration additionally checks public-token read isolation, owner-only revoke writes, and
+access-audit counters. The task migration checks event snapshots, restart recovery, and tenant/owner RLS.
 
 ## Runtime-role boundary
 
@@ -28,7 +31,12 @@ destructive `DROP` or `TRUNCATE` statements.
 ```bash
 psql "$FORGEX_MIGRATION_DATABASE_URL" \
   --set=ON_ERROR_STOP=1 \
-  --file backend/database/postgresql/migrations/0001_gcode_jobs.sql
+  --file backend/database/postgresql/migrations/0001_gcode_jobs.sql \
+  --file backend/database/postgresql/migrations/0002_calibration_governance.sql \
+  --file backend/database/postgresql/migrations/0003_datasources.sql \
+  --file backend/database/postgresql/migrations/0004_knowledge_docs.sql \
+  --file backend/database/postgresql/migrations/0005_shares.sql \
+  --file backend/database/postgresql/migrations/0006_node_analysis_tasks.sql
 ```
 
 Validate the installed version:

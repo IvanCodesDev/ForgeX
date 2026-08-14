@@ -35,8 +35,28 @@ async function withTransaction(pool, tenantId, ownerId, work) {
   }
 }
 
+async function withPublicTransaction(pool, work) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('app.share_public', '1', true)");
+    const result = await work(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackError) {
+      error.rollbackError = rollbackError;
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function closePool(pool, owned) {
   if (owned && pool) await pool.end();
 }
 
-module.exports = { createPool, withTransaction, closePool };
+module.exports = { createPool, withTransaction, withPublicTransaction, closePool };

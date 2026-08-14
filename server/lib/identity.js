@@ -5,7 +5,15 @@
    tenantId 当前与 caller 一致，后续迁移到 C# 时可替换为独立租户声明。 */
 "use strict";
 
+const crypto = require("crypto");
 const { HttpError } = require("./http");
+
+function storageId(value, prefix) {
+  const raw = String(value || "legacy:unowned");
+  if (raw === `${prefix}local`) return raw;
+  if (raw.startsWith(prefix) && /^[a-f0-9]{32}$/.test(raw.slice(prefix.length))) return raw;
+  return prefix + crypto.createHash("sha256").update(raw).digest("hex").slice(0, 32);
+}
 
 function resolveIdentity(req, rc, ctx) {
   const partner = ctx.partnerSSO && ctx.partnerSSO.enabled ? ctx.partnerSSO.identity(req) : null;
@@ -43,7 +51,11 @@ function resolveIdentity(req, rc, ctx) {
 }
 
 function requireOwner(resource, identity, ctx, resourceType, resourceId) {
-  if (resource && resource.owner === identity.tenantId) return resource;
+  const ownerMatches = resource && (
+    resource.owner === identity.tenantId ||
+    resource.ownerId === storageId(identity.tenantId, "ow_")
+  );
+  if (ownerMatches) return resource;
   ctx.log.warn("resource access denied", {
     audit: true,
     action: "read",
@@ -56,4 +68,4 @@ function requireOwner(resource, identity, ctx, resourceType, resourceId) {
   throw new HttpError(403, "无权访问该资源");
 }
 
-module.exports = { resolveIdentity, requireOwner };
+module.exports = { resolveIdentity, requireOwner, storageId };

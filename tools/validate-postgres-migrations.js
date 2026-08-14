@@ -46,6 +46,41 @@ const requiredV2Fragments = [
   "current_setting('app.tenant_id', true)",
   "current_setting('app.owner_id', true)",
 ];
+const requiredV3Fragments = [
+  "CREATE TABLE IF NOT EXISTS forgex.datasources",
+  "rows_json jsonb NOT NULL",
+  "content_sha256 char(64) NOT NULL",
+  "CREATE UNIQUE INDEX IF NOT EXISTS ux_datasources_tenant_owner_cache",
+  "datasources_tenant_owner_policy",
+  "current_setting('app.tenant_id', true)",
+  "current_setting('app.owner_id', true)",
+];
+const requiredV4Fragments = [
+  "CREATE TABLE IF NOT EXISTS forgex.knowledge_docs",
+  "text text NOT NULL",
+  "CREATE INDEX IF NOT EXISTS ix_knowledge_docs_tenant_owner_created",
+  "knowledge_docs_tenant_owner_policy",
+  "current_setting('app.tenant_id', true)",
+  "current_setting('app.owner_id', true)",
+];
+const requiredV5Fragments = [
+  "CREATE TABLE IF NOT EXISTS forgex.shares",
+  "access_count bigint NOT NULL",
+  "last_accessed_at_utc",
+  "CREATE POLICY shares_public_read_policy",
+  "CREATE POLICY shares_owner_write_policy",
+  "current_setting('app.share_public', true)",
+  "current_setting('app.tenant_id', true)",
+  "current_setting('app.owner_id', true)",
+];
+const requiredV6Fragments = [
+  "CREATE TABLE IF NOT EXISTS forgex.node_analysis_tasks",
+  "events_json jsonb NOT NULL",
+  "CREATE INDEX IF NOT EXISTS ix_node_tasks_tenant_owner_created",
+  "node_analysis_tasks_tenant_owner_policy",
+  "current_setting('app.tenant_id', true)",
+  "current_setting('app.owner_id', true)",
+];
 
 const checks = [];
 for (const [index, migration] of manifest.migrations.entries()) {
@@ -80,6 +115,26 @@ for (const [index, migration] of manifest.migrations.entries()) {
   if (migration.version === 2) {
     for (const fragment of requiredV2Fragments) {
       if (!sql.includes(fragment)) fail(`migration 2 missing required contract: ${fragment}`);
+    }
+  }
+  if (migration.version === 3) {
+    for (const fragment of requiredV3Fragments) {
+      if (!sql.includes(fragment)) fail(`migration 3 missing required contract: ${fragment}`);
+    }
+  }
+  if (migration.version === 4) {
+    for (const fragment of requiredV4Fragments) {
+      if (!sql.includes(fragment)) fail(`migration 4 missing required contract: ${fragment}`);
+    }
+  }
+  if (migration.version === 5) {
+    for (const fragment of requiredV5Fragments) {
+      if (!sql.includes(fragment)) fail(`migration 5 missing required contract: ${fragment}`);
+    }
+  }
+  if (migration.version === 6) {
+    for (const fragment of requiredV6Fragments) {
+      if (!sql.includes(fragment)) fail(`migration 6 missing required contract: ${fragment}`);
     }
   }
   checks.push({ version: migration.version, file: migration.file, sha256: actualSha256, bytes: bytes.length });

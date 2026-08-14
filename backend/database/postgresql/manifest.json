@@ -18,6 +18,38 @@
       "sha256": "c5f50d88519c383542669ada463462a8c9b652964d0e52d00da37c3eccbb1fa5",
       "transactional": true,
       "rollbackPolicy": "retain-schema"
+    },
+    {
+      "version": 3,
+      "name": "datasources",
+      "file": "migrations/0003_datasources.sql",
+      "sha256": "20162f126843d651331685add2830e43431c7f9fd9bf64ba554d534d29ff8e15",
+      "transactional": true,
+      "rollbackPolicy": "retain-schema"
+    },
+    {
+      "version": 4,
+      "name": "knowledge_docs",
+      "file": "migrations/0004_knowledge_docs.sql",
+      "sha256": "2b280f9756445db9ffea74d46de5c143dbf422da990a26655ed8527ec532f15a",
+      "transactional": true,
+      "rollbackPolicy": "retain-schema"
+    },
+    {
+      "version": 5,
+      "name": "shares",
+      "file": "migrations/0005_shares.sql",
+      "sha256": "c97bb63b1dd4c867b11350180eff9f14933418b4a93094909ff16a86e966f447",
+      "transactional": true,
+      "rollbackPolicy": "retain-schema"
+    },
+    {
+      "version": 6,
+      "name": "node_analysis_tasks",
+      "file": "migrations/0006_node_analysis_tasks.sql",
+      "sha256": "207ec0fd6280d478e89f45f6de802146d2d6a4b85dfd2333a614755009683144",
+      "transactional": true,
+      "rollbackPolicy": "retain-schema"
     }
   ]
 }

@@ -9,6 +9,18 @@
 
 ## [Unreleased]
 
+### Stage 3 data source persistence slice
+- Added PostgreSQL v3 datasource storage with tenant/owner RLS, normalized CSV content hashes, deduplication, TTL expiry, and fail-closed readiness checks. The Node gateway keeps the existing file provider as the default and only enables the PostgreSQL datasource path when `PERSISTENCE_PROVIDER=postgres` is selected.
+
+### Stage 3 knowledge persistence slice
+- Added PostgreSQL v4 knowledge document storage with tenant/owner RLS, TTL expiry, per-owner capacity eviction, and readiness loading before search or AI analysis. The file provider remains the default fallback.
+
+### Stage 3 share persistence slice
+- Added PostgreSQL v5 share snapshots with public-token reads, owner-only revoke, expiry cleanup, and access-audit counters. The file provider remains the default fallback.
+
+### Stage 3 analysis task persistence slice
+- Added PostgreSQL v6 Node analysis task history with tenant/owner RLS, event/report snapshots, TTL cleanup, and explicit recovery of in-flight tasks after restart. The file provider remains the default fallback.
+
 ### 阶段 3：共享持久化首片
 - 新增可选 `PERSISTENCE_PROVIDER=postgres`：Node 校准治理提交、四眼审核、发布目录和审计事件使用 PostgreSQL v2 迁移、事务与 RLS；未配置时继续使用 file 存储。
 - 新增 `pg` 固定版本运行时依赖、连接池/事务封装、健康检查持久化状态和 PostgreSQL v2 迁移门禁。数据源、知识库、分享和 Node 分析任务仍待后续迁移。

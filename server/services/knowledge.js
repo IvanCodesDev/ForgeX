@@ -1,4 +1,4 @@
-/* 知识库文档存储（内存态）：工艺术语表 / 材料参数 / 设备手册。
+/* 知识库文档存储（file 回退态）：工艺术语表 / 材料参数 / 设备手册。
 
    AI provider 的分析路径会按问题检索 top-k 片段并注入提示词；规则引擎不读取自然语言文档。
    存储仍是单实例文件态，阶段 3 的共享租户仓储尚未启用。
@@ -50,4 +50,4 @@ class KnowledgeStore {
   }
 }
 
-module.exports = { KnowledgeStore };
+module.exports = { KnowledgeStore, MAX_DOCS, MAX_TEXT };

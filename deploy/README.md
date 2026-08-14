@@ -66,12 +66,14 @@ authority metrics, and restart readiness.
 6. If the authority is being removed entirely, set the React build to browser authority before
    stopping `forgex-api`; the legacy `/` page remains the product rollback boundary.
 
-The Node gateway now supports an optional PostgreSQL runtime for calibration governance. The default
-Compose profile remains `PERSISTENCE_PROVIDER=file` for the single-host rollback path. To enable the
-shared calibration store, apply `backend/database/postgresql/migrations/` in order, set
+The Node gateway now supports an optional PostgreSQL runtime for calibration governance, datasources,
+knowledge documents, share snapshots, and Node analysis task history.
+The default Compose profile remains `PERSISTENCE_PROVIDER=file` for the single-host rollback path. To
+enable the shared stores, apply `backend/database/postgresql/migrations/` in order, set
 `PERSISTENCE_PROVIDER=postgres`, `POSTGRES_URL`, and (for managed TLS) `POSTGRES_SSL=1` in the Node
-environment, then verify `/healthz` reports `persistence=postgres`. Datasources, knowledge, shares,
-and Node analysis tasks remain on the file provider until their own migration slices land.
+environment, then verify `/healthz` reports `persistence=postgres`. Running tasks that are interrupted by
+a process restart are recovered as explicit failed tasks; their event history and terminal reports remain
+available until the configured TTL.
 
 Production objectives and alert response are defined in [`SLO.md`](./SLO.md),
 [`alerts/forgex.rules.yml`](./alerts/forgex.rules.yml), and [`RUNBOOK.md`](./RUNBOOK.md). Before each

@@ -13,15 +13,20 @@ const { getConfig } = require("./config");
 const { createLogger } = require("./lib/logger");
 const { HttpError, sendJson, serveStatic, clientIp } = require("./lib/http");
 const { DatasourceStore } = require("./services/datasource");
+const { PostgresDatasourceStore } = require("./services/postgres-datasource");
 const { TaskStore } = require("./services/analysis");
+const { PostgresAnalysisStore } = require("./services/postgres-analysis");
 const { KnowledgeStore } = require("./services/knowledge");
+const { PostgresKnowledgeStore } = require("./services/postgres-knowledge");
 const { ShareStore } = require("./services/share");
+const { PostgresShareStore } = require("./services/postgres-share");
 const { CalibrationStore } = require("./services/calibration");
 const { PostgresCalibrationStore } = require("./services/postgres-calibration");
 const { InfiniClient } = require("./services/infini");
 const { PartnerSSO } = require("./services/partner-sso");
 const { CostGate } = require("./lib/quota");
 const { Auth } = require("./lib/auth");
+const { createPool, closePool } = require("./lib/postgres");
 
 /* ── 极简路由器 ─────────────────────────────── */
 
@@ -51,13 +56,28 @@ function createApp(overrides) {
   const gate = new CostGate(cfg, log);
   const auth = new Auth(cfg, log);
   const partnerSSO = new PartnerSSO(cfg, log);
-  const datasources = new DatasourceStore(cfg, log);
-  const knowledge = new KnowledgeStore(cfg, log);
-  const tasks = new TaskStore(cfg, log, infini, knowledge, gate);
-  const shares = new ShareStore(cfg, log);
+  const persistenceEnabled = cfg.persistenceProvider !== "file";
+  const persistencePool = persistenceEnabled ? (cfg.postgresPool || createPool(cfg)) : null;
+  const ownsPersistencePool = persistenceEnabled && !cfg.postgresPool;
+  const persistenceCfg = persistenceEnabled
+    ? Object.assign({}, cfg, { postgresPool: persistencePool })
+    : cfg;
+  const datasources = persistenceEnabled
+    ? new PostgresDatasourceStore(persistenceCfg, log, persistencePool)
+    : new DatasourceStore(cfg, log);
+  const knowledge = persistenceEnabled
+    ? new PostgresKnowledgeStore(persistenceCfg, log, persistencePool)
+    : new KnowledgeStore(cfg, log);
+  const shares = persistenceEnabled
+    ? new PostgresShareStore(persistenceCfg, log, persistencePool)
+    : new ShareStore(cfg, log);
+  const taskPersistence = persistenceEnabled
+    ? new PostgresAnalysisStore(persistenceCfg, log, persistencePool)
+    : null;
+  const tasks = new TaskStore(cfg, log, infini, knowledge, gate, taskPersistence);
   const calibrations = cfg.persistenceProvider === "file"
     ? new CalibrationStore(cfg, log)
-    : new PostgresCalibrationStore(cfg, log);
+    : new PostgresCalibrationStore(persistenceCfg, log);
 
   /* 运行指标。不引依赖，就是几个计数器——够 /metrics 用，也够排查线上问题。 */
   const metrics = {
@@ -124,6 +144,10 @@ function createApp(overrides) {
     const userAi = !!(partnerIdentity && partnerIdentity.apiKey);
     let calibrationStats;
     try {
+      if (typeof tasks.ready === "function") await tasks.ready();
+      if (typeof datasources.ready === "function") await datasources.ready();
+      if (typeof knowledge.ready === "function") await knowledge.ready();
+      if (typeof shares.ready === "function") await shares.ready();
       calibrationStats = typeof calibrations.stats === "function"
         ? await calibrations.stats()
         : { approved: calibrations.approvedCount, pending: calibrations.pendingCount };
@@ -165,6 +189,10 @@ function createApp(overrides) {
   /* Prometheus 文本格式指标。不引入依赖——格式本身就是几行字符串拼接。
      暴露的是运维需要的量：任务数、失败率、时延、配额用量、存储规模。 */
   router.add("GET", /^\/metrics$/, async (req, res) => {
+    if (typeof tasks.ready === "function") await tasks.ready();
+    if (typeof datasources.ready === "function") await datasources.ready();
+    if (typeof knowledge.ready === "function") await knowledge.ready();
+    if (typeof shares.ready === "function") await shares.ready();
     const q = gate.snapshot();
     const m = metrics.snapshot();
     const L = [];
@@ -293,9 +321,13 @@ function createApp(overrides) {
     clearInterval(sweeper);
     gate.state.save(); // 用量计数落盘，避免停机丢掉当日额度记录
     tasks.closeAll();
-    return new Promise((resolve) => server.close(resolve)).then(() =>
-      typeof calibrations.close === "function" ? calibrations.close() : undefined
-    );
+    return new Promise((resolve) => server.close(resolve))
+      .then(() => (typeof calibrations.close === "function" ? calibrations.close() : undefined))
+      .then(() => (typeof tasks.close === "function" ? tasks.close() : undefined))
+      .then(() => (typeof datasources.close === "function" ? datasources.close() : undefined))
+      .then(() => (typeof knowledge.close === "function" ? knowledge.close() : undefined))
+      .then(() => (typeof shares.close === "function" ? shares.close() : undefined))
+      .then(() => closePool(persistencePool, ownsPersistencePool));
   }
 
   return { server, cfg, log, ctx, close };

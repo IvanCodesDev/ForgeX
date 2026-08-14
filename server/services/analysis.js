@@ -62,12 +62,13 @@ class ResultCache {
 }
 
 class TaskStore {
-  constructor(cfg, log, infini, knowledge, gate) {
+  constructor(cfg, log, infini, knowledge, gate, persistence) {
     this.cfg = cfg;
     this.log = log;
     this.infini = infini;
     this.knowledge = knowledge || null;
     this.gate = gate || null; // 成本闸门；null 表示不限（本地开发）
+    this.persistence = persistence || null;
     this.map = new Map();
     this.provider = createProvider(cfg, log, { infini });
     this.fallback = createProvider(Object.assign({}, cfg, { provider: "local" }), log, { infini, forceLocal: true });
@@ -143,7 +144,11 @@ class TaskStore {
       createdAt: Date.now(),
       finishedAt: 0,
     };
+    if (this.persistence && typeof this.persistence.context === "function") {
+      Object.assign(task, this.persistence.context(task.caller));
+    }
     this.map.set(task.id, task);
+    this._persist(task);
     this.log.info("task created", {
       reqId,
       taskId: task.id,
@@ -269,6 +274,26 @@ class TaskStore {
     return this.map.get(String(id || "")) || null;
   }
 
+  async ready(owner) {
+    if (!this.persistence || typeof this.persistence.ready !== "function") return;
+    const snapshots = await this.persistence.ready(owner);
+    for (const snapshot of snapshots || []) {
+      if (!this.map.has(snapshot.id)) this.map.set(snapshot.id, snapshot);
+    }
+  }
+
+  _persist(task) {
+    if (!this.persistence || typeof this.persistence.save !== "function") return;
+    this.persistence.save(task).catch((error) => {
+      this.log.warn("analysis task persistence failed", { taskId: task.id, error: error.message });
+    });
+  }
+
+  persist(task) {
+    if (!this.persistence || typeof this.persistence.save !== "function") return Promise.resolve();
+    return this.persistence.save(task);
+  }
+
   /* ── 进度事件 ─────────────────────────────── */
 
   emit(task, ev) {
@@ -278,6 +303,7 @@ class TaskStore {
       if (!sseSend(res, event)) task.subscribers.delete(res);
     }
     if (event.done) this._closeSubscribers(task);
+    this._persist(task);
   }
 
   /** SSE 订阅：先重放历史事件，终态任务重放完即收口 */
@@ -333,11 +359,21 @@ class TaskStore {
     for (const [id, t] of this.map) {
       if (t.finishedAt && now - t.finishedAt > this.cfg.taskTtlMs) this.map.delete(id);
     }
+    if (this.persistence && typeof this.persistence.sweep === "function") {
+      this.persistence.sweep(now).catch((error) => {
+        this.log.warn("analysis task persistence sweep failed", { error: error.message });
+      });
+    }
   }
 
   /** 优雅停机：关掉所有挂着的 SSE 连接 */
   closeAll() {
     for (const t of this.map.values()) this._closeSubscribers(t);
+  }
+
+  async close() {
+    this.closeAll();
+    if (this.persistence && typeof this.persistence.close === "function") await this.persistence.close();
   }
 }
 

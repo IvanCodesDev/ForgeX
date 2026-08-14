@@ -7,13 +7,14 @@ const { resolveIdentity, requireOwner } = require("../lib/identity");
 function register(router, ctx) {
   const { tasks, shares, cfg, log } = ctx;
 
-  router.add("POST", /^\/api\/share\/([A-Za-z0-9_]+)$/, (req, res, m, rc) => {
+  router.add("POST", /^\/api\/share\/([A-Za-z0-9_]+)$/, async (req, res, m, rc) => {
     const identity = resolveIdentity(req, rc, ctx);
+    if (typeof tasks.ready === "function") await tasks.ready(identity.tenantId);
     const task = tasks.get(m[1]);
     if (!task) throw new HttpError(404, "任务不存在或已过期");
-    requireOwner({ owner: task.caller }, identity, ctx, "analysis-task", task.id);
+    requireOwner({ owner: task.caller, ownerId: task.ownerId }, identity, ctx, "analysis-task", task.id);
     if (task.status !== "done") throw new HttpError(409, "任务尚未完成，无法分享");
-    const out = shares.create(task);
+    const out = await shares.create(task);
     const base = cfg.publicBase || rc.origin || "";
     if (!base) {
       // 没有可用的公网前缀时给相对路径，并明确告知——
@@ -35,11 +36,11 @@ function register(router, ctx) {
   /* 撤销分享。分享出去的东西必须能收回来，这是分享功能的基本义务。 */
   router.add("POST", /^\/api\/share\/([a-f0-9]+)\/revoke$/, async (req, res, m, rc) => {
     const identity = resolveIdentity(req, rc, ctx);
-    const share = shares.get(m[1]);
+    const share = await shares.get(m[1]);
     if (!share) throw new HttpError(404, "分享不存在或已过期");
     requireOwner(share, identity, ctx, "share", m[1]);
     const body = await readJson(req, 4 * 1024);
-    const out = shares.revoke(m[1], body.revokeKey);
+    const out = await shares.revoke(m[1], body.revokeKey, identity.tenantId);
     if (!out.ok) {
       throw new HttpError(out.reason === "not_found" ? 404 : 403,
         out.reason === "not_found" ? "分享不存在或已过期" : "撤销密钥不正确");
@@ -47,8 +48,8 @@ function register(router, ctx) {
     sendJson(res, 200, { revoked: true });
   });
 
-  router.add("GET", /^\/share\/([a-f0-9]+)$/, (req, res, m) => {
-    const s = shares.get(m[1]);
+  router.add("GET", /^\/share\/([a-f0-9]+)$/, async (req, res, m) => {
+    const s = await shares.get(m[1]);
     if (!s) throw new HttpError(404, "分享页不存在、已过期或已被撤销");
     const html = renderShareHtml(s);
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });
