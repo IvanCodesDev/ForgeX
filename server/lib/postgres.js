@@ -1,9 +1,10 @@
 "use strict";
 
-const { Pool } = require("pg");
-
 function createPool(cfg) {
   if (!cfg || !cfg.postgresUrl) throw new Error("POSTGRES_URL is required for PostgreSQL persistence");
+  // PostgreSQL is an optional persistence provider. Keep the default file/memory
+  // runtime zero-dependency: only load `pg` after a caller explicitly enables it.
+  const { Pool } = require("pg");
   return cfg.postgresPool || new Pool({
     connectionString: cfg.postgresUrl,
     max: cfg.postgresPoolMax || 10,
