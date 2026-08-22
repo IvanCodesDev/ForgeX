@@ -1,19 +1,16 @@
+<p align="center">
+  <img width="150" alt="exec-ab8574a0-a8eb-47a1-adb1-ff8c6883b54f" src="https://github.com/user-attachments/assets/e27d2fef-d894-4958-a884-8a996f8ee131" />
+</p>
+
 <div align="center">
-  
-<img width="125" height="125" alt="exec-ab8574a0-a8eb-47a1-adb1-ff8c6883b54f" src="https://github.com/user-attachments/assets/e27d2fef-d894-4958-a884-8a996f8ee131" />
-
-
   <h1>FORGE·X Insight</h1>
-
   <p><strong>面向 FDM 3D 打印的预演、G-code 复盘与生产数据分析工具</strong></p>
-
   <p>
     <a href="https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml"><img src="https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <img src="https://img.shields.io/badge/version-1.0.0-2563eb" alt="Version 1.0.0">
     <img src="https://img.shields.io/badge/Node.js-%E2%89%A522.13-16a34a" alt="Node.js ≥22.13">
     <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-f97316" alt="Apache-2.0 License"></a>
   </p>
-
   <p><strong>简体中文</strong> · <a href="./.github/README.en.md">English</a></p>
 </div>
 
