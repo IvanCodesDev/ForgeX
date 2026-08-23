@@ -193,6 +193,10 @@ app.Use(async (context, next) =>
     }
 });
 
+// Stage 8.2：直连身份（API key / 匿名 IP）与可信 Node 代理并行受理；
+// 未配置 DirectAuth:ApiKeys 时行为与迁移前完全一致。
+var directAuth = DirectAuthOptions.FromConfiguration(builder.Configuration);
+
 app.Use(async (context, next) =>
 {
     if (!CallerContextBoundary.AppliesTo(context.Request.Path))
@@ -201,7 +205,7 @@ app.Use(async (context, next) =>
         return;
     }
 
-    var problem = CallerContextBoundary.Resolve(context, internalSharedSecret, previousInternalSharedSecret);
+    var problem = CallerContextBoundary.Resolve(context, internalSharedSecret, previousInternalSharedSecret, directAuth);
     if (problem is not null)
     {
         await problem.ExecuteAsync(context);

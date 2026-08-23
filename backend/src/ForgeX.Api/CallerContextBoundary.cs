@@ -20,17 +20,57 @@ internal static class CallerContextBoundary
         path.StartsWithSegments("/api/v1/shares", StringComparison.Ordinal) ||
         path.StartsWithSegments("/api/v1/analysis-tasks", StringComparison.Ordinal);
 
-    public static IResult? Resolve(HttpContext context, string sharedSecret, string previousSharedSecret)
+    public static IResult? Resolve(
+        HttpContext context,
+        string sharedSecret,
+        string previousSharedSecret,
+        DirectAuthOptions? directAuth = null)
     {
-        if (string.IsNullOrEmpty(sharedSecret) && string.IsNullOrEmpty(previousSharedSecret))
+        var secretsConfigured = !string.IsNullOrEmpty(sharedSecret) || !string.IsNullOrEmpty(previousSharedSecret);
+        var tokenSupplied = context.Request.Headers.ContainsKey(InternalTokenHeader);
+
+        // ① 可信 Node 代理：带内部令牌就必须验签成功，失败不落到直连路径。
+        if (secretsConfigured && tokenSupplied)
         {
-            context.Items[ContextItemKey] = new ForgeXCallerContext("tn_local", "ow_local", false);
+            if (!TryReadSingle(context, InternalTokenHeader, out var suppliedToken) ||
+                (!FixedTimeEquals(suppliedToken, sharedSecret) &&
+                 !FixedTimeEquals(suppliedToken, previousSharedSecret)))
+            {
+                return ApiProblemResults.Create(
+                    context,
+                    StatusCodes.Status401Unauthorized,
+                    "internal_auth_required",
+                    "Trusted sidecar caller context is required");
+            }
+
+            if (!TryReadSingle(context, TenantHeader, out var tenantId) ||
+                !TryReadSingle(context, OwnerHeader, out var ownerId) ||
+                !IsCanonicalId(tenantId, "tn_") ||
+                !IsCanonicalId(ownerId, "ow_"))
+            {
+                return ApiProblemResults.Create(
+                    context,
+                    StatusCodes.Status400BadRequest,
+                    "invalid_caller_context",
+                    "Trusted caller context is invalid");
+            }
+
+            context.Items[ContextItemKey] = new ForgeXCallerContext(tenantId, ownerId, true);
             return null;
         }
 
-        if (!TryReadSingle(context, InternalTokenHeader, out var suppliedToken) ||
-            (!FixedTimeEquals(suppliedToken, sharedSecret) &&
-             !FixedTimeEquals(suppliedToken, previousSharedSecret)))
+        // ② Stage 8.2 直连身份：配置了 DirectAuth:ApiKeys 后，无内部令牌的请求
+        //    按 Node 同一套映射解析（API key → key:{id8}，匿名 → ip:{addr}）。
+        if (directAuth is { Enabled: true })
+        {
+            var problem = DirectCallerAuthentication.Resolve(context, directAuth, out var caller);
+            if (problem is not null) return problem;
+            context.Items[ContextItemKey] = caller!;
+            return null;
+        }
+
+        // ③ 兜底：与迁移前行为一致——配了内部密钥但无令牌 → 401；全未配置 → 本地上下文。
+        if (secretsConfigured)
         {
             return ApiProblemResults.Create(
                 context,
@@ -39,19 +79,7 @@ internal static class CallerContextBoundary
                 "Trusted sidecar caller context is required");
         }
 
-        if (!TryReadSingle(context, TenantHeader, out var tenantId) ||
-            !TryReadSingle(context, OwnerHeader, out var ownerId) ||
-            !IsCanonicalId(tenantId, "tn_") ||
-            !IsCanonicalId(ownerId, "ow_"))
-        {
-            return ApiProblemResults.Create(
-                context,
-                StatusCodes.Status400BadRequest,
-                "invalid_caller_context",
-                "Trusted caller context is invalid");
-        }
-
-        context.Items[ContextItemKey] = new ForgeXCallerContext(tenantId, ownerId, true);
+        context.Items[ContextItemKey] = new ForgeXCallerContext("tn_local", "ow_local", false);
         return null;
     }
 
