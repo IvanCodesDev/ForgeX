@@ -1,16 +1,17 @@
-<p align="center">
-  <img width="150" alt="exec-ab8574a0-a8eb-47a1-adb1-ff8c6883b54f" src="https://github.com/user-attachments/assets/e27d2fef-d894-4958-a884-8a996f8ee131" />
-</p>
-
 <div align="center">
+  <img src="./docs/images/forgex-logo.svg" width="140" alt="FORGE·X Insight Logo">
+
   <h1>FORGE·X Insight</h1>
+
   <p><strong>面向 FDM 3D 打印的预演、G-code 复盘与生产数据分析工具</strong></p>
+
   <p>
     <a href="https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml"><img src="https://github.com/IvanCodesDev/ForgeX/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <img src="https://img.shields.io/badge/version-1.0.0-2563eb" alt="Version 1.0.0">
     <img src="https://img.shields.io/badge/Node.js-%E2%89%A522.13-16a34a" alt="Node.js ≥22.13">
     <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-f97316" alt="Apache-2.0 License"></a>
   </p>
+
   <p><strong>简体中文</strong> · <a href="./.github/README.en.md">English</a></p>
 </div>
 
@@ -18,8 +19,7 @@ FORGE·X Insight 把“打印前检查”和“打印后复盘”放进同一个
 
 它不会直接控制打印机，也不能代替首件试打；它更适合在正式打印前排除明显问题，并把每次真机结果沉淀为下一次决策的依据。
 
-<img width="1440" height="900" alt="workbench-overview" src="https://github.com/user-attachments/assets/36a2ee5c-753d-4d6f-ad22-29da43959be5" />
-
+![FORGE·X Insight 工作台总览](./docs/images/workbench-overview.png)
 
 ## 它能帮你做什么
 
@@ -82,8 +82,7 @@ npm run frontend:dev
 
 导入 G-code 后，可以选择任意层，同时查看二维路径统计和三维平台上的实际位置。
 
-<img width="1440" height="900" alt="gcode-layer-replay" src="https://github.com/user-attachments/assets/bf066a27-992f-4ef8-9ca0-fa828e4c6de1" />
-
+![G-code 逐层路径复盘](./docs/images/gcode-layer-replay.png)
 
 ### 用真机记录校验预测
 
@@ -93,8 +92,7 @@ npm run frontend:dev
 
 上传 CSV 后，可从机台、材料、时间、成本和故障类型等角度分析任务；报告会同时展示样本量、统计显著性、置信区间和来源标记。
 
-<img width="1440" height="900" alt="production-insight" src="https://github.com/user-attachments/assets/e3522857-29cf-48a6-80b2-65b88ab1a381" />
-
+![生产任务数据分析](./docs/images/production-insight.png)
 
 ## 支持的输入与输出
 

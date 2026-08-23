@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <title>FORGE·X Insight</title>
+  <g fill="#202730">
+    <path d="M190 76h132l-14 52H204l-14-52Z" />
+    <path d="M222 140h68l-19 44h-30l-19-44Z" />
+    <rect x="156" y="420" width="200" height="18" rx="9" />
+    <rect x="184" y="452" width="144" height="18" rx="9" />
+  </g>
+  <g stroke="#FF5A1F" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M256 184v49" />
+    <path d="m174 238 164 164" />
+    <path d="M338 238 174 402" />
+  </g>
+</svg>

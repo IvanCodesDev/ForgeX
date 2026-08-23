@@ -73,7 +73,9 @@
     "release:check": "npm run check && npm run test:e2e",
     "demo:record": "node tools/record-demo.js",
     "demo:generate": "node tools/generate-demo-kit.js",
-    "demo:check": "node tools/validate-demo-kit.js"
+    "demo:check": "node tools/validate-demo-kit.js",
+    "docs:screenshots": "node tools/capture-readme-screenshots.js",
+    "brand:render": "node tools/render-logo.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
