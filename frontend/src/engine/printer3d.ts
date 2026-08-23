@@ -805,10 +805,13 @@ export abstract class FXPrinterBase {
    三丝杆热床（打印时热床下沉）/ 耗材料盘 / 舱内灯带 / 基座电控屏
    ══════════════════════════════════════════════════════════════ */
 export class FXPrinterCoreXY extends FXPrinterBase {
-  beam!: THREE.Group;
-  TIP_DZ = 0;
-  protected screwPos!: Array<[number, number]>;
-  protected frameDims!: { HX: number; HZ: number; Y0: number; Y1: number };
+  /* declare：仅类型声明、不发射 ES2022 类字段。真实赋值发生在 _buildMachine（基类构造期虚调用）内；
+     若写成普通字段，子类字段初始化会在 super() 返回后重新 define，把构建期状态抹回 undefined/0
+     （表现为切换机型即崩、喷头 TIP_DZ 错位、Delta 并联臂断线）。 */
+  declare beam: THREE.Group;
+  declare TIP_DZ: number;
+  protected declare screwPos: Array<[number, number]>;
+  protected declare frameDims: { HX: number; HZ: number; Y0: number; Y1: number };
 
   protected _buildMachine(): void {
     this.MODEL_NAME = "FX-256 睿造";

@@ -16,8 +16,10 @@ const Y_AXIS = new THREE.Vector3(0, 1, 0);
    FX-220 轻锋 · i3 龙门（bedslinger）
    ══════════════════════════════════════════════════════════════ */
 export class FXPrinterI3 extends FXPrinterBase {
-  BED_Y = 0;
-  zCarriage!: THREE.Group;
+  /* declare：仅类型声明、不发射 ES2022 类字段（真实赋值在 _buildMachine 基类构造期完成；
+     普通字段声明会在 super() 返回后把这些值抹回 undefined/0，导致切换机型即崩）。 */
+  declare BED_Y: number;
+  declare zCarriage: THREE.Group;
 
   protected _buildMachine(): void {
     this.MODEL_NAME = "FX-220 轻锋";
@@ -169,11 +171,12 @@ export class FXPrinterI3 extends FXPrinterBase {
    FX-Δ260 迅影 · Delta 三角洲（并联臂）
    ══════════════════════════════════════════════════════════════ */
 export class FXPrinterDelta extends FXPrinterBase {
-  BED_Y = 0;
-  ARM_L = 0;
-  TOWER_R = 0;
-  towers!: Array<{ x: number; z: number; u: { x: number; z: number }; car: THREE.Mesh }>;
-  private _arms?: THREE.Mesh[][];
+  /* declare：见 FXPrinterI3 说明。_arms 被抹掉时 _updateKinematics 静默早退，并联臂永远断开。 */
+  declare BED_Y: number;
+  declare ARM_L: number;
+  declare TOWER_R: number;
+  declare towers: Array<{ x: number; z: number; u: { x: number; z: number }; car: THREE.Mesh }>;
+  private declare _arms?: THREE.Mesh[][];
 
   protected _buildMachine(): void {
     this.MODEL_NAME = "FX-Δ260 迅影";
@@ -409,10 +412,11 @@ export class FXPrinterDelta extends FXPrinterBase {
    FX-500 巨匠 · 工业大幅面龙门（四角丝杆升降 XY 龙门）
    ══════════════════════════════════════════════════════════════ */
 export class FXPrinterGantry extends FXPrinterBase {
-  BED_Y = 0;
-  TIP_DZ = 0;
-  beam!: THREE.Group;
-  zGantry!: THREE.Group;
+  /* declare：见 FXPrinterI3 说明。 */
+  declare BED_Y: number;
+  declare TIP_DZ: number;
+  declare beam: THREE.Group;
+  declare zGantry: THREE.Group;
 
   protected _buildMachine(): void {
     this.MODEL_NAME = "FX-500 巨匠";

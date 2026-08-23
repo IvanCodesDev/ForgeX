@@ -7,6 +7,20 @@
 
 ---
 
+## [Unreleased]
+
+### 修复（React 引擎机型状态回归）
+- 修复前端引擎 TS 迁移引入的 ES2022 类字段回归：四个机型子类的字段声明会在基类构造期
+  `_buildMachine()` 赋值之后重新 define，把 `zCarriage` / `zGantry` / `beam` / `_arms` /
+  `BED_Y` / `TIP_DZ` 抹回 `undefined/0`，表现为 FX-220 轻锋、FX-500 巨匠切换即崩，
+  FX-Δ260 迅影并联臂断线，FX-256 睿造开始打印后移动喷头即崩。子类字段改为 `declare`
+  纯类型声明（零运行时发射，保留构造期赋值），几何数值一行未动。
+- 新增 `frontend/src/engine/printers.test.ts`：四机型构造后虚拟 Z / 喷头运动 / 每帧更新
+  可用性与 `BED_Y`、`TIP_DZ`、并联臂逆解的七条回归断言（暂存修复时全部红、恢复后全绿）；
+  Playwright 实测四机型切换与开始打印零页面错误。
+
+---
+
 ## [1.0.0] — 2026-08-14
 
 ### Release boundary
