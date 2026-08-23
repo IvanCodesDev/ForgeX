@@ -146,6 +146,11 @@ function getConfig(overrides) {
       analyticsAuthorityEnabled: env.ANALYTICS_AUTHORITY_ENABLED !== "0",
       analyticsAuthorityTimeoutMs: num(env.ANALYTICS_AUTHORITY_TIMEOUT_MS, 30000),
       analyticsAuthorityMaxBytes: ANALYTICS_AUTHORITY_HARD_MAX_BYTES,
+      // ── Stage 8.1：shares 权威切流（迁移期双向开关）─────────────
+      // node = 本进程存储（默认，行为不变）；csharp = 代理到 ForgeX.Api
+      //（与 G-code 权威共用同一 sidecar origin 与内部信任令牌）。
+      sharesAuthority: String(env.SHARES_AUTHORITY || "node").trim().toLowerCase(),
+      sharesAuthorityTimeoutMs: num(env.SHARES_AUTHORITY_TIMEOUT_MS, 15000),
       calibrationAuthorityEnabled: env.CALIBRATION_AUTHORITY_ENABLED !== "0",
       calibrationAuthorityTimeoutMs: num(env.CALIBRATION_AUTHORITY_TIMEOUT_MS, 30000),
       calibrationAuthorityMaxBytes: CALIBRATION_AUTHORITY_HARD_MAX_BYTES,
@@ -185,6 +190,14 @@ function getConfig(overrides) {
     Math.max(1, num(cfg.calibrationAuthorityMaxBytes, CALIBRATION_AUTHORITY_HARD_MAX_BYTES))
   );
   cfg.serverRulesAuthority = cfg.serverRulesAuthority !== false && cfg.serverRulesAuthority !== "0";
+  cfg.sharesAuthority = String(cfg.sharesAuthority || "node").trim().toLowerCase();
+  if (!["node", "csharp"].includes(cfg.sharesAuthority)) {
+    throw new Error("SHARES_AUTHORITY must be node or csharp");
+  }
+  if (cfg.sharesAuthority === "csharp" && !cfg.gcodeAuthorityUrl) {
+    throw new Error("SHARES_AUTHORITY=csharp 需要先配置 GCODE_AUTHORITY_URL（共用同一 C# sidecar）");
+  }
+  cfg.sharesAuthorityTimeoutMs = Math.max(1, num(cfg.sharesAuthorityTimeoutMs, 15000));
   if (!["file", "postgres", "postgresql"].includes(cfg.persistenceProvider)) {
     throw new Error("PERSISTENCE_PROVIDER must be file or postgres");
   }

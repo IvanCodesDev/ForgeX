@@ -41,6 +41,37 @@ if (!string.Equals(persistenceProvider, "file", StringComparison.OrdinalIgnoreCa
         "Persistence:Provider currently supports only 'file'. The versioned PostgreSQL schema is staged but its runtime driver is not active.");
 }
 
+// ── Stage 8.1：shares 迁 C#（V2.0 手册 §4.2 第 1 项）────────────────────────
+// 默认 disabled：不配置时不注册端点，行为与 1.0.0 完全一致；
+// 配置 postgres 后复用 Node 侧同一张 forgex.shares 表与 RLS 策略。
+var sharesProvider = (builder.Configuration["Shares:Provider"] ?? "disabled").Trim().ToLowerInvariant();
+var sharesPostgresUrl = builder.Configuration["Shares:PostgresUrl"]
+    ?? Environment.GetEnvironmentVariable("POSTGRES_URL")
+    ?? string.Empty;
+if (sharesProvider is not ("disabled" or "postgres"))
+{
+    throw new InvalidOperationException("Shares:Provider must be 'disabled' or 'postgres'.");
+}
+if (sharesProvider == "postgres" && string.IsNullOrWhiteSpace(sharesPostgresUrl))
+{
+    throw new InvalidOperationException("Shares:PostgresUrl (or POSTGRES_URL) is required when Shares:Provider=postgres.");
+}
+var sharesEnabled = sharesProvider == "postgres";
+if (sharesEnabled)
+{
+    var shareTtlMs = ReadInt(builder.Configuration, "Shares:TtlMs", 24 * 60 * 60 * 1000);
+    if (shareTtlMs < 1)
+    {
+        throw new InvalidOperationException("Shares:TtlMs must be positive.");
+    }
+    var shareMaxPerOwner = ReadInt(builder.Configuration, "Shares:MaxPerOwner", PostgresShareRepository.DefaultMaxSharesPerOwner);
+    builder.Services.AddSingleton(new SharePublicBase(builder.Configuration["Shares:PublicBase"]?.TrimEnd('/') ?? string.Empty));
+    builder.Services.AddSingleton(_ => new PostgresShareRepository(
+        sharesPostgresUrl,
+        TimeSpan.FromMilliseconds(shareTtlMs),
+        shareMaxPerOwner));
+}
+
 builder.WebHost.ConfigureKestrel(options =>
 {
     // The authoritative endpoint accepts a raw G-code body and never needs a larger request.
@@ -308,6 +339,30 @@ app.MapPost("/api/v1/jobs/{id}/cancel", GCodeJobEndpoints.CancelAsync)
     .Produces<GCodeJobSnapshotResponse>()
     .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
+
+if (sharesEnabled)
+{
+    app.MapPost("/api/v1/shares", ShareEndpoints.CreateAsync)
+        .WithName("CreateShare")
+        .Accepts<ShareCreateRequestDto>("application/json")
+        .Produces<ShareCreateResponseDto>(StatusCodes.Status201Created)
+        .Produces<ApiProblem>(StatusCodes.Status400BadRequest, "application/problem+json")
+        .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
+        .Produces<ApiProblem>(StatusCodes.Status413PayloadTooLarge, "application/problem+json");
+
+    app.MapPost("/api/v1/shares/{token}/revoke", ShareEndpoints.RevokeAsync)
+        .WithName("RevokeShare")
+        .Accepts<ShareRevokeRequestDto>("application/json")
+        .Produces<ShareRevokeResponseDto>()
+        .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
+        .Produces<ApiProblem>(StatusCodes.Status403Forbidden, "application/problem+json")
+        .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
+
+    app.MapGet("/share/{token}", ShareEndpoints.RenderAsync)
+        .WithName("RenderSharePage")
+        .Produces(StatusCodes.Status200OK, contentType: "text/html")
+        .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
+}
 
 app.Run();
 

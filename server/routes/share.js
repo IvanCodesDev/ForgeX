@@ -1,11 +1,66 @@
 /* 分享路由：为已完成任务生成公开分享页（服务端渲染，零脚本零依赖）。
-   POST /api/share/:taskId → {publicUrl}；GET /share/:token → HTML。 */
+   POST /api/share/:taskId → {publicUrl}；GET /share/:token → HTML。
+
+   Stage 8.1（V2.0 手册 §4.2）：SHARES_AUTHORITY=csharp 时本文件退化为
+   ForgeX.Api 的迁移代理——任务归属校验仍在 Node（任务尚未迁移），
+   分享的存储、撤销与页面渲染改由 C#/PostgreSQL 权威承担；
+   SHARES_AUTHORITY=node（默认）保持既有行为，作为回滚开关。 */
 "use strict";
+const http = require("http");
+const https = require("https");
+const crypto = require("crypto");
 const { HttpError, readJson, sendJson, escapeHtml } = require("../lib/http");
 const { resolveIdentity, requireOwner } = require("../lib/identity");
 
+/* 与 gcode-authority.js 一致的匿名化上下文：C# 只见哈希后的 tenant/owner。 */
+function opaqueContextId(prefix, value) {
+  return prefix + crypto.createHash("sha256").update(String(value)).digest("hex").slice(0, 32);
+}
+
+/* 小体量 JSON 调用（分享创建/撤销都在 KB 级），不做流式。 */
+function authorityRequest(cfg, identity, method, pathname, payload) {
+  const target = new URL(pathname, cfg.gcodeAuthorityUrl);
+  const transport = target.protocol === "https:" ? https : http;
+  const body = payload == null ? null : Buffer.from(JSON.stringify(payload), "utf8");
+  const headers = { accept: "application/json" };
+  if (body) {
+    headers["content-type"] = "application/json";
+    headers["content-length"] = String(body.length);
+  }
+  if (cfg.gcodeAuthorityInternalSecret && identity) {
+    headers["x-forgex-internal-token"] = cfg.gcodeAuthorityInternalSecret;
+    headers["x-forgex-tenant-id"] = opaqueContextId("tn_", identity.tenantId);
+    headers["x-forgex-owner-id"] = opaqueContextId("ow_", identity.caller);
+  }
+  return new Promise((resolve, reject) => {
+    const upstream = transport.request(target, { method, headers, timeout: cfg.sharesAuthorityTimeoutMs }, (res) => {
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => resolve({
+        status: res.statusCode || 502,
+        contentType: res.headers["content-type"] || "application/json",
+        body: Buffer.concat(chunks),
+      }));
+      res.on("error", reject);
+    });
+    upstream.on("timeout", () => upstream.destroy(new Error("shares authority timeout")));
+    upstream.on("error", reject);
+    if (body) upstream.write(body);
+    upstream.end();
+  });
+}
+
+function parseAuthorityJson(response) {
+  try {
+    return JSON.parse(response.body.toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
 function register(router, ctx) {
   const { tasks, shares, cfg, log } = ctx;
+  const csharp = cfg.sharesAuthority === "csharp";
 
   router.add("POST", /^\/api\/share\/([A-Za-z0-9_]+)$/, async (req, res, m, rc) => {
     const identity = resolveIdentity(req, rc, ctx);
@@ -14,7 +69,31 @@ function register(router, ctx) {
     if (!task) throw new HttpError(404, "任务不存在或已过期");
     requireOwner({ owner: task.caller, ownerId: task.ownerId }, identity, ctx, "analysis-task", task.id);
     if (task.status !== "done") throw new HttpError(409, "任务尚未完成，无法分享");
-    const out = await shares.create(task);
+
+    let out;
+    if (csharp) {
+      let response;
+      try {
+        response = await authorityRequest(cfg, identity, "POST", "/api/v1/shares", {
+          report: task.report,
+          question: task.question,
+          engine: task.engine,
+          upstreamTaskId: task.upstreamTaskId,
+        });
+      } catch (error) {
+        log.warn("shares authority create failed", { reqId: rc.reqId, error: error.message });
+        throw new HttpError(502, "分享服务暂不可用，请稍后再试");
+      }
+      const parsed = parseAuthorityJson(response);
+      if (response.status !== 201 || !parsed || !parsed.token) {
+        log.warn("shares authority create rejected", { reqId: rc.reqId, status: response.status });
+        throw new HttpError(502, "分享服务暂不可用，请稍后再试");
+      }
+      out = { token: parsed.token, revokeKey: parsed.revokeKey, expiresAt: parsed.expiresAt };
+    } else {
+      out = await shares.create(task);
+    }
+
     const base = cfg.publicBase || rc.origin || "";
     if (!base) {
       // 没有可用的公网前缀时给相对路径，并明确告知——
@@ -33,13 +112,35 @@ function register(router, ctx) {
     });
   });
 
-  /* 撤销分享。分享出去的东西必须能收回来，这是分享功能的基本义务。 */
+  /* 撤销分享。分享出去的东西必须能收回来，这是分享功能的基本义务。
+     csharp 模式下归属校验由 RLS 承担：他人租户的 token 一律 not_found，
+     不再像 node 模式那样用 403 暴露「存在但不属于你」。 */
   router.add("POST", /^\/api\/share\/([a-f0-9]+)\/revoke$/, async (req, res, m, rc) => {
     const identity = resolveIdentity(req, rc, ctx);
+    const body = await readJson(req, 4 * 1024);
+    if (csharp) {
+      let response;
+      try {
+        response = await authorityRequest(cfg, identity, "POST", "/api/v1/shares/" + m[1] + "/revoke", {
+          revokeKey: body.revokeKey,
+        });
+      } catch (error) {
+        log.warn("shares authority revoke failed", { reqId: rc.reqId, error: error.message });
+        throw new HttpError(502, "分享服务暂不可用，请稍后再试");
+      }
+      if (response.status === 200) {
+        sendJson(res, 200, { revoked: true });
+        return;
+      }
+      if (response.status === 404) throw new HttpError(404, "分享不存在或已过期");
+      if (response.status === 403) throw new HttpError(403, "撤销密钥不正确");
+      log.warn("shares authority revoke rejected", { reqId: rc.reqId, status: response.status });
+      throw new HttpError(502, "分享服务暂不可用，请稍后再试");
+    }
+
     const share = await shares.get(m[1]);
     if (!share) throw new HttpError(404, "分享不存在或已过期");
     requireOwner(share, identity, ctx, "share", m[1]);
-    const body = await readJson(req, 4 * 1024);
     const out = await shares.revoke(m[1], body.revokeKey, identity.tenantId);
     if (!out.ok) {
       throw new HttpError(out.reason === "not_found" ? 404 : 403,
@@ -48,7 +149,25 @@ function register(router, ctx) {
     sendJson(res, 200, { revoked: true });
   });
 
-  router.add("GET", /^\/share\/([a-f0-9]+)$/, async (req, res, m) => {
+  router.add("GET", /^\/share\/([a-f0-9]+)$/, async (req, res, m, rc) => {
+    if (csharp) {
+      let response;
+      try {
+        // 公开页：不注入任何身份上下文，C# 侧以 share_public 通道读取。
+        response = await authorityRequest(cfg, null, "GET", "/share/" + m[1], null);
+      } catch (error) {
+        log.warn("shares authority page failed", { reqId: rc && rc.reqId, error: error.message });
+        throw new HttpError(502, "分享服务暂不可用，请稍后再试");
+      }
+      if (response.status === 404) throw new HttpError(404, "分享页不存在、已过期或已被撤销");
+      if (response.status !== 200) {
+        throw new HttpError(502, "分享服务暂不可用，请稍后再试");
+      }
+      res.writeHead(200, { "Content-Type": response.contentType, "Cache-Control": "no-cache" });
+      res.end(response.body);
+      return;
+    }
+
     const s = await shares.get(m[1]);
     if (!s) throw new HttpError(404, "分享页不存在、已过期或已被撤销");
     const html = renderShareHtml(s);

@@ -5,6 +5,12 @@
     <ProjectReference Include="..\ForgeX.Application\ForgeX.Application.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Stage 8.1：C# 首个 PostgreSQL 访问层（shares）。整个后端此前零外部包，
+         引入 Npgsql 是 V2.0 手册明确批准的决策（doc/FORGE-X优化开发手册 §4.2）。 -->
+    <PackageReference Include="Npgsql" Version="9.0.3" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
