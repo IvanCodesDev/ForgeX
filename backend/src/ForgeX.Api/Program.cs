@@ -72,6 +72,26 @@ if (sharesEnabled)
         shareMaxPerOwner));
 }
 
+// ── Stage 8.1：Node 分析任务历史读取 + SSE 汇入 jobs 事件模型 ────────────────
+// Node 仍执行分析并逐事件 UPSERT 快照；C# 从同一张表提供历史与事件流。
+var analysisTasksProvider = (builder.Configuration["AnalysisTasks:Provider"] ?? "disabled").Trim().ToLowerInvariant();
+var analysisTasksPostgresUrl = builder.Configuration["AnalysisTasks:PostgresUrl"]
+    ?? Environment.GetEnvironmentVariable("POSTGRES_URL")
+    ?? string.Empty;
+if (analysisTasksProvider is not ("disabled" or "postgres"))
+{
+    throw new InvalidOperationException("AnalysisTasks:Provider must be 'disabled' or 'postgres'.");
+}
+if (analysisTasksProvider == "postgres" && string.IsNullOrWhiteSpace(analysisTasksPostgresUrl))
+{
+    throw new InvalidOperationException("AnalysisTasks:PostgresUrl (or POSTGRES_URL) is required when AnalysisTasks:Provider=postgres.");
+}
+var analysisTasksEnabled = analysisTasksProvider == "postgres";
+if (analysisTasksEnabled)
+{
+    builder.Services.AddSingleton(_ => new PostgresAnalysisTaskRepository(analysisTasksPostgresUrl));
+}
+
 builder.WebHost.ConfigureKestrel(options =>
 {
     // The authoritative endpoint accepts a raw G-code body and never needs a larger request.
@@ -361,6 +381,27 @@ if (sharesEnabled)
     app.MapGet("/share/{token}", ShareEndpoints.RenderAsync)
         .WithName("RenderSharePage")
         .Produces(StatusCodes.Status200OK, contentType: "text/html")
+        .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
+}
+
+if (analysisTasksEnabled)
+{
+    app.MapGet("/api/v1/analysis-tasks", AnalysisTaskEndpoints.ListAsync)
+        .WithName("ListAnalysisTasks")
+        .Produces<AnalysisTaskListResponseDto>()
+        .Produces<ApiProblem>(StatusCodes.Status400BadRequest, "application/problem+json")
+        .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json");
+
+    app.MapGet("/api/v1/analysis-tasks/{id}", AnalysisTaskEndpoints.GetAsync)
+        .WithName("GetAnalysisTask")
+        .Produces<AnalysisTaskSnapshotDto>()
+        .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
+        .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
+
+    app.MapGet("/api/v1/analysis-tasks/{id}/events", AnalysisTaskEndpoints.EventsAsync)
+        .WithName("StreamAnalysisTaskEvents")
+        .Produces(StatusCodes.Status200OK, contentType: "text/event-stream")
+        .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
         .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
 }
 

@@ -17,7 +17,8 @@ internal static class CallerContextBoundary
         path.StartsWithSegments("/api/v1/jobs", StringComparison.Ordinal) ||
         // Stage 8.1: share creation/revocation need the trusted caller context;
         // the public share page (/share/{token}) intentionally stays outside.
-        path.StartsWithSegments("/api/v1/shares", StringComparison.Ordinal);
+        path.StartsWithSegments("/api/v1/shares", StringComparison.Ordinal) ||
+        path.StartsWithSegments("/api/v1/analysis-tasks", StringComparison.Ordinal);
 
     public static IResult? Resolve(HttpContext context, string sharedSecret, string previousSharedSecret)
     {
