@@ -18,7 +18,9 @@ internal static class CallerContextBoundary
         // Stage 8.1: share creation/revocation need the trusted caller context;
         // the public share page (/share/{token}) intentionally stays outside.
         path.StartsWithSegments("/api/v1/shares", StringComparison.Ordinal) ||
-        path.StartsWithSegments("/api/v1/analysis-tasks", StringComparison.Ordinal);
+        path.StartsWithSegments("/api/v1/analysis-tasks", StringComparison.Ordinal) ||
+        // Stage 8.4: datasource reads are always owner-scoped through RLS.
+        path.StartsWithSegments("/api/v1/datasources", StringComparison.Ordinal);
 
     public static IResult? Resolve(
         HttpContext context,

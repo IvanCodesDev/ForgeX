@@ -6,7 +6,14 @@
    POST /api/v1/analysis-tasks；C# 逐事件 UPSERT 共享 PostgreSQL 行后返回
    终态快照，Node 收编进 TaskStore，既有 SSE / 结果 / 轮询路由原样服务。
    AI 叙述腿（Partner SSO / OpenAI 兼容）始终留在 Node：provider 密钥不出本进程。
-   ANALYSIS_AUTHORITY=node（默认）保持既有行为，作为回滚开关。 */
+   ANALYSIS_AUTHORITY=node（默认）保持既有行为，作为回滚开关。
+
+   Stage 8.4：DATASOURCES_READ_AUTHORITY=csharp 时，持久化数据源不再内联全量
+   行——代理只发 { schemaVersion, question, datasourceId }，行数据由 C# 在同一
+   匿名化租户上下文（RLS GUC）下从共享 forgex.datasources 读取。Node 仍先做
+   轻量归属校验（不存在/越权在本进程就 404/403）。内置 sample 只存在于 Node
+   内存，任何模式下都继续走 Stage 8.3 内联行载荷。
+   DATASOURCES_READ_AUTHORITY=node（默认）保持 Stage 8.3 行为，作为回滚开关。 */
 "use strict";
 const http = require("http");
 const https = require("https");
@@ -92,18 +99,31 @@ function register(router, ctx) {
     // Stage 8.3：规则腿迁 C#。AI 腿（含额度耗尽的降级路径）留在 Node——
     // 降级文案与配额语义是 Node 的编排职责，provider 密钥也不出本进程。
     if (csharp && !willUseAi) {
+      // Stage 8.4：持久化数据源只发 datasourceId，C# 按 RLS 上下文自行读行；
+      // 内置 sample（仅存于 Node 内存）与回滚开关 node 仍内联全量行。
+      const slimPayload = cfg.datasourcesReadAuthority === "csharp" && !ds.builtin;
       let response;
       try {
-        response = await authorityRequest(cfg, identity, "POST", "/api/v1/analysis-tasks", {
-          schemaVersion: "1.0",
-          question,
-          datasourceId: ds.id,
-          rows: (ds.rows || []).map(authorityRow),
-          provenance: null,
-        });
+        response = await authorityRequest(cfg, identity, "POST", "/api/v1/analysis-tasks", slimPayload
+          ? {
+            schemaVersion: "1.0",
+            question,
+            datasourceId: ds.id,
+          }
+          : {
+            schemaVersion: "1.0",
+            question,
+            datasourceId: ds.id,
+            rows: (ds.rows || []).map(authorityRow),
+            provenance: null,
+          });
       } catch (error) {
         log.warn("analysis authority create failed", { reqId: rc.reqId, error: error.message });
         throw new HttpError(502, "分析服务暂不可用，请稍后再试");
+      }
+      // 竞态兜底：Node 校验后数据源在 C# 读取前过期/被清理 → 与本地 404 同语义。
+      if (slimPayload && response.status === 404) {
+        throw new HttpError(404, "数据源不存在或已过期，请重新上传");
       }
       const parsed = parseAuthorityJson(response);
       if (response.status !== 201 || !parsed || !parsed.task || !parsed.task.id) {
@@ -135,6 +155,7 @@ function register(router, ctx) {
         status: task.status,
         datasourceId: ds.id,
         rows: ds.rows.length,
+        payload: slimPayload ? "datasource-id" : "rows",
       });
       sendJson(res, 202, {
         taskId: task.id,

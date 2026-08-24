@@ -9,6 +9,31 @@
 
 ## [Unreleased]
 
+### Stage 8.4：数据源读取权威迁 C#
+- ForgeX.Infrastructure 新增 `PostgresDatasourceRepository`（`Datasources:Provider=postgres`
+  时注册）：`server/services/postgres-datasource.js` 读取侧的行为孪生——同一张
+  `forgex.datasources` 表、同一 RLS GUC 契约（`app.tenant_id` / `app.owner_id`）、逐字段
+  对齐的映射（`rows_json` / `content_sha256` / `cache_key` / `warnings_json` /
+  `provenance_json`）与相同的过期语义（越过 `expires_at_utc` 读作不存在）。
+- `POST /api/v1/analysis-tasks` 增量接受省略 `rows` 的 datasourceId-only 请求
+  （`{ schemaVersion, question, datasourceId }`）：C# 在调用方 RLS 上下文下从共享
+  PostgreSQL 行加载归一化行数据，归属校验隐含于 RLS——错误租户/属主、已过期记录与
+  非持久化 id（不符合 `ds_`+24 位十六进制 schema 形状者，含仅存于 Node 内存的内置
+  `sample`）一律返回稳定 `datasource_not_found`；内联 `rows` 请求保持 Stage 8.3 行为
+  原样（双跑过渡期）；未配置读取权威却省略 rows 时返回稳定
+  `analysis_task_rows_required`。新增 `GET /api/v1/datasources/{id}`（仅配置 postgres
+  时挂载）提供属主范围的元数据快照（行数/摘要/来源/时间戳，不回传原始行与 CSV）。
+- Node 新增迁移期双向开关 `DATASOURCES_READ_AUTHORITY=node|csharp`（默认 node，
+  即回滚开关，线上行为与 Stage 8.3 完全一致；csharp 需先配置 `GCODE_AUTHORITY_URL`
+  与 `PERSISTENCE_PROVIDER=postgres`）。csharp 时 `ANALYSIS_AUTHORITY=csharp` 代理对
+  持久化数据源不再内联全量行，只转发瘦载荷 `{ schemaVersion, question, datasourceId }`；
+  Node 轻量归属校验保留在前（未知/越权数据源不出本进程即 404/403），瘦载荷路径上的
+  C# 404（两次校验间数据源过期的竞态）映射回同语义的 Node 404。内置 `sample`
+  任何模式下都继续内联行。
+- `tests/analysis-authority.test.js` 扩展至 53 项：瘦载荷键集合与匿名化上下文头、
+  内置 sample 保持内联行、未知数据源零 sidecar 调用、`DATASOURCES_READ_AUTHORITY=node`
+  回滚开关保持 Stage 8.3 全量行、两条配置守卫。
+
 ### Stage 8.3：分析任务规则腿计算迁 C#
 - ForgeX.Api 新增 `POST /api/v1/analysis-tasks`（仅 `AnalysisTasks:Provider=postgres` 时挂载）：
   接受与 `/api/v1/analytics/reports` 完全一致的归一化行契约加 `datasourceId`，以确定性

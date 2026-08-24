@@ -158,6 +158,13 @@ function getConfig(overrides) {
       // （InfiniSynapse / OpenAI 兼容）永远留在 Node——provider 密钥不出本进程。
       analysisAuthority: String(env.ANALYSIS_AUTHORITY || "node").trim().toLowerCase(),
       analysisAuthorityTimeoutMs: num(env.ANALYSIS_AUTHORITY_TIMEOUT_MS, 30000),
+      // ── Stage 8.4：数据源读取权威（迁移期双向开关）─────────────
+      // node = ANALYSIS_AUTHORITY=csharp 时代理仍内联全量行（Stage 8.3 行为，
+      // 即回滚开关）；csharp = 持久化数据源只转发 datasourceId，行数据由
+      // ForgeX.Api 在调用方 RLS 上下文下从共享 forgex.datasources 读取
+      //（需 PERSISTENCE_PROVIDER=postgres 且 C# 侧 Datasources:Provider=postgres）。
+      // 内置 sample 只存在于 Node 内存，任何模式下都继续内联行。
+      datasourcesReadAuthority: String(env.DATASOURCES_READ_AUTHORITY || "node").trim().toLowerCase(),
       calibrationAuthorityEnabled: env.CALIBRATION_AUTHORITY_ENABLED !== "0",
       calibrationAuthorityTimeoutMs: num(env.CALIBRATION_AUTHORITY_TIMEOUT_MS, 30000),
       calibrationAuthorityMaxBytes: CALIBRATION_AUTHORITY_HARD_MAX_BYTES,
@@ -213,6 +220,16 @@ function getConfig(overrides) {
     throw new Error("ANALYSIS_AUTHORITY=csharp 需要先配置 GCODE_AUTHORITY_URL（共用同一 C# sidecar）");
   }
   cfg.analysisAuthorityTimeoutMs = Math.max(1, num(cfg.analysisAuthorityTimeoutMs, 30000));
+  cfg.datasourcesReadAuthority = String(cfg.datasourcesReadAuthority || "node").trim().toLowerCase();
+  if (!["node", "csharp"].includes(cfg.datasourcesReadAuthority)) {
+    throw new Error("DATASOURCES_READ_AUTHORITY must be node or csharp");
+  }
+  if (cfg.datasourcesReadAuthority === "csharp" && !cfg.gcodeAuthorityUrl) {
+    throw new Error("DATASOURCES_READ_AUTHORITY=csharp 需要先配置 GCODE_AUTHORITY_URL（共用同一 C# sidecar）");
+  }
+  if (cfg.datasourcesReadAuthority === "csharp" && cfg.persistenceProvider === "file") {
+    throw new Error("DATASOURCES_READ_AUTHORITY=csharp 需要 PERSISTENCE_PROVIDER=postgres（C# 只能读共享 PostgreSQL 数据源）");
+  }
   if (!["file", "postgres", "postgresql"].includes(cfg.persistenceProvider)) {
     throw new Error("PERSISTENCE_PROVIDER must be file or postgres");
   }

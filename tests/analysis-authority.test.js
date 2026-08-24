@@ -1,7 +1,12 @@
 /* Stage 8.3：分析任务规则腿权威切流（ANALYSIS_AUTHORITY=node|csharp）。
    csharp 模式下 Node 保留身份/限流/数据源归属校验，把归一化行转发给
    POST /api/v1/analysis-tasks；收编 C# 终态快照后，既有 result / 轮询 /
-   SSE 重放路由必须原样服务。node 模式（默认）与授权失败路径同样覆盖。 */
+   SSE 重放路由必须原样服务。node 模式（默认）与授权失败路径同样覆盖。
+
+   Stage 8.4：数据源读取权威（DATASOURCES_READ_AUTHORITY=node|csharp）。
+   csharp 时持久化数据源只转发 { schemaVersion, question, datasourceId }（瘦载荷），
+   行数据由 C# 按 RLS 上下文自行读取；内置 sample 与回滚开关 node 仍内联全量行。
+   Node 本地归属校验保留（未知数据源 404 不出本进程），配置守卫同样覆盖。 */
 "use strict";
 
 const assert = require("assert");
@@ -9,6 +14,63 @@ const http = require("http");
 const { createApp } = require("../server/index");
 
 const INTERNAL_SECRET = "analysis-authority-internal-secret-0123456789";
+
+const CSV = [
+  "job_id,date,machine_id,model_name,material,layer_height_mm,duration_min,filament_g,cost_fen,status,fail_reason,energy_kwh",
+  "J1,2026-08-01,FX-01,bracket,PLA,0.2,30,8,120,success,,0.1",
+  "J2,2026-08-02,FX-02,bracket,PLA,0.2,32,8,120,fail,warping,0.1",
+].join("\n");
+
+/* 与 tests/postgres-datasource.test.js 同款假 PostgreSQL：只覆盖本链路会触发的语句。 */
+class FakeClient {
+  constructor(pool) {
+    this.pool = pool;
+  }
+
+  async query(sql, params) {
+    const text = String(sql).replace(/\s+/g, " ").trim();
+    if (/^(BEGIN|COMMIT|ROLLBACK)$/i.test(text)) return { rows: [], rowCount: 0 };
+    if (/set_config\('app\.(tenant_id|share_public)'/i.test(text)) return { rows: [], rowCount: 1 };
+    if (/SELECT 1 FROM forgex\.(datasources|knowledge_docs|shares|node_analysis_tasks) LIMIT 0/i.test(text)) {
+      return { rows: [], rowCount: 0 };
+    }
+    if (/forgex\.(knowledge_docs|node_analysis_tasks)/i.test(text) && /^(SELECT \*|DELETE|UPDATE)/i.test(text)) {
+      return { rows: [], rowCount: 0 };
+    }
+    if (/SELECT \* FROM forgex\.datasources WHERE tenant_id=\$1 AND owner_id=\$2 AND cache_key=\$3/i.test(text)) {
+      const row = this.pool.rows.find((item) => item.tenant_id === params[0] && item.owner_id === params[1] && item.cache_key === params[2]);
+      return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
+    }
+    if (/SELECT \* FROM forgex\.datasources WHERE id=\$1 AND tenant_id=\$2 AND owner_id=\$3/i.test(text)) {
+      const row = this.pool.rows.find((item) => item.id === params[0] && item.tenant_id === params[1] && item.owner_id === params[2]);
+      return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
+    }
+    if (/^INSERT INTO forgex\.datasources/i.test(text)) {
+      const [id, tenantId, ownerId, name, csv, rowsJson, contentSha256, cacheKey, warningsJson, provenanceJson, createdAt, expiresAt] = params;
+      this.pool.rows.push({
+        id, tenant_id: tenantId, owner_id: ownerId, name, csv,
+        rows_json: JSON.parse(rowsJson), content_sha256: contentSha256, cache_key: cacheKey,
+        warnings_json: JSON.parse(warningsJson), provenance_json: JSON.parse(provenanceJson),
+        created_at_utc: createdAt, expires_at_utc: expiresAt,
+      });
+      return { rows: [], rowCount: 1 };
+    }
+    if (/^DELETE FROM forgex\.datasources/i.test(text)) return { rows: [], rowCount: 0 };
+    throw new Error(`Unhandled fake SQL: ${text}`);
+  }
+
+  release() {}
+}
+
+class FakePool {
+  constructor() {
+    this.rows = [];
+  }
+
+  async connect() {
+    return new FakeClient(this);
+  }
+}
 
 const apps = [];
 
@@ -112,7 +174,8 @@ function authoritySnapshot(request) {
     evidence: [],
     intent: "overview",
     intentMatched: false,
-    rowCount: request.rows.length,
+    // Stage 8.4 瘦载荷不带 rows；真实 C# 会按 RLS 读库，这里 mock 用 0 占位。
+    rowCount: (request.rows || []).length,
     engine: "server-rules",
     provenance: null,
     highlight: null,
@@ -226,7 +289,94 @@ async function main() {
       /ANALYSIS_AUTHORITY=csharp/
     );
 
-    console.log("Analysis authority proxy PASS: 28/28");
+    // ── Stage 8.4：数据源读取权威 csharp——持久化数据源走瘦载荷 ──
+    const pool = new FakePool();
+    const slimBase = await listenApp({
+      analysisAuthority: "csharp",
+      datasourcesReadAuthority: "csharp",
+      persistenceProvider: "postgres",
+      postgresUrl: "postgres://fake/forgex",
+      postgresPool: pool,
+      gcodeAuthorityUrl: authorityOrigin,
+      gcodeAuthorityInternalSecret: INTERNAL_SECRET,
+    });
+    const uploaded = await post(slimBase, "/api/datasource", { name: "jobs.csv", csv: CSV });
+    assert.strictEqual(uploaded.status, 201);
+    assert.ok(uploaded.json.datasourceId.startsWith("ds_"));
+
+    const slimBefore = observed.length;
+    const slimCreated = await post(slimBase, "/api/analyze", {
+      question: "失败归因",
+      datasourceId: uploaded.json.datasourceId,
+    });
+    assert.strictEqual(slimCreated.status, 202);
+    assert.strictEqual(slimCreated.json.taskId, "t_0123456789abcdef");
+    assert.strictEqual(observed.length, slimBefore + 1);
+    const slimUpstream = JSON.parse(observed[slimBefore].body);
+    assert.deepStrictEqual(
+      Object.keys(slimUpstream).sort(),
+      ["datasourceId", "question", "schemaVersion"],
+      "persisted datasources must forward the slim payload without rows/provenance"
+    );
+    assert.strictEqual(slimUpstream.schemaVersion, "1.0");
+    assert.strictEqual(slimUpstream.datasourceId, uploaded.json.datasourceId);
+    assert.strictEqual(slimUpstream.question, "失败归因");
+    assert.match(observed[slimBefore].headers["x-forgex-tenant-id"], /^tn_[a-f0-9]{32}$/);
+    assert.match(observed[slimBefore].headers["x-forgex-owner-id"], /^ow_[a-f0-9]{32}$/);
+    const slimResult = await jfetch(slimBase, "/api/analyze/" + slimCreated.json.taskId + "/result");
+    assert.strictEqual(slimResult.status, 200);
+    assert.strictEqual(slimResult.json.statsBy, "csharp-analytics-authority");
+
+    // 内置 sample 只存在于 Node 内存 → 即便 csharp 读取权威开启也内联全量行
+    const sampleCreated = await post(slimBase, "/api/analyze", { question: "成本趋势", datasourceId: "sample" });
+    assert.strictEqual(sampleCreated.status, 202);
+    const sampleUpstream = JSON.parse(observed[observed.length - 1].body);
+    assert.strictEqual(sampleUpstream.datasourceId, "sample");
+    assert.ok(Array.isArray(sampleUpstream.rows) && sampleUpstream.rows.length > 0, "builtin sample keeps inline rows");
+
+    // Node 本地归属校验保留：未知数据源 404，不产生 sidecar 调用
+    const missingBefore = observed.length;
+    const missing = await post(slimBase, "/api/analyze", {
+      question: "失败归因",
+      datasourceId: "ds_" + "0".repeat(24),
+    });
+    assert.strictEqual(missing.status, 404);
+    assert.strictEqual(observed.length, missingBefore, "unknown datasource must not reach the sidecar");
+
+    // ── 回滚开关：DATASOURCES_READ_AUTHORITY=node（默认）保持 Stage 8.3 全量行 ──
+    const rowsBase = await listenApp({
+      analysisAuthority: "csharp",
+      persistenceProvider: "postgres",
+      postgresUrl: "postgres://fake/forgex",
+      postgresPool: pool,
+      gcodeAuthorityUrl: authorityOrigin,
+      gcodeAuthorityInternalSecret: INTERNAL_SECRET,
+    });
+    const rollback = await post(rowsBase, "/api/analyze", {
+      question: "失败归因",
+      datasourceId: uploaded.json.datasourceId,
+    });
+    assert.strictEqual(rollback.status, 202);
+    const rollbackUpstream = JSON.parse(observed[observed.length - 1].body);
+    assert.ok(Array.isArray(rollbackUpstream.rows) && rollbackUpstream.rows.length === 2, "rollback keeps Stage 8.3 inline rows");
+    assert.strictEqual(rollbackUpstream.provenance, null);
+
+    // ── 配置守卫：csharp 读取权威依赖 sidecar origin 与 PostgreSQL 持久化 ──
+    assert.throws(
+      () => createApp({ datasourcesReadAuthority: "csharp", logLevel: "error", dataDir: "" }),
+      /DATASOURCES_READ_AUTHORITY=csharp/
+    );
+    assert.throws(
+      () => createApp({
+        datasourcesReadAuthority: "csharp",
+        gcodeAuthorityUrl: authorityOrigin,
+        logLevel: "error",
+        dataDir: "",
+      }),
+      /PERSISTENCE_PROVIDER=postgres/
+    );
+
+    console.log("Analysis authority proxy PASS: 53/53");
   } finally {
     for (const app of apps.reverse()) await app.close();
     await new Promise((resolve) => authority.close(resolve));

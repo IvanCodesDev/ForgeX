@@ -17,6 +17,10 @@ namespace ForgeX.Api;
 /// progress event into forgex.node_analysis_tasks exactly like the Node store, so
 /// the existing read/SSE endpoints and the Node gateway serve C#-computed tasks
 /// without any wire change. AI narration legs stay on the Node providers.
+/// Stage 8.4: requests may omit rows entirely and carry only a datasourceId; the
+/// normalized rows are then loaded from forgex.datasources under the caller's RLS
+/// context (Datasources:Provider=postgres). Inline rows remain accepted unchanged
+/// for the dual-run transition period and for the Node-only builtin datasource.
 /// </summary>
 internal static class AnalysisTaskEndpoints
 {
@@ -88,10 +92,25 @@ internal static class AnalysisTaskEndpoints
                 exception.Message);
         }
 
+        // Stage 8.4: a request without inline rows resolves them from the shared
+        // forgex.datasources row under the caller's RLS context. Inline rows keep
+        // the exact Stage 8.3 behavior (dual-run transition and builtin datasource).
+        var requestRows = request?.Rows;
+        if (request is not null && requestRows is null)
+        {
+            var resolved = await ResolveDatasourceRowsAsync(context, request);
+            if (resolved.Problem is not null)
+            {
+                return resolved.Problem;
+            }
+
+            requestRows = resolved.Rows;
+        }
+
         // Rows/question/provenance ride the exact analytics-report contract.
         var analyticsShape = request is null
             ? null
-            : new AnalyticsReportRequestDto(request.SchemaVersion, request.Question, request.Rows, request.Provenance);
+            : new AnalyticsReportRequestDto(request.SchemaVersion, request.Question, requestRows, request.Provenance);
         if (!AnalyticsEndpoints.TryValidate(analyticsShape, out var question, out var rows, out var provenance, out var errors))
         {
             return ApiProblemResults.Create(
@@ -146,6 +165,56 @@ internal static class AnalysisTaskEndpoints
         return Results.Json(
             new AnalysisTaskCreateResponseDto(ToSnapshot(record), events.RootElement.Clone()),
             statusCode: StatusCodes.Status201Created);
+    }
+
+    /// <summary>
+    /// Stage 8.4 row resolution: load the normalized rows of a persisted datasource
+    /// under the caller's RLS context. rows_json already holds the exact snake_case
+    /// row contract the analytics authority accepts (the Node store persists the
+    /// parseCsv-normalized rows), so the deserialized rows flow through the same
+    /// TryValidate/TryMapRow path as an inline Stage 8.3 payload. Wrong tenant/owner,
+    /// expired records, and non-persisted ids (including the Node-only builtin
+    /// "sample") all read as the same stable not-found.
+    /// </summary>
+    private static async Task<(IResult? Problem, IReadOnlyList<AnalyticsRowRequestDto>? Rows)> ResolveDatasourceRowsAsync(
+        HttpContext context,
+        AnalysisTaskCreateRequestDto request)
+    {
+        var datasourceId = request.DatasourceId ?? string.Empty;
+        if (datasourceId.Length is < 1 or > MaxDatasourceIdLength)
+        {
+            return (ApiProblemResults.Create(
+                context,
+                StatusCodes.Status400BadRequest,
+                "invalid_datasource_id",
+                $"datasourceId must contain 1 to {MaxDatasourceIdLength} characters"), null);
+        }
+
+        var datasources = context.RequestServices.GetService<PostgresDatasourceRepository>();
+        if (datasources is null)
+        {
+            return (ApiProblemResults.Create(
+                context,
+                StatusCodes.Status400BadRequest,
+                "analysis_task_rows_required",
+                "Analysis task rows are required",
+                "Inline rows are required because the datasource read authority (Datasources:Provider=postgres) is not configured."), null);
+        }
+
+        if (!PostgresDatasourceRepository.IsPersistedId(datasourceId))
+        {
+            return (DatasourceEndpoints.NotFound(context), null);
+        }
+
+        var caller = CallerContextBoundary.GetRequired(context);
+        var record = await datasources.GetAsync(caller.TenantId, caller.OwnerId, datasourceId, context.RequestAborted);
+        if (record is null)
+        {
+            return (DatasourceEndpoints.NotFound(context), null);
+        }
+
+        var rows = JsonSerializer.Deserialize<List<AnalyticsRowRequestDto>>(record.RowsJson, EventJsonOptions);
+        return (null, rows);
     }
 
     /// <summary>

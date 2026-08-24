@@ -72,6 +72,29 @@ if (sharesEnabled)
         shareMaxPerOwner));
 }
 
+// ── Stage 8.4：数据源读取权威（V2.0 手册 §9.5 数据源片）──────────────────
+// 默认 disabled：不注册仓库与端点，行为与 Stage 8.3 完全一致；配置 postgres 后
+// 复用 Node 侧同一张 forgex.datasources 表与 RLS 策略，POST /api/v1/analysis-tasks
+// 才接受省略 rows 的 datasourceId-only 请求。内置 sample 数据源只存在于 Node
+// 内存（每次启动由代码重建，从不持久化），因此永远由 Node 以内联行代理。
+var datasourcesProvider = (builder.Configuration["Datasources:Provider"] ?? "disabled").Trim().ToLowerInvariant();
+var datasourcesPostgresUrl = builder.Configuration["Datasources:PostgresUrl"]
+    ?? Environment.GetEnvironmentVariable("POSTGRES_URL")
+    ?? string.Empty;
+if (datasourcesProvider is not ("disabled" or "postgres"))
+{
+    throw new InvalidOperationException("Datasources:Provider must be 'disabled' or 'postgres'.");
+}
+if (datasourcesProvider == "postgres" && string.IsNullOrWhiteSpace(datasourcesPostgresUrl))
+{
+    throw new InvalidOperationException("Datasources:PostgresUrl (or POSTGRES_URL) is required when Datasources:Provider=postgres.");
+}
+var datasourcesEnabled = datasourcesProvider == "postgres";
+if (datasourcesEnabled)
+{
+    builder.Services.AddSingleton(_ => new PostgresDatasourceRepository(datasourcesPostgresUrl));
+}
+
 // ── Stage 8.1：Node 分析任务历史读取 + SSE 汇入 jobs 事件模型 ────────────────
 // Stage 8.3：规则腿计算也迁入本进程——POST 创建任务并以 ForgeX.Analytics 直接执行，
 // 逐事件 UPSERT 到同一张 forgex.node_analysis_tasks（与 Node 存储字节兼容）；
@@ -393,6 +416,15 @@ if (sharesEnabled)
     app.MapGet("/share/{token}", ShareEndpoints.RenderAsync)
         .WithName("RenderSharePage")
         .Produces(StatusCodes.Status200OK, contentType: "text/html")
+        .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
+}
+
+if (datasourcesEnabled)
+{
+    app.MapGet("/api/v1/datasources/{id}", DatasourceEndpoints.GetAsync)
+        .WithName("GetDatasource")
+        .Produces<DatasourceSnapshotDto>()
+        .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
         .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
 }
 

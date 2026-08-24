@@ -156,7 +156,7 @@ verify, then clear the previous value. The full procedure and alert response are
 `deploy/RUNBOOK.md`; capacity assumptions and SLOs are in `deploy/capacity-plan.md` and
 `deploy/SLO.md`.
 
-## Stage 8 authority migration (shares, analysis tasks)
+## Stage 8 authority migration (shares, analysis tasks, datasources)
 
 Stage 8.1 moved the shares authority to C#/PostgreSQL (`Shares:Provider=postgres`, Node switch
 `SHARES_AUTHORITY=node|csharp`) and added the read side of Node analysis tasks
@@ -188,6 +188,33 @@ terminal snapshot is adopted into the Node task map so the existing result/poll/
 serve unchanged. AI narration legs (Partner SSO, OpenAI-compatible) always stay on the Node
 providers; provider keys never reach the sidecar. `ANALYSIS_AUTHORITY=node` (default) is the
 explicit rollback switch and keeps behavior identical to Stage 8.1.
+
+### Stage 8.4 datasource read authority
+
+`Datasources:Provider=postgres` registers `PostgresDatasourceRepository`, the read twin of
+`server/services/postgres-datasource.js` over the shared `forgex.datasources` table: the same RLS
+GUC contract (`app.tenant_id` / `app.owner_id`), the same field mapping (`rows_json`,
+`content_sha256`, `cache_key`, `warnings_json`, `provenance_json`), and the same expiry semantics
+(a record past `expires_at_utc` reads as absent). With it configured, `POST /api/v1/analysis-tasks`
+additionally accepts requests that omit `rows` entirely — `{ schemaVersion, question, datasourceId }`
+— and loads the normalized rows from PostgreSQL under the caller's RLS context. Ownership is
+implicit: a wrong tenant/owner, an expired record, or a non-persisted id (anything outside the
+`ds_` + 24-hex schema shape, including the Node-only builtin `sample`) returns the same stable
+`datasource_not_found`. Inline rows keep the exact Stage 8.3 behavior for the dual-run transition
+period; when rows are omitted without the provider configured, the endpoint returns a stable
+`analysis_task_rows_required` problem. `GET /api/v1/datasources/{id}` (mounted only with the
+provider) serves the owner-scoped metadata snapshot — id, name, row count, content SHA-256,
+warnings, provenance, timestamps — without shipping raw rows or CSV over the wire.
+
+Node keeps the paired switch: `DATASOURCES_READ_AUTHORITY=csharp` (requires
+`PERSISTENCE_PROVIDER=postgres` and the sidecar origin) makes the `ANALYSIS_AUTHORITY=csharp`
+proxy stop inlining row payloads for persisted datasources and forward the slim
+`{ schemaVersion, question, datasourceId }` body instead; the lightweight Node ownership check
+stays in front, so unknown or foreign datasources still 404/403 without reaching the sidecar, and
+a C# not-found on the slim path (a datasource expiring between the two checks) maps back to the
+same Node 404. The builtin `sample` datasource lives only in Node memory and always keeps the
+Stage 8.3 inline-rows payload. `DATASOURCES_READ_AUTHORITY=node` (default) is the explicit
+rollback switch and keeps the wire behavior identical to Stage 8.3.
 
 ## Stage 4 analytics dual-run
 
