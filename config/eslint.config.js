@@ -60,6 +60,7 @@ const BROWSER_GLOBALS = {
   requestAnimationFrame: "readonly",
   cancelAnimationFrame: "readonly",
   fetch: "readonly",
+  Event: "readonly",
   EventSource: "readonly",
   FileReader: "readonly",
   Image: "readonly",
@@ -198,9 +199,9 @@ module.exports = [
   },
 
   /* E2E 用例是 Node 文件，但 page.evaluate() 的回调在浏览器里执行——
-     同一个文件里两套运行环境，两套全局都得放行。 */
+     同一个文件里两套运行环境，两套全局都得放行。README 截图工具同理。 */
   {
-    files: ["tests/e2e/**/*.js", "config/playwright.config.js"],
+    files: ["tests/e2e/**/*.js", "config/playwright.config.js", "tools/capture-readme-screenshots.js"],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "commonjs",

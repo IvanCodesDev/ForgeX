@@ -3,6 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
+const { collectDotnetPackageViolations } = require("./verify-dotnet-packages");
 
 const root = path.resolve(__dirname, "..");
 const policy = JSON.parse(fs.readFileSync(path.join(root, "config", "dependency-policy.json"), "utf8"));
@@ -87,11 +88,10 @@ check(
   actualInstallScripts
 );
 
-const projectFiles = files.filter((file) => file.endsWith(".csproj"));
-const packageReferences = projectFiles.filter((file) =>
-  fs.readFileSync(path.join(root, file), "utf8").includes("<PackageReference")
-);
-check("dotnet-zero-external-packages", packageReferences.length === 0, packageReferences);
+// Stage 8.1 起零外部包规则收敛为「逐个评审并锁定版本的允许清单」（当前仅 Npgsql，
+// 见 backend/NuGet.Config 注释与 V2.0 手册 §4.2）；清单之外的任何引用仍然失败。
+const packageViolations = collectDotnetPackageViolations();
+check("dotnet-approved-packages", packageViolations.length === 0, packageViolations);
 const nugetConfig = fs.readFileSync(path.join(root, "backend", "NuGet.Config"), "utf8");
 check(
   "nuget-sources-cleared",

@@ -100,14 +100,8 @@ jobs:
         with:
           dotnet-version: "10.0.302"
 
-      - name: 验证生产项目无外部 NuGet 包
-        shell: bash
-        run: |
-          if grep -RIn --include='*.csproj' '<PackageReference' backend; then
-            echo "::error::生产 .NET 项目必须保持零外部 NuGet PackageReference"
-            exit 1
-          fi
-          echo "OK: backend 中无外部 NuGet PackageReference"
+      - name: 验证生产 NuGet 包命中允许清单
+        run: node tools/verify-dotnet-packages.js
 
       - name: Restore（空 NuGet 源）
         run: npm run dotnet:restore
