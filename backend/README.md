@@ -156,6 +156,39 @@ verify, then clear the previous value. The full procedure and alert response are
 `deploy/RUNBOOK.md`; capacity assumptions and SLOs are in `deploy/capacity-plan.md` and
 `deploy/SLO.md`.
 
+## Stage 8 authority migration (shares, analysis tasks)
+
+Stage 8.1 moved the shares authority to C#/PostgreSQL (`Shares:Provider=postgres`, Node switch
+`SHARES_AUTHORITY=node|csharp`) and added the read side of Node analysis tasks
+(`AnalysisTasks:Provider=postgres`): owner history, snapshot reads, and SSE replay from the shared
+`forgex.node_analysis_tasks` table in the exact G-code jobs event wire format. Stage 8.2 added
+direct caller identity (`DirectAuth:ApiKeys`) mirroring the Node auth chain.
+
+### Stage 8.3 analysis-task compute leg
+
+`POST /api/v1/analysis-tasks` (mapped only when `AnalysisTasks:Provider=postgres`) moves the
+rules-leg compute into C#. The endpoint accepts the same normalized row contract as
+`POST /api/v1/analytics/reports` plus a `datasourceId`, runs the deterministic
+`ForgeX.Analytics` report engine inline, and upserts one snapshot per progress event into
+`forgex.node_analysis_tasks` with the exact statement and field semantics of the Node store
+(`server/services/postgres-analysis.js`), under the same RLS GUC contract. The terminal snapshot
+plus the full event trail return in the `201` body. Because rows written by either runtime are
+interchangeable, the Stage 8.1 read/SSE endpoints and the Node gateway serve C#-computed tasks
+without any wire change.
+
+`AnalysisTasks:TaskTtlMs` (default 3600000) matches the Node `TASK_TTL_MS` default and controls
+`expires_at_utc`. The report carries `engine: server-rules`, `statsBy: csharp-analytics-authority`,
+and the `authorityEngine` identity, exactly like a Node task routed through the C# analytics
+authority, so dual-run comparisons against the Stage 4 golden baseline remain valid.
+
+Node keeps the switch: `ANALYSIS_AUTHORITY=csharp` turns `POST /api/analyze` into a migration
+proxy for tasks that do not use AI — identity, rate limiting, and datasource ownership checks stay
+in Node, the normalized rows are forwarded with the hashed tenant/owner context, and the returned
+terminal snapshot is adopted into the Node task map so the existing result/poll/SSE-replay routes
+serve unchanged. AI narration legs (Partner SSO, OpenAI-compatible) always stay on the Node
+providers; provider keys never reach the sidecar. `ANALYSIS_AUTHORITY=node` (default) is the
+explicit rollback switch and keeps behavior identical to Stage 8.1.
+
 ## Stage 4 analytics dual-run
 
 `ForgeX.Analytics` is the analysis migration core. It has no external package reference and ports

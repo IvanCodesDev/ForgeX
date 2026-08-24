@@ -34,3 +34,24 @@ public sealed record AnalysisTaskLinksDto(
 
 public sealed record AnalysisTaskListResponseDto(
     [property: JsonPropertyName("items")] IReadOnlyList<AnalysisTaskSnapshotDto> Items);
+
+/// <summary>
+/// Stage 8.3: the compute leg of a rules-engine analysis task moves to C#. The Node
+/// gateway resolves the datasource, keeps ownership checks local, and forwards the
+/// normalized rows with the anonymized caller context; the row contract is the same
+/// one POST /api/v1/analytics/reports already accepts.
+/// </summary>
+public sealed record AnalysisTaskCreateRequestDto(
+    [property: JsonPropertyName("schemaVersion")] string? SchemaVersion,
+    [property: JsonPropertyName("question")] string? Question,
+    [property: JsonPropertyName("datasourceId")] string? DatasourceId,
+    [property: JsonPropertyName("rows")] IReadOnlyList<AnalyticsRowRequestDto>? Rows,
+    [property: JsonPropertyName("provenance")] AnalyticsProvenanceRequestDto? Provenance);
+
+/// <summary>
+/// Terminal snapshot plus the full replayable event trail. The Node migration proxy
+/// adopts both so its existing SSE replay and result routes keep serving unchanged.
+/// </summary>
+public sealed record AnalysisTaskCreateResponseDto(
+    [property: JsonPropertyName("task")] AnalysisTaskSnapshotDto Task,
+    [property: JsonPropertyName("events")] JsonElement Events);

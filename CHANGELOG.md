@@ -9,6 +9,35 @@
 
 ## [Unreleased]
 
+### Stage 8.3：分析任务规则腿计算迁 C#
+- ForgeX.Api 新增 `POST /api/v1/analysis-tasks`（仅 `AnalysisTasks:Provider=postgres` 时挂载）：
+  接受与 `/api/v1/analytics/reports` 完全一致的归一化行契约加 `datasourceId`，以确定性
+  `ForgeX.Analytics` 报告引擎就地执行规则腿分析，并按 Node 存储的节奏（初始快照 + 每个
+  进度事件一次 UPSERT + 终态）写入共享 `forgex.node_analysis_tasks` 行——UPSERT 语句、
+  事件/快照字段语义与 `server/services/postgres-analysis.js` 逐字段对齐，RLS GUC 契约不变。
+  终态快照与全量事件随 201 返回；Stage 8.1 的历史/SSE 读取端点无需任何改动即可服务
+  C# 计算的任务。`AnalysisTasks:TaskTtlMs`（默认 3600000）对齐 Node `TASK_TTL_MS`。
+- Node 新增迁移期双向开关 `ANALYSIS_AUTHORITY=node|csharp`（默认 node，行为与迁移前
+  完全一致，即回滚开关；csharp 需先配置 `GCODE_AUTHORITY_URL`，超时由
+  `ANALYSIS_AUTHORITY_TIMEOUT_MS` 控制）。csharp 模式下 `POST /api/analyze` 对**不使用
+  AI 的规则腿任务**退化为迁移代理：身份、限流与数据源归属校验留在 Node，归一化行连同
+  哈希后的 tenant/owner 上下文转发给 sidecar，返回的终态快照经 `TaskStore.adopt` 收编，
+  既有 result / 轮询 / SSE 重放路由原样服务；AI 叙述腿（Partner SSO / OpenAI 兼容）与
+  额度降级路径始终留在 Node，provider 密钥不出本进程。报告继续携带
+  `engine: server-rules` 与 `statsBy: csharp-analytics-authority`，与既有 C# Analytics
+  权威路由的任务逐字段同形，Stage 4 金样本对照口径不变。
+- 新增 `tests/analysis-authority.test.js`（28 项：csharp 代理契约、凭据剥离、匿名化
+  上下文头、收编后三条读取路由、node 默认零 sidecar 调用、sidecar 不可用 502、
+  配置守卫）并纳入主测试链。
+
+### 修复（CI 守卫对齐 Stage 8.1 Npgsql 特批）
+- CI「零外部 NuGet 包」grep 与 `tools/security-audit.js` 同名检查自 Stage 8.1 引入特批
+  Npgsql 后一直红：改为逐项目锁版本的允许清单（`config/dependency-policy.json`
+  `allowedDotnetPackages`，当前仅 `ForgeX.Infrastructure` 的 Npgsql 9.0.3），新增
+  `tools/verify-dotnet-packages.js` 供 CI 与安全审计共用，清单之外的任何引用仍然失败。
+- `tools/capture-readme-screenshots.js` 含 `page.evaluate()` 浏览器回调，纳入 ESLint
+  双运行环境放行块，消除 `npm run lint` 存量报错。
+
 ### 修复（React 引擎机型状态回归）
 - 修复前端引擎 TS 迁移引入的 ES2022 类字段回归：四个机型子类的字段声明会在基类构造期
   `_buildMachine()` 赋值之后重新 define，把 `zCarriage` / `zGantry` / `beam` / `_arms` /
