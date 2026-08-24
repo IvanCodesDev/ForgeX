@@ -395,4 +395,5 @@ module.exports = {
   extractJson,
   SYSTEM_PROMPT,
   userPrompt,
+  authorityRow,
 };

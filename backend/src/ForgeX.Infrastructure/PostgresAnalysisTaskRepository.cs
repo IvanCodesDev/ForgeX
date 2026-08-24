@@ -26,11 +26,12 @@ public sealed record AnalysisTaskRecord(
     DateTimeOffset UpdatedAt);
 
 /// <summary>
-/// Read-side access to forgex.node_analysis_tasks. Stage 8.1 boundary: the Node
-/// runtime still owns the computation and writes every snapshot (one upsert per
-/// progress event), so serving reads and event replay from this table gives C#
-/// live visibility without duplicating the write path. Same RLS contract as the
-/// Node store: per-transaction app.tenant_id / app.owner_id GUCs.
+/// Access to forgex.node_analysis_tasks. Stage 8.1 added the read side (history and
+/// event replay); Stage 8.3 adds the write side so C# can own the rules-leg compute:
+/// <see cref="UpsertAsync"/> mirrors the Node store upsert statement byte-for-byte
+/// (server/services/postgres-analysis.js _save), one upsert per progress event.
+/// Same RLS contract as the Node store: per-transaction app.tenant_id /
+/// app.owner_id GUCs.
 /// </summary>
 public sealed class PostgresAnalysisTaskRepository : IAsyncDisposable
 {
@@ -112,6 +113,56 @@ public sealed class PostgresAnalysisTaskRepository : IAsyncDisposable
             return await reader.ReadAsync(cancellationToken) ? Map(reader) : null;
         }, cancellationToken);
 
+    /// <summary>
+    /// Stage 8.3 write path: full-row upsert, one call per progress event, exactly
+    /// like the Node store so rows written by either runtime stay interchangeable.
+    /// </summary>
+    public Task UpsertAsync(AnalysisTaskRecord record, CancellationToken cancellationToken) =>
+        WithOwnerTransactionAsync(record.TenantId, record.OwnerId, async (connection, transaction) =>
+        {
+            await using var upsert = new NpgsqlCommand(
+                """
+                INSERT INTO forgex.node_analysis_tasks
+                  (id, tenant_id, owner_id, question, datasource_id, engine, provider, credential_scope,
+                   status, progress, phase, message, report_json, error_message, upstream_task_id,
+                   events_json, created_at_utc, finished_at_utc, expires_at_utc, updated_at_utc)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15,$16::jsonb,$17,$18,$19,$20)
+                 ON CONFLICT (id) DO UPDATE SET
+                   status=EXCLUDED.status, progress=EXCLUDED.progress, phase=EXCLUDED.phase,
+                   message=EXCLUDED.message, report_json=EXCLUDED.report_json,
+                   error_message=EXCLUDED.error_message, upstream_task_id=EXCLUDED.upstream_task_id,
+                   events_json=EXCLUDED.events_json, finished_at_utc=EXCLUDED.finished_at_utc,
+                   expires_at_utc=EXCLUDED.expires_at_utc, updated_at_utc=EXCLUDED.updated_at_utc
+                """,
+                connection,
+                transaction);
+            upsert.Parameters.Add(Text(record.Id));
+            upsert.Parameters.Add(Text(record.TenantId));
+            upsert.Parameters.Add(Text(record.OwnerId));
+            upsert.Parameters.Add(Text(record.Question));
+            upsert.Parameters.Add(Text(record.DatasourceId));
+            upsert.Parameters.Add(Text(record.Engine));
+            upsert.Parameters.Add(Text(record.Provider));
+            upsert.Parameters.Add(Text(record.CredentialScope));
+            upsert.Parameters.Add(Text(record.Status));
+            upsert.Parameters.Add(new NpgsqlParameter { Value = record.Progress, NpgsqlDbType = NpgsqlDbType.Double });
+            upsert.Parameters.Add(Text(record.Phase));
+            upsert.Parameters.Add(Text(record.Message));
+            // Node serializes null reports as the JSON literal "null" (JSON.stringify(null)).
+            upsert.Parameters.Add(Text(record.ReportJson ?? "null"));
+            upsert.Parameters.Add(NullableText(record.ErrorMessage));
+            upsert.Parameters.Add(NullableText(record.UpstreamTaskId));
+            upsert.Parameters.Add(Text(record.EventsJson));
+            upsert.Parameters.Add(Timestamp(record.CreatedAt));
+            upsert.Parameters.Add(record.FinishedAt is { } finished
+                ? Timestamp(finished)
+                : new NpgsqlParameter { Value = DBNull.Value, NpgsqlDbType = NpgsqlDbType.TimestampTz });
+            upsert.Parameters.Add(Timestamp(record.ExpiresAt));
+            upsert.Parameters.Add(Timestamp(record.UpdatedAt));
+            await upsert.ExecuteNonQueryAsync(cancellationToken);
+            return true;
+        }, cancellationToken);
+
     public ValueTask DisposeAsync() => _dataSource.DisposeAsync();
 
     private async Task<T> WithOwnerTransactionAsync<T>(
@@ -178,6 +229,9 @@ public sealed class PostgresAnalysisTaskRepository : IAsyncDisposable
 
     private static NpgsqlParameter Text(string value) =>
         new() { Value = value, NpgsqlDbType = NpgsqlDbType.Text };
+
+    private static NpgsqlParameter NullableText(string? value) =>
+        new() { Value = value is null ? DBNull.Value : value, NpgsqlDbType = NpgsqlDbType.Text };
 
     private static NpgsqlParameter Timestamp(DateTimeOffset value) =>
         new() { Value = value.UtcDateTime, NpgsqlDbType = NpgsqlDbType.TimestampTz };

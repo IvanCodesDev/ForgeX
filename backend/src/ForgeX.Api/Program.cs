@@ -73,7 +73,9 @@ if (sharesEnabled)
 }
 
 // ── Stage 8.1：Node 分析任务历史读取 + SSE 汇入 jobs 事件模型 ────────────────
-// Node 仍执行分析并逐事件 UPSERT 快照；C# 从同一张表提供历史与事件流。
+// Stage 8.3：规则腿计算也迁入本进程——POST 创建任务并以 ForgeX.Analytics 直接执行，
+// 逐事件 UPSERT 到同一张 forgex.node_analysis_tasks（与 Node 存储字节兼容）；
+// AI 叙述腿仍由 Node provider 承担。
 var analysisTasksProvider = (builder.Configuration["AnalysisTasks:Provider"] ?? "disabled").Trim().ToLowerInvariant();
 var analysisTasksPostgresUrl = builder.Configuration["AnalysisTasks:PostgresUrl"]
     ?? Environment.GetEnvironmentVariable("POSTGRES_URL")
@@ -89,6 +91,12 @@ if (analysisTasksProvider == "postgres" && string.IsNullOrWhiteSpace(analysisTas
 var analysisTasksEnabled = analysisTasksProvider == "postgres";
 if (analysisTasksEnabled)
 {
+    var analysisTaskTtlMs = ReadInt(builder.Configuration, "AnalysisTasks:TaskTtlMs", 60 * 60 * 1000);
+    if (analysisTaskTtlMs < 1)
+    {
+        throw new InvalidOperationException("AnalysisTasks:TaskTtlMs must be positive.");
+    }
+    builder.Services.AddSingleton(new AnalysisTaskAuthorityOptions(TimeSpan.FromMilliseconds(analysisTaskTtlMs)));
     builder.Services.AddSingleton(_ => new PostgresAnalysisTaskRepository(analysisTasksPostgresUrl));
 }
 
@@ -390,6 +398,15 @@ if (sharesEnabled)
 
 if (analysisTasksEnabled)
 {
+    app.MapPost("/api/v1/analysis-tasks", AnalysisTaskEndpoints.CreateAsync)
+        .WithName("CreateAnalysisTask")
+        .Accepts<AnalysisTaskCreateRequestDto>("application/json")
+        .Produces<AnalysisTaskCreateResponseDto>(StatusCodes.Status201Created)
+        .Produces<ApiProblem>(StatusCodes.Status400BadRequest, "application/problem+json")
+        .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
+        .Produces<ApiProblem>(StatusCodes.Status413PayloadTooLarge, "application/problem+json")
+        .Produces<ApiProblem>(StatusCodes.Status415UnsupportedMediaType, "application/problem+json");
+
     app.MapGet("/api/v1/analysis-tasks", AnalysisTaskEndpoints.ListAsync)
         .WithName("ListAnalysisTasks")
         .Produces<AnalysisTaskListResponseDto>()

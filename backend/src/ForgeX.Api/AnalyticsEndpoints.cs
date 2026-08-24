@@ -14,7 +14,8 @@ internal static class AnalyticsEndpoints
     private const int MaxQuestionLength = 500;
     private const int MaxTextLength = 512;
 
-    private static readonly JsonSerializerOptions ResponseJsonOptions = new(JsonSerializerDefaults.Web)
+    /// <summary>Also used by Stage 8.3 task execution so report JSON keeps the exact analytics-report shape.</summary>
+    internal static readonly JsonSerializerOptions ResponseJsonOptions = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.Never,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
@@ -97,7 +98,8 @@ internal static class AnalyticsEndpoints
         return Results.Json(response, ResponseJsonOptions);
     }
 
-    private static bool TryValidate(
+    /// <summary>Shared with AnalysisTaskEndpoints (Stage 8.3): the task compute leg accepts the same row contract.</summary>
+    internal static bool TryValidate(
         AnalyticsReportRequestDto? request,
         out string question,
         out IReadOnlyList<AnalyticsRow> rows,

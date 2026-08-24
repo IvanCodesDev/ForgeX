@@ -274,6 +274,39 @@ class TaskStore {
     return this.map.get(String(id || "")) || null;
   }
 
+  /**
+   * Stage 8.3：接管 C# 权威执行完成的任务快照。
+   * C# 已把每个进度事件 UPSERT 进共享 PostgreSQL 行，这里只是把终态快照放进
+   * 本进程 map，让既有的 result / 轮询 / SSE 重放路由原样服务——不重复持久化。
+   */
+  adopt(snapshot) {
+    const events = Array.isArray(snapshot.events) ? snapshot.events : [];
+    const report = snapshot.report || null;
+    const task = Object.assign(
+      {
+        engine: "server-rules",
+        provider: "server-rules",
+        providerImpl: null,
+        credentialScope: "global",
+        upstreamTaskId: null,
+        cached: !!(report && report.cached),
+        shared: false,
+        degraded: false,
+        error: null,
+      },
+      snapshot,
+      {
+        events,
+        evSeq: events.reduce((max, ev) => Math.max(max, Number(ev.seq) || 0), 0),
+        report,
+        subscribers: new Set(),
+      }
+    );
+    this.map.set(task.id, task);
+    if ((task.status === "done" || task.status === "failed") && this.onTerminal) this.onTerminal(task);
+    return task;
+  }
+
   async ready(owner) {
     if (!this.persistence || typeof this.persistence.ready !== "function") return;
     const snapshots = await this.persistence.ready(owner);

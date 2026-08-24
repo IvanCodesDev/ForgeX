@@ -151,6 +151,13 @@ function getConfig(overrides) {
       //（与 G-code 权威共用同一 sidecar origin 与内部信任令牌）。
       sharesAuthority: String(env.SHARES_AUTHORITY || "node").trim().toLowerCase(),
       sharesAuthorityTimeoutMs: num(env.SHARES_AUTHORITY_TIMEOUT_MS, 15000),
+      // ── Stage 8.3：分析任务规则腿权威切流（迁移期双向开关）─────────────
+      // node = 本进程执行（默认，行为不变）；csharp = 规则腿任务的创建与计算
+      // 迁到 ForgeX.Api（POST /api/v1/analysis-tasks，同一 sidecar origin 与
+      // 内部信任令牌，C# 侧需 AnalysisTasks:Provider=postgres）。AI 叙述腿
+      // （InfiniSynapse / OpenAI 兼容）永远留在 Node——provider 密钥不出本进程。
+      analysisAuthority: String(env.ANALYSIS_AUTHORITY || "node").trim().toLowerCase(),
+      analysisAuthorityTimeoutMs: num(env.ANALYSIS_AUTHORITY_TIMEOUT_MS, 30000),
       calibrationAuthorityEnabled: env.CALIBRATION_AUTHORITY_ENABLED !== "0",
       calibrationAuthorityTimeoutMs: num(env.CALIBRATION_AUTHORITY_TIMEOUT_MS, 30000),
       calibrationAuthorityMaxBytes: CALIBRATION_AUTHORITY_HARD_MAX_BYTES,
@@ -198,6 +205,14 @@ function getConfig(overrides) {
     throw new Error("SHARES_AUTHORITY=csharp 需要先配置 GCODE_AUTHORITY_URL（共用同一 C# sidecar）");
   }
   cfg.sharesAuthorityTimeoutMs = Math.max(1, num(cfg.sharesAuthorityTimeoutMs, 15000));
+  cfg.analysisAuthority = String(cfg.analysisAuthority || "node").trim().toLowerCase();
+  if (!["node", "csharp"].includes(cfg.analysisAuthority)) {
+    throw new Error("ANALYSIS_AUTHORITY must be node or csharp");
+  }
+  if (cfg.analysisAuthority === "csharp" && !cfg.gcodeAuthorityUrl) {
+    throw new Error("ANALYSIS_AUTHORITY=csharp 需要先配置 GCODE_AUTHORITY_URL（共用同一 C# sidecar）");
+  }
+  cfg.analysisAuthorityTimeoutMs = Math.max(1, num(cfg.analysisAuthorityTimeoutMs, 30000));
   if (!["file", "postgres", "postgresql"].includes(cfg.persistenceProvider)) {
     throw new Error("PERSISTENCE_PROVIDER must be file or postgres");
   }
