@@ -195,7 +195,7 @@ async function mismatchRatio(page, legacyShot, reactShot) {
 
 test.describe("React 工作台与旧入口一致性", () => {
   test("布局契约逐项一致", async ({ page }) => {
-    const legacy = await captureContract(page, "/");
+    const legacy = await captureContract(page, "/legacy");
     const react = await captureContract(page, "/react");
 
     expect(react.length).toBe(legacy.length);
@@ -206,7 +206,7 @@ test.describe("React 工作台与旧入口一致性", () => {
   });
 
   test("界面像素差异在容差内", async ({ page }) => {
-    const legacyShot = await captureInterface(page, "/");
+    const legacyShot = await captureInterface(page, "/legacy");
     const reactShot = await captureInterface(page, "/react");
     const diff = await mismatchRatio(page, legacyShot, reactShot);
     expect(diff.ratio, `差异像素 ${diff.mismatched} 处，范围 ${JSON.stringify(diff.box)}`).toBeLessThanOrEqual(

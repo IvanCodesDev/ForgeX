@@ -140,6 +140,8 @@ async function main() {
   {
     const home = await jfetch(base, "/");
     check("GET / 返回前端页面", home.status === 200 && home.text.includes("FORGE·X"), String(home.status));
+    const legacyHome = await jfetch(base, "/legacy");
+    check("GET /legacy 返回经典入口", legacyHome.status === 200 && legacyHome.text.includes("FORGE·X"), String(legacyHome.status));
     const js = await jfetch(base, "/frontend/classic/js/util.js");
     check("GET /frontend/classic/js/util.js 可达", js.status === 200 && js.text.includes("FXU"));
     const profile = await jfetch(base, "/contracts/profiles/example-bundle.json");
@@ -174,6 +176,8 @@ async function main() {
     fs.mkdirSync(assetsDir, { recursive: true });
     fs.writeFileSync(path.join(reactDist, "index.html"), "<!doctype html><title>React fixture</title>");
     fs.writeFileSync(path.join(assetsDir, "app-abc123.js"), "globalThis.__REACT_FIXTURE__=true;");
+    // Stage 7.1：根入口切 React 后经典页降级 /legacy；缺构建产物时根入口回落经典页。
+    fs.writeFileSync(path.join(staticRoot, "index.html"), "<!doctype html><title>Classic fixture</title>");
 
     const reactApp = createApp({
       staticRoot,
@@ -184,6 +188,12 @@ async function main() {
     });
     const reactBase = "http://127.0.0.1:" + (await listen(reactApp));
 
+    const rootEntry = await jfetch(reactBase, "/");
+    check("根入口 / 映射 React index（Stage 7.1）", rootEntry.status === 200 && /React fixture/.test(rootEntry.text), rootEntry.text);
+    const legacyEntry = await jfetch(reactBase, "/legacy");
+    check("经典入口降级 /legacy", legacyEntry.status === 200 && /Classic fixture/.test(legacyEntry.text), legacyEntry.text);
+    const legacySlash = await jfetch(reactBase, "/legacy/");
+    check("GET /legacy/ 同样映射经典入口", legacySlash.status === 200 && /Classic fixture/.test(legacySlash.text), legacySlash.text);
     const noSlash = await jfetch(reactBase, "/react");
     check("GET /react 映射到 React index", noSlash.status === 200 && /React fixture/.test(noSlash.text), noSlash.text);
     const slash = await jfetch(reactBase, "/react/");
@@ -217,6 +227,8 @@ async function main() {
     fs.rmSync(reactDist, { recursive: true, force: true });
     const missing = await jfetch(reactBase, "/react");
     check("React 构建产物缺失时明确返回 404", missing.status === 404, String(missing.status));
+    const fallback = await jfetch(reactBase, "/");
+    check("产物缺失时根入口回落经典页", fallback.status === 200 && /Classic fixture/.test(fallback.text), fallback.text);
     await reactApp.close();
   }
 

@@ -57,7 +57,7 @@ function calibrationBundle() {
 
 test.describe("P7 校准运营", () => {
   test("active 校准包按机型/固件/材料匹配并在刷新后保留", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/legacy");
     await waitBooted(page);
 
     const bundle = calibrationBundle();

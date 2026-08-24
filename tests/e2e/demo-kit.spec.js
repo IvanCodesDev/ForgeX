@@ -16,7 +16,7 @@ test("录屏素材可通过真实界面完成整条导入链", async ({ page }) 
   });
   page.on("pageerror", (error) => errors.push(error.message));
 
-  await page.goto("/");
+  await page.goto("/legacy");
   await expect(page.locator("body")).not.toHaveClass(/boot/);
   await expect(page.locator("#ctx-panel")).toBeHidden();
   await expect(page.locator(".flow-pill.on")).toHaveCount(0);

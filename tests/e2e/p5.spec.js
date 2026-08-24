@@ -11,7 +11,7 @@ async function waitBooted(page) {
 
 test.describe("P5 生态扩展", () => {
   test("导入真实 G-code 后生成对账结果与 3D 回放路径", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/legacy");
     await waitBooted(page);
 
     const gcode = [
@@ -80,7 +80,7 @@ test.describe("P5 生态扩展", () => {
   });
 
   test("导入社区 Profile 后机型与材料即时进入 UI", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/legacy");
     await waitBooted(page);
 
     const bundle = {

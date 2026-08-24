@@ -25,7 +25,7 @@ async function waitBooted(page) {
 test.describe("启动", () => {
   test("带后端打开：无控制台报错，3D 与仿真器就绪", async ({ page }) => {
     const errors = watchErrors(page);
-    await page.goto("/");
+    await page.goto("/legacy");
     await waitBooted(page);
 
     // WebGL 兜底页必须没出现——它出现就意味着 3D 没起来
@@ -68,7 +68,7 @@ test.describe("流程面板", () => {
     // CI 的 2 核软渲染下主线程会被长时间吃满，标记 slow 让预算 ×3。
     test.slow();
     const errors = watchErrors(page);
-    await page.goto("/");
+    await page.goto("/legacy");
     await waitBooted(page);
 
     const pills = page.locator("#flow-pills .flow-pill");
@@ -107,7 +107,7 @@ test.describe("流程面板", () => {
   });
 
   test("切换机型会重新调平并更新机台编号", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/legacy");
     await waitBooted(page);
 
     const before = await page.evaluate(() => window.FX.sim.machineId);
@@ -127,7 +127,7 @@ test.describe("流程面板", () => {
 
 test.describe("参数面板", () => {
   test("切换材料会联动温度与风扇", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/legacy");
     await waitBooted(page);
     await page.locator("#btn-params").click();
     await expect(page.locator("#param-panel")).toBeVisible();
@@ -144,7 +144,7 @@ test.describe("参数面板", () => {
   });
 
   test("填充图案选择会生成不同的真实路径", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/legacy");
     await waitBooted(page);
     await page.locator("#btn-params").click();
     const select = page.locator("#param-body select.sel").first();
@@ -172,7 +172,7 @@ test.describe("参数面板", () => {
   });
 
   test("打印中锁定几何参数（与真实切片器行为一致）", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/legacy");
     await waitBooted(page);
     await page.evaluate(() => {
       window.FX.sim.simMult = 8;

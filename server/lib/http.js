@@ -100,6 +100,8 @@ function staticDiskPath(urlPath) {
   if (/^\/react\/assets\/[^/].*/.test(urlPath)) {
     return "/dist/react/assets/" + urlPath.slice("/react/assets/".length);
   }
+  // Stage 7.1：经典入口降级为 /legacy，保留一个发布周期后随 classic 一并删除。
+  if (urlPath === "/legacy" || urlPath === "/legacy/") return "/index.html";
   if (STATIC_ALLOW.some((re) => re.test(urlPath))) return urlPath;
   return "";
 }
@@ -126,11 +128,18 @@ function serveStatic(req, res, root) {
     return sendJson(res, 400, { error: "路径不合法" });
   }
   const normalized = path.posix.normalize(p);
-  if ((p === "/react" || p.startsWith("/react/")) && p !== normalized) {
+  if (
+    (p === "/react" || p.startsWith("/react/") || p === "/legacy" || p.startsWith("/legacy/")) &&
+    p !== normalized
+  ) {
     return sendJson(res, 404, { error: "资源不存在" });
   }
   p = normalized;
-  if (p === "/") p = "/index.html";
+  if (p === "/") {
+    // Stage 7.1：根入口由 React 承担；构建产物缺失（clean checkout / 未构建）时
+    // 回落经典入口，保住「clone 下来即起」的体验与冒烟 CI。
+    p = fs.existsSync(path.resolve(root, "dist", "react", "index.html")) ? "/react" : "/index.html";
+  }
   // 归一化后仍含 ..、反斜杠或控制符的一律拒绝（防 ../ 与 %5C 编码穿越）
   if (!p.startsWith("/") || p.includes("..") || p.includes("\\") || p.includes("\0")) {
     return sendJson(res, 404, { error: "资源不存在" });

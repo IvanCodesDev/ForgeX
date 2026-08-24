@@ -65,7 +65,7 @@ test("P8 候选模型经 API Key 审核后同步到浏览器", async ({ page, re
   );
   expect(reviewed.status()).toBe(200);
 
-  await page.goto("/");
+  await page.goto("/legacy");
   await page.waitForFunction(
     () =>
       window.FX &&

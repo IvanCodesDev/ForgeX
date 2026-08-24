@@ -12,7 +12,7 @@
 const { test, expect } = require("@playwright/test");
 
 async function openInsight(page) {
-  await page.goto("/");
+  await page.goto("/legacy");
   await page.waitForFunction(() => window.FX && window.FX.insight, null, { timeout: 30_000 });
   const pill = page.locator("#pill-insight");
   await pill.click();
