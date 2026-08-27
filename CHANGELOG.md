@@ -9,6 +9,14 @@
 
 ## [Unreleased]
 
+### Stage 10.1：TypeScript 编译约束补齐（工程强化）
+- `tsconfig.app.json` 启用 `useUnknownInCatchVariables` 与 `verbatimModuleSyntax`（V1 §5.2
+  推荐项落地）：探针实验确认开关真实生效（TS1484），现有代码零改动通过——TS 迁移期
+  已统一 `import type` 风格；
+- 新增 `frontend/src/engine/engine-invariants.test.ts`：slicer 纯几何、内置模型轮廓、
+  G-code 解析器声明字段的关键数值锁定为断言，防后续迁移/重构静默漂移（Stage 10.4
+  引擎单测扩面起步）。前端 vitest 61/61、typecheck 零错误。
+
 ### Stage 8.3：Node 规则计算腿迁 C#（规则引擎权威边界）
 - ForgeX.Analytics 吃下 Node/classic 的最后一条规则计算腿：`RawDatasetCsv`（经典
   `parseCsv`/`toCsv` 逐字节移植）、`DatasetCatalog`（字段与 provenance 目录）、
