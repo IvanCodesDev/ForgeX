@@ -18,7 +18,7 @@ RUN dotnet publish backend/src/ForgeX.Api/ForgeX.Api.csproj \
     -m:1 \
     -nr:false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.10-alpine3.23 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.11-alpine3.23 AS runtime
 WORKDIR /app
 # Stage 8 工作项 5：ForgeX.Api 已具备静态托管能力（StaticHosting__Enabled=1 +
 # StaticHosting__Root 指向含 index.html / frontend/classic / contracts / dist/react
