@@ -27,8 +27,7 @@ internal static class CallerContextBoundary
     public static Func<HttpContext, RequestDelegate, Task> BuildMiddleware(
         string sharedSecret,
         string previousSharedSecret,
-        DirectAuthOptions? directAuth = null,
-        PartnerSsoService? partnerSso = null)
+        DirectAuthOptions? directAuth = null)
     {
         return async (context, next) =>
         {
@@ -38,7 +37,7 @@ internal static class CallerContextBoundary
                 return;
             }
 
-            var problem = Resolve(context, sharedSecret, previousSharedSecret, directAuth, partnerSso);
+            var problem = Resolve(context, sharedSecret, previousSharedSecret, directAuth);
             if (problem is not null)
             {
                 await problem.ExecuteAsync(context);
@@ -53,8 +52,7 @@ internal static class CallerContextBoundary
         HttpContext context,
         string sharedSecret,
         string previousSharedSecret,
-        DirectAuthOptions? directAuth = null,
-        PartnerSsoService? partnerSso = null)
+        DirectAuthOptions? directAuth = null)
     {
         var secretsConfigured = !string.IsNullOrEmpty(sharedSecret) || !string.IsNullOrEmpty(previousSharedSecret);
         var tokenSupplied = context.Request.Headers.ContainsKey(InternalTokenHeader);
@@ -89,12 +87,11 @@ internal static class CallerContextBoundary
             return null;
         }
 
-        // ② Stage 8.2 直连身份：配置了 DirectAuth:ApiKeys 或 DirectSso 后，无内部令牌
-        //    的请求按 Node 同一套映射与优先级解析（SSO 会话 → infini:{userId}，
-        //    API key → key:{id8}，匿名 → ip:{addr}；SSO 启用时匿名直接 401）。
-        if (directAuth is { Enabled: true } || partnerSso is { Enabled: true })
+        // ② Stage 8.2 直连身份：配置了 DirectAuth:ApiKeys 后，无内部令牌的请求按
+        //    Node 同一套映射与优先级解析（API key → key:{id8}，匿名 → ip:{addr}）。
+        if (directAuth is { Enabled: true })
         {
-            var problem = DirectCallerAuthentication.Resolve(context, directAuth ?? new DirectAuthOptions([], false), partnerSso, out var caller);
+            var problem = DirectCallerAuthentication.Resolve(context, directAuth, out var caller);
             if (problem is not null) return problem;
             context.Items[ContextItemKey] = caller!;
             return null;

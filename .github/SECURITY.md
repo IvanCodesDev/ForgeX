@@ -95,7 +95,7 @@ P8 增加 `calibrations.json`，其中包含候选 bundle、审核事件和当�
 
 若你不慎把 `sk-` key 提交进了 git：
 
-1. **立刻到 InfiniSynapse 控制台吊销该 key**——这是唯一真正有效的一步；
+1. **立刻到你的 AI 服务商控制台吊销该 key**——这是唯一真正有效的一步；
 2. 生成新 key，只写入 `server/.env`（已被 `.gitignore` 排除）；
 3. 清理历史（`git filter-repo` 或 BFG）；**注意**：如果已经 push 过，
    即使清理了历史，也必须假定该 key 已泄露——吊销是不可跳过的。

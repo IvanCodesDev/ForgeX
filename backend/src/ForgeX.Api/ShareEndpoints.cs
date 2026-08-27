@@ -167,7 +167,6 @@ internal static class ShareEndpoints
             : "0";
         var engineLabel = share.Engine switch
         {
-            "infinisynapse" => "InfiniSynapse 云端 AI",
             "openai-compatible" => "OpenAI 兼容 AI",
             _ => "规则引擎（统计，无 AI）",
         };
@@ -190,7 +189,7 @@ internal static class ShareEndpoints
         }
 
         var upstream = share.UpstreamTaskId is { Length: > 0 }
-            ? "<p class=\"meta\">InfiniSynapse taskId：<code>" + Html.Encode(share.UpstreamTaskId) + "</code></p>"
+            ? "<p class=\"meta\">上游任务 taskId：<code>" + Html.Encode(share.UpstreamTaskId) + "</code></p>"
             : string.Empty;
 
         var synthetic = string.Empty;

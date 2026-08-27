@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Stage 8.2：授权矩阵门禁需要驱动内部的 CallerContextBoundary / PartnerSsoService。 -->
+    <!-- Stage 8.2：授权矩阵门禁需要驱动内部的 CallerContextBoundary / DirectCallerAuthentication。 -->
     <InternalsVisibleTo Include="ForgeX.AuthGate" />
     <!-- Stage 8 工作项 5：静态托管门禁需要驱动内部的 StaticHostingOptions / StaticFileHosting。 -->
     <InternalsVisibleTo Include="ForgeX.StaticGate" />

@@ -200,11 +200,10 @@ function renderShareHtml(s) {
   const sections = (r.sections || []).map((sec) =>
     '<div class="sec"><h3>' + escapeHtml(sec.h) + "</h3>" +
     (sec.lines || []).map((l) => "<p>" + escapeHtml(l) + "</p>").join("") + "</div>").join("");
-  const engineLabel = r.engine === "infinisynapse" ? "InfiniSynapse 云端 AI"
-    : r.engine === "openai-compatible" ? "OpenAI 兼容 AI"
+  const engineLabel = r.engine === "openai-compatible" ? "OpenAI 兼容 AI"
     : "规则引擎（统计，无 AI）";
   const upstream = s.upstreamTaskId
-    ? '<p class="meta">InfiniSynapse taskId：<code>' + escapeHtml(s.upstreamTaskId) + "</code></p>" : "";
+    ? '<p class="meta">上游任务 taskId：<code>' + escapeHtml(s.upstreamTaskId) + "</code></p>" : "";
   return "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\">" +
     '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
     "<title>" + escapeHtml(r.title || "分析报告") + " — FORGE·X 智造洞察</title><style>" +

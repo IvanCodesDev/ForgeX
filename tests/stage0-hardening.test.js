@@ -70,32 +70,31 @@ function noNulBytes(dir) {
 
 async function main() {
   console.log("\n[Stage0-1] 认证优先级");
-  // Stage 8.2 起 resolveIdentity 为 async（csharp 模式下会话身份是远程反查），断言语义不变。
-  const ssoIdentity = await resolveIdentity(
-    { headers: {} },
-    { ip: "127.0.0.1" },
-    {
-      partnerSSO: { enabled: true, identity: () => ({ user: { id: "u1" }, apiKey: "user-key" }) },
-      auth: { identify: () => ({ authenticated: false }), guard: () => ({ status: 401, message: "api" }) },
-    }
-  );
-  assert.strictEqual(ssoIdentity.source, "partner-sso", "有效 SSO 必须先于 API Key 守卫");
   const apiIdentity = await resolveIdentity(
     { headers: {} },
     { ip: "127.0.0.1" },
     {
-      partnerSSO: { enabled: true, identity: () => null },
       auth: { identify: () => ({ authenticated: true, caller: "key:a" }), guard: () => null },
     }
   );
-  assert.strictEqual(apiIdentity.source, "api-key", "双身份模式应允许服务 API Key");
+  assert.strictEqual(apiIdentity.source, "api-key", "有效 API Key 应解析为 key 身份");
+  const anonymousIdentity = await resolveIdentity(
+    { headers: {} },
+    { ip: "127.0.0.1" },
+    {
+      auth: { identify: () => ({ authenticated: false, caller: "ip:127.0.0.1" }), guard: () => null },
+    }
+  );
+  assert.strictEqual(anonymousIdentity.source, "anonymous-ip", "未强制鉴权时匿名按 IP 身份放行");
   await assert.rejects(() => resolveIdentity(
     { headers: {} }, { ip: "127.0.0.1" },
     {
-      partnerSSO: { enabled: true, identity: () => null },
-      auth: { identify: () => ({ authenticated: false, caller: "ip:x" }), guard: () => null },
+      auth: {
+        identify: () => ({ authenticated: false, caller: "ip:x" }),
+        guard: () => ({ status: 401, message: "api" }),
+      },
     }
-  ), (error) => error.status === 401, "SSO-only 模式应拒绝匿名请求");
+  ), (error) => error.status === 401, "REQUIRE_AUTH=1 应拒绝匿名请求");
 
   console.log("[Stage0-2] owner/tenant、去重、缓存与审计");
   const dataDir = tmpDir();
@@ -185,30 +184,23 @@ async function main() {
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
 
-  console.log("[Stage0-3] SSO 用户能力与文件责任链");
-  const ssoDir = tmpDir();
-  const ssoApp = createApp({
+  console.log("[Stage0-3] healthz 能力标签与文件责任链");
+  const healthDir = tmpDir();
+  const healthApp = createApp({
     forceMock: true,
-    dataDir: ssoDir,
+    dataDir: healthDir,
     logLevel: "error",
-    infiniPartnerClientId: "client",
-    infiniPartnerClientSecret: "secret",
-    publicBase: "https://example.test/forgex",
   });
-  const ssoBase = "http://127.0.0.1:" + (await listen(ssoApp));
+  const healthBase = "http://127.0.0.1:" + (await listen(healthApp));
   try {
-    ssoApp.ctx.partnerSSO.sessions.set("stage0-session", {
-      user: { id: "sso-user", nickname: "Stage0" },
-      apiKey: "partner-user-key",
-      expiresAt: Date.now() + 60000,
-    });
-    const health = await fetch(ssoBase + "/healthz", { headers: { Cookie: "fx_session=stage0-session" } });
+    const health = await fetch(healthBase + "/healthz");
     const capability = await health.json();
-    assert.strictEqual(capability.capabilities.ai, true);
-    assert.strictEqual(capability.capabilityScope, "current-user");
+    assert.strictEqual(capability.capabilities.ai, false, "规则引擎不得冒充 AI 能力");
+    assert.strictEqual(capability.capabilityScope, "system");
+    assert.strictEqual(capability.engine, "server-rules");
   } finally {
-    await ssoApp.close();
-    fs.rmSync(ssoDir, { recursive: true, force: true });
+    await healthApp.close();
+    fs.rmSync(healthDir, { recursive: true, force: true });
   }
 
   const digest = await globalThis.FXGcodeParser.sha256("abc");

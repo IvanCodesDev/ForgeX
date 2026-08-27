@@ -1,5 +1,5 @@
 /* FORGE·X 智造洞察 — 后端配置：读取 server/.env（KEY=VALUE，不覆盖已有环境变量）。
-   sk- 密钥只活在进程环境与 services/infini.js，绝不回写文件、绝不进日志。 */
+   sk- 密钥只活在进程环境与 services/providers.js 的请求闭包里，绝不回写文件、绝不进日志。 */
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -78,27 +78,17 @@ function getConfig(overrides) {
       mockDelayMs: num(env.MOCK_DELAY_MS, 0),
       taskTtlMs: num(env.TASK_TTL_MS, 60 * 60 * 1000),
       logLevel: env.LOG_LEVEL || "info",
-      infiniKey: env.INFINI_API_KEY || "",
-      infiniServerUrl: env.INFINI_SERVER_URL || "https://app.infinisynapse.cn",
-      infiniConsoleUrl: env.INFINI_CONSOLE_URL || "https://api.infinisynapse.cn/api",
-      infiniVerified: env.INFINI_VERIFIED === "1",
-      infiniTimeoutMs: num(env.INFINI_TIMEOUT_MS, 180000),
-      forceMock: env.INFINI_MOCK === "1",
-
-      // ── InfiniSynapse Partner SSO（路线 B：用户授权、用户结算）──
-      // clientSecret 只能存在服务端；前端只接触登录入口与脱敏后的用户资料。
-      infiniPartnerApi: env.INFINI_PARTNER_API || "https://api.infinisynapse.cn/api",
-      infiniPartnerClientId: env.INFINI_PARTNER_CLIENT_ID || "",
-      infiniPartnerClientSecret: env.INFINI_PARTNER_CLIENT_SECRET || "",
-      loginSessionTtlMs: num(env.LOGIN_SESSION_TTL_MS, 7 * 24 * 60 * 60 * 1000),
+      forceMock: env.ANALYSIS_FORCE_LOCAL === "1",
 
       // ── OpenAI 兼容 provider（OpenAI / Azure / Ollama / vLLM / 各家兼容端点）──
+      // 唯一的 AI 通道。用户也可以在单次分析请求里自带端点（aiBaseUrl/aiApiKey/aiModel），
+      // 请求级配置优先于这里的环境变量；两者都缺省时回退本地规则引擎。
       openaiKey: env.OPENAI_API_KEY || "",
       openaiBaseUrl: env.OPENAI_BASE_URL || "https://api.openai.com/v1",
       openaiModel: env.OPENAI_MODEL || "",
       openaiTimeoutMs: num(env.OPENAI_TIMEOUT_MS, 120000),
 
-      // 显式指定 provider：auto / local / infinisynapse / openai
+      // 显式指定 provider：auto / local / openai
       providerPref: env.ANALYSIS_PROVIDER || "auto",
 
       // 结果缓存：同一「问题 + 数据集 + provider」不重复调用 AI（省钱也省等待）
@@ -156,19 +146,12 @@ function getConfig(overrides) {
       //（与 G-code 权威共用同一 sidecar origin）。
       rulesEngineAuthority: String(env.RULES_ENGINE_AUTHORITY || "node").trim().toLowerCase(),
       rulesEngineTimeoutMs: num(env.RULES_ENGINE_TIMEOUT_MS, 30000),
-      // ── Stage 8.2：Partner SSO 与会话权威切流（迁移期双向开关）─────────────
-      // node = 本进程内存会话（默认，行为不变）；csharp = /api/auth/infini/* 透明
-      // 代理到 ForgeX.Api，会话存储与校验由 C# 承担，Node 业务路由经内部信任通道
-      // 反查会话身份。凭据（INFINI_PARTNER_CLIENT_ID/SECRET、PUBLIC_BASE）继续作为
-      // 启用判定，两侧配置需保持一致（C# 侧为 DirectSso:*）。
-      authAuthority: String(env.AUTH_AUTHORITY || "node").trim().toLowerCase(),
-      authAuthorityTimeoutMs: num(env.AUTH_AUTHORITY_TIMEOUT_MS, 15000),
       calibrationAuthorityEnabled: env.CALIBRATION_AUTHORITY_ENABLED !== "0",
       calibrationAuthorityTimeoutMs: num(env.CALIBRATION_AUTHORITY_TIMEOUT_MS, 30000),
       calibrationAuthorityMaxBytes: CALIBRATION_AUTHORITY_HARD_MAX_BYTES,
       serverRulesAuthority: env.SERVER_RULES_AUTHORITY !== "0",
 
-      // 启动时探活 provider，失败自动降级为规则引擎（取代人工 INFINI_VERIFIED 门禁的下一步）
+      // 启动时探活 provider，失败自动降级为规则引擎
       probeProvider: env.PROBE_PROVIDER !== "0",
     },
     overrides || {}
@@ -218,17 +201,6 @@ function getConfig(overrides) {
     throw new Error("RULES_ENGINE_AUTHORITY=csharp 需要先配置 GCODE_AUTHORITY_URL（共用同一 C# sidecar）");
   }
   cfg.rulesEngineTimeoutMs = Math.max(1, num(cfg.rulesEngineTimeoutMs, 30000));
-  cfg.authAuthority = String(cfg.authAuthority || "node").trim().toLowerCase();
-  if (!["node", "csharp"].includes(cfg.authAuthority)) {
-    throw new Error("AUTH_AUTHORITY must be node or csharp");
-  }
-  if (cfg.authAuthority === "csharp" && !cfg.gcodeAuthorityUrl) {
-    throw new Error("AUTH_AUTHORITY=csharp 需要先配置 GCODE_AUTHORITY_URL（共用同一 C# sidecar）");
-  }
-  if (cfg.authAuthority === "csharp" && !cfg.gcodeAuthorityInternalSecret) {
-    throw new Error("AUTH_AUTHORITY=csharp 需要配置 GCODE_AUTHORITY_INTERNAL_SECRET（会话身份经内部信任通道解析）");
-  }
-  cfg.authAuthorityTimeoutMs = Math.max(1, num(cfg.authAuthorityTimeoutMs, 15000));
   if (!["file", "postgres", "postgresql"].includes(cfg.persistenceProvider)) {
     throw new Error("PERSISTENCE_PROVIDER must be file or postgres");
   }
@@ -239,35 +211,29 @@ function getConfig(overrides) {
   cfg.postgresSsl = cfg.postgresSsl === true || cfg.postgresSsl === "1";
 
   /* ── provider 选择 ──────────────────────────
-     优先级：强制降级 > 显式指定 > 自动探测（InfiniSynapse > OpenAI 兼容 > 本地规则）。
+     优先级：强制降级 > 显式指定 > 自动探测（OpenAI 兼容 > 本地规则）。
+     单次分析请求还可自带 OpenAI 兼容端点（aiBaseUrl/aiApiKey/aiModel），
+     请求级配置优先于这里的进程级选择（见 routes/analyze.js）。
      "local" 指后端规则引擎——确定性聚合统计 + 假设检验，不是 AI，也不是假数据。
      旧名 "mock" 会让人误以为结果是编的，实际是真实计算，只是没有 AI 参与。 */
   var pref = String(cfg.providerPref || "auto").toLowerCase();
-  var infiniReady = !!(cfg.infiniKey && cfg.infiniVerified);
   var openaiReady = !!(cfg.openaiKey && cfg.openaiModel);
 
   if (cfg.forceMock || pref === "local") {
     cfg.provider = "local";
-    cfg.providerReason = cfg.forceMock ? "INFINI_MOCK=1 强制使用规则引擎" : "ANALYSIS_PROVIDER=local";
-  } else if (pref === "infinisynapse") {
-    cfg.provider = infiniReady ? "infinisynapse" : "local";
-    cfg.providerReason = infiniReady
-      ? "显式指定 InfiniSynapse"
-      : "指定了 InfiniSynapse 但密钥/核准不全，降级为规则引擎";
+    cfg.providerReason = cfg.forceMock ? "ANALYSIS_FORCE_LOCAL=1 强制使用规则引擎" : "ANALYSIS_PROVIDER=local";
   } else if (pref === "openai") {
     cfg.provider = openaiReady ? "openai" : "local";
     cfg.providerReason = openaiReady
       ? "显式指定 OpenAI 兼容端点（" + cfg.openaiModel + "）"
       : "指定了 OpenAI 兼容端点但缺 OPENAI_API_KEY / OPENAI_MODEL，降级为规则引擎";
-  } else if (infiniReady) {
-    cfg.provider = "infinisynapse";
-    cfg.providerReason = "自动选择：InfiniSynapse 密钥就绪且端点已核准";
   } else if (openaiReady) {
     cfg.provider = "openai";
     cfg.providerReason = "自动选择：OpenAI 兼容端点已配置（" + cfg.openaiModel + "）";
   } else {
     cfg.provider = "local";
-    cfg.providerReason = "未配置任何 AI provider，使用规则引擎（结论仍带置信区间与显著性检验）";
+    cfg.providerReason = "未配置 AI 端点，使用规则引擎（结论仍带置信区间与显著性检验）；" +
+      "也可在分析请求里自带 OpenAI 兼容端点";
   }
 
   // 兼容旧字段：healthz 与前端读的是 mode/modeReason

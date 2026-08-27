@@ -1,5 +1,5 @@
 /* 数据源存储（内存态）：内置 sample 常驻，用户上传带 TTL 与容量上限。
-   行数据与 CSV 原文都存：规则引擎吃 rows，InfiniSynapse 通道吃 csv。
+   行数据与 CSV 原文都存：规则引擎吃 rows，csv 原文供审计与再解析。
    每个数据源都带 provenance——内置 sample 是合成数据，必须一路标到报告里。 */
 "use strict";
 const crypto = require("crypto");

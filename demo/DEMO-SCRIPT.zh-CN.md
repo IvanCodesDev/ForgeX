@@ -356,7 +356,7 @@
 - 可以说“耗材按 E 增量或切片挤出量累计”，不要说“称重传感器实测”。
 - 功率、电机和主控区域应称为“过程估算”，不要称为功率计或固件采样。
 - `06-demo-production.csv` 和 `04-demo-machine-log.json` 必须称为“合成演示数据”。
-- 只有界面明确显示 InfiniSynapse 或 OpenAI provider 时才可以称为“AI 分析”；`local-rules` 和 `server-rules` 都是规则引擎。
+- 只有界面明确显示 OpenAI 兼容 provider（环境变量配置或用户自带端点）时才可以称为“AI 分析”；`local-rules` 和 `server-rules` 都是规则引擎。
 
 ## 正式录制前验收清单
 

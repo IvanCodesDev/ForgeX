@@ -108,7 +108,7 @@ async function collectSse(path, timeoutMs) {
     check("结果 → 200 完整报告", result.status === 200 && result.json && !!result.json.title && !!result.json.verdict, "HTTP " + result.status);
     if (result.json) {
       console.log(`  INFO  报告《${result.json.title}》· ${result.json.verdict ? result.json.verdict.slice(0, 60) : ""}…`);
-      if (result.json.upstreamTaskId) console.log(`  INFO  InfiniSynapse taskId=${result.json.upstreamTaskId}（可在 app.infinisynapse.cn/tasks 核对）`);
+      if (result.json.upstreamTaskId) console.log(`  INFO  上游任务 taskId=${result.json.upstreamTaskId}`);
     }
 
     console.log("\n[4] 分享页");
@@ -123,7 +123,7 @@ async function collectSse(path, timeoutMs) {
   }
 
   console.log(`\n═══ 结果：${passed} 通过 / ${failed} 失败 ═══`);
-  if (engine === "rules") console.log("提示：当前为规则引擎（非 AI）。配置 INFINI_API_KEY + INFINI_VERIFIED=1 后切云端 AI 分析。");
+  if (engine === "rules") console.log("提示：当前为规则引擎（非 AI）。配置 OPENAI_API_KEY + OPENAI_MODEL（任意 OpenAI 兼容端点）后切 AI 叙述。");
   process.exit(failed ? 1 : 0);
 })().catch((err) => {
   console.error("冒烟中断：", err.message);

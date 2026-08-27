@@ -66,8 +66,6 @@ const app = createApp({
   apiKeys: "e2e-calibration-submitter,e2e-calibration-reviewer",
   calibrationReviewKeys: "e2e-calibration-reviewer",
   requireAuth: false,
-  infiniPartnerClientId: "",
-  infiniPartnerClientSecret: "",
   gcodeAuthorityUrl: sidecarEnabled ? "http://127.0.0.1:8788" : "",
   analyticsAuthorityEnabled: process.env.E2E_ANALYTICS_AUTHORITY === "dotnet",
 });

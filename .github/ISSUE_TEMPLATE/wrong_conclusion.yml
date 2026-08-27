@@ -60,7 +60,7 @@ body:
       options:
         - "本地规则引擎（浏览器）"
         - "后端规则引擎"
-        - "云端 AI（InfiniSynapse）"
+        - "云端 AI（OpenAI 兼容端点）"
     validations:
       required: true
 

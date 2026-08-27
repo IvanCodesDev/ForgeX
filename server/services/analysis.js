@@ -1,7 +1,8 @@
 /* 分析任务编排：任务存储 + 进度事件（SSE 订阅/重放）+ provider 路由 + 结果缓存。
    事件全量缓存后重放，SSE 晚接入或断线重连都不丢进度；任务终态后连接自动收口。
 
-   provider 由 services/providers.js 决定（local / infinisynapse / openai 兼容）。
+   provider 由 services/providers.js 决定（local / openai 兼容），单次请求还可
+   自带 OpenAI 兼容端点覆盖进程级配置（ctx.aiOverride，优先级最高）。
    本模块不关心用的是哪个 AI——它只负责编排、进度、缓存与终态。 */
 "use strict";
 const crypto = require("crypto");
@@ -62,18 +63,16 @@ class ResultCache {
 }
 
 class TaskStore {
-  constructor(cfg, log, infini, knowledge, gate, persistence, rulesEngine) {
+  constructor(cfg, log, knowledge, gate, persistence, rulesEngine) {
     this.cfg = cfg;
     this.log = log;
-    this.infini = infini;
     this.knowledge = knowledge || null;
     this.gate = gate || null; // 成本闸门；null 表示不限（本地开发）
     this.persistence = persistence || null;
     this.rulesEngine = rulesEngine || null; // 未注入时由 providers.js 自建（默认 node 模式）
     this.map = new Map();
-    this.provider = createProvider(cfg, log, { infini, rulesEngine: this.rulesEngine });
+    this.provider = createProvider(cfg, log, { rulesEngine: this.rulesEngine });
     this.fallback = createProvider(Object.assign({}, cfg, { provider: "local" }), log, {
-      infini,
       forceLocal: true,
       rulesEngine: this.rulesEngine,
     });
@@ -89,8 +88,8 @@ class TaskStore {
   /**
    * 启动探活：AI provider 不可用时立刻降级为规则引擎。
    *
-   * 取代此前的人工 INFINI_VERIFIED=1 门禁——那个开关只能证明「有人核准过端点」，
-   * 证明不了「此刻密钥还有效、服务还活着」。探活是运行时事实，人工标记是历史记忆。
+   * 人工核准类开关只能证明「有人核准过端点」，证明不了「此刻密钥还有效、
+   * 服务还活着」。探活是运行时事实，人工标记是历史记忆。
    */
   async probeProvider() {
     if (!this.provider.probe) return { ok: true, skipped: true };
@@ -122,12 +121,24 @@ class TaskStore {
 
   create(question, ds, reqId, ctx) {
     ctx = ctx || {};
-    const providerImpl = ctx.infiniKey
-      ? createProvider(Object.assign({}, this.cfg, { provider: "infinisynapse", mode: "infinisynapse" }), this.log, {
-          infini: this.infini.withKey(ctx.infiniKey),
-          rulesEngine: this.rulesEngine,
-        })
+    // 用户自带端点：仅本次任务生效。密钥只存在于 provider 闭包中——
+    // task 对象不携带任何 aiOverride 字段，持久化快照与响应因此天然无密钥。
+    const providerImpl = ctx.aiOverride
+      ? createProvider(
+          Object.assign({}, this.cfg, {
+            provider: "openai",
+            openaiBaseUrl: ctx.aiOverride.baseUrl,
+            openaiKey: ctx.aiOverride.apiKey,
+            openaiModel: ctx.aiOverride.model,
+          }),
+          this.log,
+          { rulesEngine: this.rulesEngine }
+        )
       : this.provider;
+    // 结果缓存按端点+模型分桶：换了端点或模型不应命中旧叙述（密钥不参与派生）。
+    const cacheVariant = ctx.aiOverride
+      ? crypto.createHash("sha256").update(ctx.aiOverride.baseUrl + "\0" + ctx.aiOverride.model).digest("hex").slice(0, 16)
+      : "";
     const task = {
       id: "t_" + crypto.randomBytes(8).toString("hex"),
       question,
@@ -135,6 +146,7 @@ class TaskStore {
       engine: providerImpl.id,
       provider: providerImpl.id,
       providerImpl,
+      cacheVariant,
       credentialScope: ctx.credentialScope || "global",
       status: "running",
       events: [],
@@ -170,7 +182,8 @@ class TaskStore {
   /** 统一执行路径：缓存 → provider → 终态。provider 之间的差异全在 providers.js 里。 */
   async _run(task, ds) {
     const datasourceKey = ds.cacheKey || ds.contentSha256 || ds.id;
-    const ck = this.cache.key(task.question, datasourceKey, task.providerImpl.id, task.credentialScope);
+    const providerKey = task.cacheVariant ? task.providerImpl.id + ":" + task.cacheVariant : task.providerImpl.id;
+    const ck = this.cache.key(task.question, datasourceKey, providerKey, task.credentialScope);
 
     const cached = this.cache.get(ck);
     if (cached) {

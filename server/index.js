@@ -2,7 +2,8 @@
    1. /api/* 业务接口（分析任务 / SSE 进度 / 数据源 / 知识库 / 分享）
    2. /share/:token 公开分享页（服务端渲染）
    3. 静态托管前端（allowlist，server/ 与 .env 永不可达）→ 同源部署零 CORS
-   引擎双模：rules（复用前端规则引擎，确定性统计、非 AI）/ infinisynapse（key 核准后启用的云端 AI）。
+   引擎双模：rules（复用前端规则引擎，确定性统计、非 AI）/ openai 兼容端点
+   （环境变量配置，或由用户在单次分析请求里自带 aiBaseUrl/aiApiKey/aiModel）。
    零依赖动机：评委 clone 后 `node server/index.js` 即起，无 install、无供应链风险；
    若后续需要 Fastify 生态，services/* 与框架无关，仅需替换本文件与 routes/*。 */
 "use strict";
@@ -23,9 +24,6 @@ const { PostgresShareStore } = require("./services/postgres-share");
 const { CalibrationStore } = require("./services/calibration");
 const { PostgresCalibrationStore } = require("./services/postgres-calibration");
 const { createRulesEngine } = require("./services/rules-engine");
-const { InfiniClient } = require("./services/infini");
-const { PartnerSSO } = require("./services/partner-sso");
-const { PartnerSSOProxy } = require("./services/partner-sso-proxy");
 const { CostGate } = require("./lib/quota");
 const { Auth } = require("./lib/auth");
 const { createPool, closePool } = require("./lib/postgres");
@@ -54,14 +52,8 @@ class Router {
 function createApp(overrides) {
   const cfg = getConfig(overrides);
   const log = createLogger(cfg.logLevel);
-  const infini = new InfiniClient(cfg, log);
   const gate = new CostGate(cfg, log);
   const auth = new Auth(cfg, log);
-  // Stage 8.2：AUTH_AUTHORITY=csharp 时 Partner SSO 与会话由 ForgeX.Api 权威承担，
-  // 本进程退化为透明代理；默认 node 保持既有内存会话，行为零变化。
-  const partnerSSO = cfg.authAuthority === "csharp"
-    ? new PartnerSSOProxy(cfg, log)
-    : new PartnerSSO(cfg, log);
   const persistenceEnabled = cfg.persistenceProvider !== "file";
   const persistencePool = persistenceEnabled ? (cfg.postgresPool || createPool(cfg)) : null;
   const ownsPersistencePool = persistenceEnabled && !cfg.postgresPool;
@@ -83,7 +75,7 @@ function createApp(overrides) {
   const taskPersistence = persistenceEnabled
     ? new PostgresAnalysisStore(persistenceCfg, log, persistencePool)
     : null;
-  const tasks = new TaskStore(cfg, log, infini, knowledge, gate, taskPersistence, rulesEngine);
+  const tasks = new TaskStore(cfg, log, knowledge, gate, taskPersistence, rulesEngine);
   const calibrations = cfg.persistenceProvider === "file"
     ? new CalibrationStore(cfg, log, rulesEngine)
     : new PostgresCalibrationStore(persistenceCfg, log, rulesEngine);
@@ -132,7 +124,6 @@ function createApp(overrides) {
   const ctx = {
     cfg,
     log,
-    infini,
     rulesEngine,
     datasources,
     tasks,
@@ -142,7 +133,6 @@ function createApp(overrides) {
     rateLimit,
     gate,
     auth,
-    partnerSSO,
     metrics,
   };
   const router = new Router();
@@ -150,16 +140,6 @@ function createApp(overrides) {
   router.add("GET", /^\/healthz$/, async (req, res) => {
     // engine 与报告里的 engine 字段取同一个值（provider.id），避免 healthz 说一套、报告说另一套
     const p = tasks.provider;
-    let partnerIdentity = null;
-    if (partnerSSO.enabled) {
-      try {
-        partnerIdentity = await partnerSSO.identity(req);
-      } catch (error) {
-        // 探活接口不因会话服务不可用而失败；身份按未登录处理（仅影响能力标签）。
-        log.warn("healthz partner identity unavailable", { error: error.message });
-      }
-    }
-    const userAi = !!(partnerIdentity && partnerIdentity.apiKey);
     let calibrationStats;
     try {
       if (typeof tasks.ready === "function") await tasks.ready();
@@ -173,8 +153,8 @@ function createApp(overrides) {
       log.warn("persistence probe failed", { provider: cfg.persistenceProvider, error: error.message });
       return sendJson(res, 503, {
         ok: false,
-        engine: userAi ? "infinisynapse" : p.id,
-        provider: userAi ? "infinisynapse" : cfg.provider,
+        engine: p.id,
+        provider: cfg.provider,
         persistence: cfg.persistenceProvider,
         error: "persistence_unavailable",
         now: Date.now(),
@@ -182,18 +162,15 @@ function createApp(overrides) {
     }
     sendJson(res, 200, {
       ok: true,
-      engine: userAi ? "infinisynapse" : p.id,
-      provider: userAi ? "infinisynapse" : cfg.provider,
-      label: userAi ? "InfiniSynapse Partner 用户密钥" : p.label,
-      capabilities: userAi
-        ? { ai: true, streaming: true, structuredOutput: true }
-        : p.capabilities,
-      capabilityScope: userAi ? "current-user" : "system",
-      reason: userAi ? "当前 SSO 用户持有有效 Partner API Key" : cfg.providerReason,
+      engine: p.id,
+      provider: cfg.provider,
+      label: p.label,
+      capabilities: p.capabilities,
+      capabilityScope: "system",
+      reason: cfg.providerReason,
       // 公网访问者有权知道自己面对的是什么限制，而不是撞上 429 才发现
       quota: p.capabilities.ai ? gate.snapshot() : null,
       auth: { enabled: auth.enabled, required: auth.required },
-      sso: { enabled: partnerSSO.enabled, integration: "partner-sso-b" },
       persistence: cfg.persistenceProvider === "file" ? (cfg.dataDir ? "file" : "memory") : "postgres",
       calibrations: {
         approved: calibrationStats.approved,
@@ -247,12 +224,19 @@ function createApp(overrides) {
     res.end(L.join("\n") + "\n");
   });
   require("./routes/analyze").register(router, ctx);
-  require("./services/partner-sso").register(router, ctx);
   require("./routes/datasource").register(router, ctx);
   require("./routes/knowledge").register(router, ctx);
   require("./routes/share").register(router, ctx);
   require("./routes/calibration").register(router, ctx);
   require("./routes/gcode-authority").register(router, ctx);
+
+  /* 经典 /legacy 保留期的静默墓碑：冻结的 classic js/auth.js 启动时仍会探测一次
+     登录态，而 Partner SSO 已随 BYO-AI 决策整体移除（2026-08-27）。返回固定的
+     「未启用」让经典页保持安静（404 会产生控制台噪声，打破 E2E 的无报错断言），
+     经典页看到 enabled=false 即隐藏全部登录 UI。随 classic 删除（Stage 7.4）一并移除。 */
+  router.add("GET", /^\/api\/auth\/infini\/me$/, (req, res) => {
+    sendJson(res, 200, { enabled: false, authenticated: false, user: null, canUseAi: false, integration: "retired" });
+  });
 
   function applyCors(req, res) {
     const origin = req.headers.origin;
@@ -331,7 +315,6 @@ function createApp(overrides) {
     tasks.sweep(now);
     knowledge.sweep(now);
     shares.sweep(now);
-    partnerSSO.sweep(now);
   }, 60 * 1000);
   sweeper.unref();
 

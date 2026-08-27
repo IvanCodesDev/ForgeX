@@ -2,6 +2,7 @@
 "use strict";
 const { HttpError, readJson, sendJson, sseStart } = require("../lib/http");
 const { resolveIdentity, requireOwner } = require("../lib/identity");
+const { parseAiOverride } = require("../lib/ai-endpoint");
 
 const MAX_QUESTION = 500;
 
@@ -9,30 +10,29 @@ function register(router, ctx) {
   const { tasks, datasources, knowledge, log, gate, metrics } = ctx;
 
   router.add("POST", /^\/api\/analyze$/, async (req, res, m, rc) => {
-    // 先统一 SSO/API Key 身份，再做限流和资源授权；有效 SSO 不再被 API Key 守卫误拒。
+    // 先统一身份，再做限流和资源授权。
     const identity = await resolveIdentity(req, rc, ctx);
     if (typeof tasks.ready === "function") await tasks.ready(identity.tenantId);
-    const partnerIdentity = identity.partner;
-    if (partnerIdentity && !partnerIdentity.apiKey) {
-      throw new HttpError(409, "该账号未能签发 Partner API Key，请清理 InfiniSynapse API Key 后重新登录");
-    }
 
     ctx.rateLimit(rc.ip); // 同 IP 冷却，防刷
     const body = await readJson(req, 8 * 1024);
     const question = String(body.question || "").trim();
     if (!question) throw new HttpError(400, "question 不能为空");
     if (question.length > MAX_QUESTION) throw new HttpError(400, "question 超过 " + MAX_QUESTION + " 字");
+    // 用户自带 OpenAI 兼容端点：校验合法后本次请求覆盖进程级 AI 配置；
+    // 密钥只进 provider 闭包，不进任务快照、日志或任何响应。
+    const aiOverride = parseAiOverride(body);
     const ds = await datasources.get(body.datasourceId || "sample", identity.tenantId);
     if (!ds) throw new HttpError(404, "数据源不存在或已过期，请重新上传");
     if (!ds.builtin) requireOwner(ds, identity, ctx, "datasource", ds.id);
     if (typeof knowledge.ready === "function") await knowledge.ready(identity.tenantId);
 
     // 配额预检：提前把「会不会降级」告诉调用方，而不是等报告出来才发现没有 AI 叙述
-    const willUseAi = !!(partnerIdentity || tasks.usesAi);
+    const willUseAi = !!(aiOverride || tasks.usesAi);
     const quota = willUseAi && gate ? gate.check(identity.caller) : { ok: true };
     const task = tasks.create(question, ds, rc.reqId, {
       caller: identity.caller,
-      infiniKey: partnerIdentity ? partnerIdentity.apiKey : "",
+      aiOverride,
       credentialScope: identity.tenantId,
     });
     if (typeof tasks.persist === "function") await tasks.persist(task);

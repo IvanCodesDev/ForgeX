@@ -32,7 +32,7 @@ function register(router, ctx) {
         ? "已登记。提问时会按问题检索相关片段注入 AI 提示词（BM25 关键词检索，检索不到则不注入）。" +
           "存储由当前持久化 provider 管理，TTL 到期后失效。"
         : "已登记，但**当前配置下不会被使用**：正在运行的是规则引擎（确定性统计，不读自然语言知识）。" +
-          "配置 AI provider（INFINI_API_KEY 或 OPENAI_API_KEY）后检索才会生效。存储由当前持久化 provider 管理，TTL 到期后失效。",
+          "配置 OpenAI 兼容端点（OPENAI_API_KEY / OPENAI_MODEL）后检索才会生效。存储由当前持久化 provider 管理，TTL 到期后失效。",
     });
   });
 

@@ -303,7 +303,7 @@ async function main() {
       !!rp.provenance && rp.provenance.synthetic === true, JSON.stringify(rp.provenance));
     check("报告带可信度字段", typeof rp.confidence === "string" && rp.confidence.length > 0, rp.confidence);
     check("视口联动 highlight 存在", rp.highlight && rp.highlight.type === "machine");
-    check("engine 如实标注 server-rules（不冒充 AI / InfiniSynapse）", rp.engine === "server-rules", rp.engine);
+    check("engine 如实标注 server-rules（不冒充 AI）", rp.engine === "server-rules", rp.engine);
 
     // SSE 重放：任务完成后再接入，也能拿到全部历史事件
     const replay = await collectSse(base, "/api/analyze/" + taskId + "/stream", 3000);
@@ -378,31 +378,24 @@ console.log("\n[10] Provider 抽象：选择逻辑与能力标记");
   const { getConfig } = require(path.join(__dirname, "..", "server", "config.js"));
   const base = { logLevel: "error" };
 
-  const local = getConfig(Object.assign({}, base, { infiniKey: "", openaiKey: "", providerPref: "auto" }));
+  const local = getConfig(Object.assign({}, base, { openaiKey: "", providerPref: "auto" }));
   check("无任何配置 → 本地规则引擎", local.provider === "local", local.provider);
   check("降级原因如实说明", /规则引擎/.test(local.providerReason), local.providerReason);
 
-  const infini = getConfig(Object.assign({}, base, { infiniKey: "sk-x", infiniVerified: true, providerPref: "auto" }));
-  check("InfiniSynapse 就绪 → 自动选它", infini.provider === "infinisynapse", infini.provider);
-
   const oai = getConfig(Object.assign({}, base,
-    { infiniKey: "", openaiKey: "sk-y", openaiModel: "gpt-x", providerPref: "auto" }));
-  check("仅 OpenAI 兼容就绪 → 自动选它", oai.provider === "openai", oai.provider);
-
-  const both = getConfig(Object.assign({}, base,
-    { infiniKey: "sk-x", infiniVerified: true, openaiKey: "sk-y", openaiModel: "gpt-x", providerPref: "auto" }));
-  check("两者都就绪 → 按优先级选 InfiniSynapse", both.provider === "infinisynapse", both.provider);
+    { openaiKey: "sk-y", openaiModel: "gpt-x", providerPref: "auto" }));
+  check("OpenAI 兼容就绪 → 自动选它", oai.provider === "openai", oai.provider);
 
   const forced = getConfig(Object.assign({}, base,
-    { infiniKey: "sk-x", infiniVerified: true, providerPref: "local" }));
+    { openaiKey: "sk-y", openaiModel: "gpt-x", providerPref: "local" }));
   check("显式指定 local → 覆盖自动探测", forced.provider === "local", forced.provider);
 
   const halfOai = getConfig(Object.assign({}, base, { openaiKey: "sk-y", openaiModel: "", providerPref: "openai" }));
   check("指定 openai 但缺 model → 降级并说明原因",
     halfOai.provider === "local" && /缺 OPENAI/.test(halfOai.providerReason), halfOai.providerReason);
 
-  const mock = getConfig(Object.assign({}, base, { infiniKey: "sk-x", infiniVerified: true, forceMock: true }));
-  check("INFINI_MOCK=1 优先级最高", mock.provider === "local", mock.provider);
+  const mock = getConfig(Object.assign({}, base, { openaiKey: "sk-y", openaiModel: "gpt-x", forceMock: true }));
+  check("ANALYSIS_FORCE_LOCAL=1 优先级最高", mock.provider === "local", mock.provider);
 
   // 能力标记必须与实现一致，前端据此决定 UI
   const P = require(path.join(__dirname, "..", "server", "services", "providers.js"));
@@ -928,6 +921,7 @@ console.log("\n[23] C# G-code 权威计算同源流式代理");
   );
   await protectedApp.close();
 
+  // 浏览器 cookie 一律不进 sidecar：即使请求携带无关 cookie，代理也应剥离
   const cookieApp = createApp({
     logLevel: "error",
     forceMock: true,
@@ -936,28 +930,19 @@ console.log("\n[23] C# G-code 权威计算同源流式代理");
     gcodeAuthorityUrl: authorityOrigin,
     apiKeys: "authority-key",
     requireAuth: true,
-    publicBase: "http://127.0.0.1:8787",
-    infiniPartnerClientId: "test-client",
-    infiniPartnerClientSecret: "test-secret",
-  });
-  const cookieToken = "authority-cookie-session";
-  cookieApp.ctx.partnerSSO.sessions.set(cookieToken, {
-    user: { id: "authority-user", nickname: "Authority User", email: "", avatar: "" },
-    apiKey: "partner-side-secret",
-    expiresAt: Date.now() + 60000,
   });
   const cookieBase = "http://127.0.0.1:" + (await listen(cookieApp));
   const beforeCookie = authorityRequests.length;
   const cookieAccepted = await jfetch(cookieBase, "/api/v1/gcode/analyze?status=200&auth=cookie", {
     method: "POST",
-    headers: { "Content-Type": "text/x-gcode", Cookie: "fx_session=" + cookieToken },
+    headers: { "Content-Type": "text/x-gcode", "X-API-Key": "authority-key", Cookie: "session-probe=1" },
     body: "G28\n",
   });
   const cookieObserved = authorityRequests[beforeCookie];
-  check("合法 Partner SSO Cookie 可调用权威分析", cookieAccepted.status === 200, cookieAccepted.text);
+  check("携带无关 Cookie 的合法 key 请求照常放行", cookieAccepted.status === 200, cookieAccepted.text);
   check(
-    "合法 SSO Cookie 只用于 Node 守卫且不转发 sidecar",
-    cookieObserved && !cookieObserved.headers.cookie && !cookieObserved.headers.authorization,
+    "浏览器 Cookie 与凭据不转发 sidecar",
+    cookieObserved && !cookieObserved.headers.cookie && !cookieObserved.headers["x-api-key"] && !cookieObserved.headers.authorization,
     cookieObserved && JSON.stringify(cookieObserved.headers)
   );
   await cookieApp.close();

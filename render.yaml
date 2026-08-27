@@ -16,4 +16,5 @@ services:
         value: "1"
       # 默认不配置云端 AI 密钥，仅使用本地规则引擎，无外部计费。
       # 启用云端 AI 前请按 .github/SECURITY.md 配置鉴权、额度与并发保护。
-      # 确需启用时在 Render 控制台补：INFINI_API_KEY / INFINI_VERIFIED=1
+      # 确需启用时在 Render 控制台补 OpenAI 兼容端点：OPENAI_API_KEY /
+      # OPENAI_BASE_URL / OPENAI_MODEL；用户也可在工作台「AI 设置」自带端点。

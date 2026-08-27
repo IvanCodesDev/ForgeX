@@ -1,7 +1,8 @@
 /* AnalysisProvider 抽象 —— 把「用什么引擎分析」变成一个可替换的实现细节。
 
-   重构前的问题：分析能力硬绑 InfiniSynapse 一家，而且是靠手工 INFINI_VERIFIED=1
-   开关。对一个开源项目来说这是硬伤——别人拿去用，多半用的不是这家。
+   重构前的问题：分析能力曾硬绑某一家云端厂商。现在 AI 叙述只有一条通道：
+   任何 OpenAI 兼容端点（环境变量配置，或由用户在单次请求里自带），
+   规则引擎则是无配置时的默认与回退——AI 从来不是基础功能的前置条件。
 
    当前契约：
 
@@ -236,70 +237,30 @@ function extractJson(text) {
   return null;
 }
 
-/* ══ InfiniSynapse provider ══════════════════ */
+/* ══ OpenAI 兼容 provider ════════════════════ */
 
-function infiniProvider(cfg, log, infini, rulesEngine) {
-  const rules = resolveRulesEngine(cfg, rulesEngine);
-  return {
-    id: "infinisynapse",
-    label: "InfiniSynapse 云端 AI",
-    capabilities: { ai: true, streaming: true, structuredOutput: false },
-
-    /** 启动探活：只读一次 profile，失败即降级——不等到用户提问才发现密钥是错的 */
-    async probe() {
-      try {
-        const out = await infini.profile();
-        return { ok: true, detail: "userId=" + ((out && out.data && out.data.userId) || "?") };
-      } catch (e) {
-        return { ok: false, detail: e.message };
-      }
-    },
-
-    async analyze({ question, dataset, knowledge, onProgress }) {
-      onProgress({ stage: "stats", message: "本地统计核计算中（置信区间与显著性检验）", progress: 0.15 });
-      const local = await rules.analyze(question, dataset.rows, { provenance: dataset.provenance || null });
-      const brief = await rules.buildBrief(dataset.rows);
-
-      onProgress({ stage: "submit", message: "提交 InfiniSynapse 分析任务", progress: 0.25 });
-      let prog = 0.25;
-      const out = await infini.runAnalysis({
-        question,
-        // 传统计简报而非整份 CSV：token 成本与数据量解耦
-        briefText: brief.text,
-        systemPrompt: SYSTEM_PROMPT,
-        userText: userPrompt(question, brief.text, knowledge),
-        datasourceName: dataset.name,
-        onProgress: (p) => {
-          prog = Math.min(0.9, prog + 0.08);
-          onProgress({ stage: p.stage, message: p.message, progress: prog });
-        },
-      });
-
-      onProgress({ stage: "merge", message: "合并 AI 叙述与本地统计产物", progress: 0.95 });
-      const narrative = extractJson(out.resultText);
-      if (!narrative) log.warn("provider narrative not parseable, falling back to local narrative", { provider: "infinisynapse" });
-      const merged = mergeWithLocal(narrative, local, {
-        engine: "infinisynapse",
-        narrativeBy: "infinisynapse",
-        upstreamTaskId: out.taskId,
-      });
-      if (out.workspace && Array.isArray(out.workspace.files) && out.workspace.files.length) {
-        merged.sections.push({
-          h: "云端产物文件",
-          lines: out.workspace.files.map((f) => String(f.name || f.path || f)),
-        });
-      }
-      return merged;
-    },
-  };
+/**
+ * 把疑似密钥的内容从对外文本中抹掉。上游错误报文有时会回显请求里的
+ * Authorization 值（如 "Incorrect API key provided: sk-…"）；无论密钥来自
+ * 环境变量还是用户单次请求自带，都绝不允许进日志或错误信息。
+ */
+function maskSecret(text, secret) {
+  let out = String(text == null ? "" : text);
+  if (secret) out = out.split(secret).join("[REDACTED]");
+  // 兜底：常见 "sk-" 形态的裸密钥也一并掩蔽（防上游变形回显）
+  return out.replace(/sk-[A-Za-z0-9_-]{8,}/g, "sk-[REDACTED]");
 }
 
-/* ══ OpenAI 兼容 provider ════════════════════ */
+/** 无密钥端点（本地 Ollama 等）不发送空 Authorization 头 */
+function authHeaders(key) {
+  return key ? { Authorization: "Bearer " + key } : {};
+}
 
 /**
  * 任何暴露 /chat/completions 的服务都能接：OpenAI、Azure OpenAI、
  * 本地 Ollama（/v1）、vLLM、以及各家国产兼容端点。
- * 配置见 server/.env.example 的 OPENAI_* 段。
+ * 配置见 server/.env.example 的 OPENAI_* 段；用户也可以在单次分析请求里
+ * 自带端点（aiBaseUrl/aiApiKey/aiModel），届时 cfg 的 openai* 字段被请求级值替换。
  */
 function openaiProvider(cfg, log, rulesEngine) {
   const rules = resolveRulesEngine(cfg, rulesEngine);
@@ -312,7 +273,7 @@ function openaiProvider(cfg, log, rulesEngine) {
     async probe() {
       try {
         const res = await fetch(cfg.openaiBaseUrl.replace(/\/$/, "") + "/models", {
-          headers: { Authorization: "Bearer " + cfg.openaiKey },
+          headers: authHeaders(cfg.openaiKey),
           signal: AbortSignal.timeout(8000),
         });
         if (!res.ok) return { ok: false, detail: "HTTP " + res.status };
@@ -331,10 +292,7 @@ function openaiProvider(cfg, log, rulesEngine) {
       const url = cfg.openaiBaseUrl.replace(/\/$/, "") + "/chat/completions";
       const res = await fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer " + cfg.openaiKey,
-        },
+        headers: Object.assign({ "Content-Type": "application/json" }, authHeaders(cfg.openaiKey)),
         body: JSON.stringify({
           model: cfg.openaiModel,
           temperature: 0.2,                       // 叙述任务，低温更稳
@@ -348,8 +306,8 @@ function openaiProvider(cfg, log, rulesEngine) {
       });
       if (!res.ok) {
         const body = await res.text().catch(() => "");
-        // 上游报文可能含敏感细节：日志留全文，对外只给状态码
-        log.error("openai upstream error", { status: res.status, body: body.slice(0, 500) });
+        // 上游报文可能回显密钥等敏感细节：日志只留掩蔽后的摘要，对外只给状态码
+        log.error("openai upstream error", { status: res.status, body: maskSecret(body.slice(0, 500), cfg.openaiKey) });
         throw new Error("AI 服务响应异常（HTTP " + res.status + "）");
       }
       const j = await res.json();
@@ -377,7 +335,6 @@ function openaiProvider(cfg, log, rulesEngine) {
  */
 function createProvider(cfg, log, deps) {
   const rules = resolveRulesEngine(cfg, deps && deps.rulesEngine);
-  if (cfg.provider === "infinisynapse") return infiniProvider(cfg, log, deps.infini, rules);
   if (cfg.provider === "openai") return openaiProvider(cfg, log, rules);
   if (
     !(deps && deps.forceLocal) &&
@@ -397,10 +354,10 @@ module.exports = {
   createProvider,
   localProvider,
   csharpAnalyticsProvider,
-  infiniProvider,
   openaiProvider,
   mergeWithLocal,
   extractJson,
+  maskSecret,
   SYSTEM_PROMPT,
   userPrompt,
 };

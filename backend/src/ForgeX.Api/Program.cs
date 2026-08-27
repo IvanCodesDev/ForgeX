@@ -144,10 +144,6 @@ builder.Services.AddSingleton<GCodeJobRuntime>();
 builder.Services.AddSingleton<ForgeXMetrics>();
 builder.Services.AddSingleton<GCodeJobWorker>();
 builder.Services.AddHostedService(static services => services.GetRequiredService<GCodeJobWorker>());
-// Stage 8.2：Partner SSO 与会话迁 C#（未配置 DirectSso 时 Enabled=false，行为同 Node 未配置态）。
-builder.Services.AddSingleton(static services => new PartnerSsoService(
-    PartnerSsoOptions.FromConfiguration(services.GetRequiredService<IConfiguration>()),
-    services.GetRequiredService<ILoggerFactory>().CreateLogger("ForgeX.Api.PartnerSso")));
 
 var app = builder.Build();
 var metrics = app.Services.GetRequiredService<ForgeXMetrics>();
@@ -197,12 +193,11 @@ app.Use(async (context, next) =>
     }
 });
 
-// Stage 8.2：直连身份（Partner SSO 会话 / API key / 匿名 IP）与可信 Node 代理并行受理；
-// 未配置 DirectAuth:ApiKeys 且未配置 DirectSso 时行为与迁移前完全一致。
+// Stage 8.2：直连身份（API key / 匿名 IP）与可信 Node 代理并行受理；
+// 未配置 DirectAuth:ApiKeys 时行为与迁移前完全一致。
 var directAuth = DirectAuthOptions.FromConfiguration(builder.Configuration);
-var partnerSso = app.Services.GetRequiredService<PartnerSsoService>();
 
-app.Use(CallerContextBoundary.BuildMiddleware(internalSharedSecret, previousInternalSharedSecret, directAuth, partnerSso));
+app.Use(CallerContextBoundary.BuildMiddleware(internalSharedSecret, previousInternalSharedSecret, directAuth));
 
 if (allowedOrigins.Length > 0)
 {
@@ -302,9 +297,6 @@ app.MapGet("/openapi/v1.json", () => Results.Text(
         "application/json; charset=utf-8"))
     .WithName("GetOpenApiDocument")
     .ExcludeFromDescription();
-
-// Stage 8.2：Partner SSO 路由（与 Node register() 一致，无条件注册；未配置时 503/enabled:false）。
-PartnerSsoEndpoints.Map(app, partnerSso, internalSharedSecret, previousInternalSharedSecret);
 
 app.MapPost("/api/v1/gcode/analyze", GCodeEndpoints.AnalyzeAsync)
     .WithName("AnalyzeGCode")
