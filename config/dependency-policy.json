@@ -6,5 +6,10 @@
     "node_modules/vite/node_modules/fsevents": "2.3.3"
   },
   "allowedSecretFixtures": [{ "file": "tests/server.test.js", "kind": "credential-url" }],
+  "allowedDotnetPackageReferences": {
+    "backend/src/ForgeX.Infrastructure/ForgeX.Infrastructure.csproj": [
+      { "include": "Npgsql", "version": "9.0.3" }
+    ]
+  },
   "requiredDockerfiles": ["deploy/Dockerfile", "deploy/Dockerfile.api"]
 }

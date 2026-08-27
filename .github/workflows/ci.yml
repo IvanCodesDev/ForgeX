@@ -100,14 +100,21 @@ jobs:
         with:
           dotnet-version: "10.0.302"
 
-      - name: 验证生产项目无外部 NuGet 包
+      - name: 验证 NuGet 引用与评审白名单一致
         shell: bash
         run: |
-          if grep -RIn --include='*.csproj' '<PackageReference' backend; then
-            echo "::error::生产 .NET 项目必须保持零外部 NuGet PackageReference"
+          # Stage 8.1（手册 V2.0 §4.2）批准 ForgeX.Infrastructure 引入 Npgsql。
+          # 白名单之外出现任何 PackageReference（或版本漂移）都必须在这里失败。
+          refs=$(grep -RIh --include='*.csproj' '<PackageReference' backend | sed 's/^[[:space:]]*//' | LC_ALL=C sort || true)
+          locations=$(grep -RIl --include='*.csproj' '<PackageReference' backend | LC_ALL=C sort || true)
+          expected_refs='<PackageReference Include="Npgsql" Version="9.0.3" />'
+          expected_locations='backend/src/ForgeX.Infrastructure/ForgeX.Infrastructure.csproj'
+          if [ "$refs" != "$expected_refs" ] || [ "$locations" != "$expected_locations" ]; then
+            echo "::error::backend NuGet 引用超出评审白名单（仅 ForgeX.Infrastructure 允许 Npgsql 9.0.3）"
+            printf 'observed refs:\n%s\nobserved locations:\n%s\n' "$refs" "$locations"
             exit 1
           fi
-          echo "OK: backend 中无外部 NuGet PackageReference"
+          echo "OK: NuGet 引用与评审白名单一致（ForgeX.Infrastructure ← Npgsql 9.0.3）"
 
       - name: Restore（空 NuGet 源）
         run: npm run dotnet:restore

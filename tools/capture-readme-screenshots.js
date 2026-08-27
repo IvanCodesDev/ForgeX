@@ -1,4 +1,5 @@
 "use strict";
+/* global window, document, Event */
 
 const fs = require("fs");
 const path = require("path");

@@ -87,16 +87,49 @@ check(
   actualInstallScripts
 );
 
+// Stage 8.1（手册 V2.0 §4.2）批准了首个外部 NuGet 包（ForgeX.Infrastructure ← Npgsql）。
+// 门禁从「零外部包」升级为「锁定白名单」：每个 PackageReference 必须与
+// dependency-policy.json 中评审过的 include+version 逐字一致，白名单外一律失败。
 const projectFiles = files.filter((file) => file.endsWith(".csproj"));
-const packageReferences = projectFiles.filter((file) =>
-  fs.readFileSync(path.join(root, file), "utf8").includes("<PackageReference")
-);
-check("dotnet-zero-external-packages", packageReferences.length === 0, packageReferences);
+const allowedPackageReferences = policy.allowedDotnetPackageReferences || {};
+const packageReferenceViolations = [];
+const observedPackageReferences = {};
+for (const file of projectFiles) {
+  const key = file.replaceAll("\\", "/");
+  const body = fs.readFileSync(path.join(root, file), "utf8");
+  const rawCount = (body.match(/<PackageReference\b/g) || []).length;
+  if (rawCount === 0) continue;
+  const refs = [...body.matchAll(/<PackageReference\s+Include="([^"]+)"\s+Version="([^"]+)"\s*\/>/g)].map(
+    (match) => `${match[1]}@${match[2]}`
+  );
+  observedPackageReferences[key] = refs;
+  if (refs.length !== rawCount) {
+    packageReferenceViolations.push({ file: key, reason: "PackageReference 缺少锁定版本或格式不可解析" });
+    continue;
+  }
+  const allowed = (allowedPackageReferences[key] || []).map((entry) => `${entry.include}@${entry.version}`);
+  const expected = JSON.stringify([...allowed].sort());
+  const actual = JSON.stringify([...refs].sort());
+  if (expected !== actual) {
+    packageReferenceViolations.push({ file: key, allowed, actual: refs });
+  }
+}
+check("dotnet-packagereference-allowlist", packageReferenceViolations.length === 0, {
+  observed: observedPackageReferences,
+  violations: packageReferenceViolations,
+});
 const nugetConfig = fs.readFileSync(path.join(root, "backend", "NuGet.Config"), "utf8");
+const nugetSourcesSection = /<packageSources>([\s\S]*?)<\/packageSources>/.exec(nugetConfig);
+const nugetSourceAdds = nugetSourcesSection
+  ? [...nugetSourcesSection[1].matchAll(/<add\s+key="[^"]*"\s+value="([^"]+)"[^>]*\/>/g)].map((match) => match[1])
+  : [];
 check(
-  "nuget-sources-cleared",
-  /<packageSources>[\s\S]*?<clear\s*\/>[\s\S]*?<\/packageSources>/.test(nugetConfig),
-  true
+  "nuget-sources-pinned",
+  Boolean(nugetSourcesSection) &&
+    /<clear\s*\/>/.test(nugetSourcesSection[1]) &&
+    nugetSourceAdds.length === 1 &&
+    nugetSourceAdds[0] === "https://api.nuget.org/v3/index.json",
+  nugetSourceAdds
 );
 
 for (const dockerfile of policy.requiredDockerfiles) {

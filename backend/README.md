@@ -6,8 +6,8 @@ This directory is the sidecar authority introduced by the optimization manual. I
 
 - SDK: .NET `10.0.302` (`global.json`)
 - Target: `net10.0`
-- Production projects: no external `PackageReference`
-- Package sources: cleared by `backend/NuGet.Config`
+- Production projects: no external `PackageReference` beyond the reviewed pinned allowlist (manual V2.0 §4.2: `Npgsql` 9.0.3 in `ForgeX.Infrastructure` only, tracked in `config/dependency-policy.json`)
+- Package sources: reset by `backend/NuGet.Config` to nuget.org only; every new dependency needs review and a pinned version
 - Default API binding: loopback only, `http://127.0.0.1:8788`
 - Migration modes: G-code defaults to `browser`; Analytics defaults to `dotnet` with `shadow` and `browser` rollback modes
 
