@@ -7,9 +7,7 @@
   },
   "allowedSecretFixtures": [{ "file": "tests/server.test.js", "kind": "credential-url" }],
   "allowedDotnetPackageReferences": {
-    "backend/src/ForgeX.Infrastructure/ForgeX.Infrastructure.csproj": [
-      { "include": "Npgsql", "version": "9.0.3" }
-    ]
+    "backend/src/ForgeX.Infrastructure/ForgeX.Infrastructure.csproj": [{ "include": "Npgsql", "version": "9.0.3" }]
   },
   "requiredDockerfiles": ["deploy/Dockerfile", "deploy/Dockerfile.api"]
 }
