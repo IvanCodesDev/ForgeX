@@ -9,6 +9,49 @@
 
 ## [Unreleased]
 
+### Stage 8.3：Node 规则计算腿迁 C#（规则引擎权威边界）
+- ForgeX.Analytics 吃下 Node/classic 的最后一条规则计算腿：`RawDatasetCsv`（经典
+  `parseCsv`/`toCsv` 逐字节移植）、`DatasetCatalog`（字段与 provenance 目录）、
+  `FarmDataset`（内置机群数据集改嵌入资源 `Resources/farm-dataset.csv`，sha256 与
+  经典运行时一致）、`AnalyticsBriefEngine`（`brief.js` 统计简报）、
+  `CalibrationBundleValidator`（`validateBundle`，依托 `JsValue`/`JsDate` 复刻 JS
+  值强转与日期文法语义）。ForgeX.Api 新增五个内部端点：数据集 normalize / meta /
+  farm、统计简报、校准包验证（沿用 Stage 8.1 先例，内部端点不进公开 OpenAPI 文档）。
+- 双跑揪出并修复两处 .NET/JS 静默语义差异：`JsFormat` 负数平局舍入（对齐 JS
+  `Math.round` 向正无穷取整），以及严格数字正则 —— .NET 的 `\d` 匹配 Unicode 数字，
+  全角数字会越过文法检查落进「超出有限数值范围」的错误分支，显式改 ASCII `[0-9]`
+  并暴露 `IsStrictNumber` 供原始 CSV 解析器复用同一判定。
+- Node 侧新增迁移期双向开关 `RULES_ENGINE_AUTHORITY=node|csharp`（默认 node，
+  行为零变化；csharp 需 `GCODE_AUTHORITY_URL`，与 G-code 权威共用同一 sidecar）与
+  `RULES_ENGINE_TIMEOUT_MS`（默认 30000）。新增 `server/services/rules-engine.js`
+  统一异步规则引擎边界（normalizeCsv / farm / meta / buildBrief / validateBundle /
+  analyze），datasource / calibration / providers / analysis 及两个 postgres 存储
+  全部改为消费该边界，classic 的 require 收敛为 node 模式下的惰性加载 ——
+  切到 C# sidecar 不再需要触碰任何消费方。
+- 验证三层：AnalyticsGate 新增规则腿金样断言（期望值取自 Node 实测）至 1062 项；
+  `tests/rules-authority.test.js` 以假 sidecar 做 57 项断言（csharp 直连、消费链路
+  端到端、默认 node 零 HTTP 请求、6 类错误路径、配置校验）；
+  `tools/verify-rules-authority.js` 双跑门禁拉起真实 sidecar 对照 classic 权威，
+  292/292 全绿（25 组 CSV、11 组简报、29 组校准包、farm 全量 400 行；7 条零行
+  CSV 语料的既定差异记录于报告 waivers），报告随 CI `dotnet-authority` job 上传
+  artifact，`npm run dotnet:rules-authority` 入册。
+
+### Stage 7.1 / 8.1 / 8.2 补记（同一未发布批次中已提交的工作）
+- **Stage 8.1**：分享权威迁 C# —— ForgeX.Api 新增分享创建/撤销与公共只读页，
+  `PostgresShareRepository` 为首个 C# PostgreSQL 访问层，复用 forgex.shares 表与
+  RLS 契约（令牌形态、撤销哈希、TTL、过期即删、访问计数与 Node 版逐字节对齐），
+  Node 侧 `SHARES_AUTHORITY=csharp` 把分享路由切为迁移代理；Node 分析任务历史与
+  SSE 亦由 C# 提供（`AnalysisTasks:Provider=postgres` 下三个只读端点，复用 G-code
+  jobs 的 SSE 线格式，计算腿留待 Stage 8.3）。
+- **Stage 8.2**：C# `CallerContext` 支持直连身份解析 —— API Key（Authorization
+  Bearer / X-API-Key）与匿名 ip 身份由 `DirectAuth:*` 配置启用，租户/所有者 id
+  派生与 `server/lib/auth.js`、`identity.js` 逐字节一致（常数时间比对），未配置时
+  信任边界行为不变，流量迁离 Node 后租户数据无缝保留。
+- **Stage 7.1**：React 工作台接管根路径 `/`（存在构建产物时），经典入口降级
+  `/legacy` 保留一个发布周期；纯净检出无构建产物时根路径回退经典页，保住
+  clone-and-run 承诺与免构建 CI 冒烟，E2E（boot、react-parity）与服务端 212 项
+  测试同步迁移后通过。
+
 ### 修复（React 引擎机型状态回归）
 - 修复前端引擎 TS 迁移引入的 ES2022 类字段回归：四个机型子类的字段声明会在基类构造期
   `_buildMachine()` 赋值之后重新 define，把 `zCarriage` / `zGantry` / `beam` / `_arms` /
