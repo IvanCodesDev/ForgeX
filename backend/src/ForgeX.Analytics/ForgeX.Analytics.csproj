@@ -6,4 +6,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\farm-dataset.csv" />
+  </ItemGroup>
+
 </Project>

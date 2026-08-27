@@ -35,6 +35,7 @@ internal static class AnalyticsGateProgram
             await CompareDatasetAsync(root, golden, fields, absTolerance, relTolerance, cancellationToken);
             await CompareReportsAsync(root, golden, fields, absTolerance, relTolerance, cancellationToken);
             CompareCalibration(fields, absTolerance, relTolerance);
+            await CompareRulesLegAsync(root, fields, absTolerance, relTolerance, cancellationToken);
 
             var passed = fields.Count(static field => field.Pass);
             var report = new AnalyticsGateReport(
@@ -419,6 +420,269 @@ internal static class AnalyticsGateProgram
         var robust = CalibrationTrainer.Train(outlier, new CalibrationScope("FX-TEST", "Marlin"));
         AddNumber(fields, "calibration/outlier", "coefficients.motionScale", 1.25, robust.Coefficients.MotionScale, 0.05, relTolerance);
         fields.Add(new FieldDiff("calibration/outlier", "trainingMetrics.maxApe", ">0.5", robust.TrainingMetrics.MaxApe.ToString("G15", System.Globalization.CultureInfo.InvariantCulture), null, null, 0, robust.TrainingMetrics.MaxApe > 0.5));
+    }
+
+    // 与 Node JSON.stringify 同形态输出（中文不转义、引号用 \"），仅用于断言文本比对。
+    private static readonly JsonSerializerOptions RawRowJsonOptions = new()
+    {
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    /// <summary>
+    /// Stage 8.3 规则计算腿断言。期望值全部由经典 JS/Node 实测生成
+    /// （V8 String(number)/toFixed、brief.js 简报文本 SHA、calibration-registry 错误串），
+    /// 是 C# 与经典实现之间的静态跨语言金样；完整语料级双跑由 verify-rules-authority 工具承担。
+    /// </summary>
+    private static async Task CompareRulesLegAsync(
+        string root,
+        List<FieldDiff> fields,
+        double absTolerance,
+        double relTolerance,
+        CancellationToken cancellationToken)
+    {
+        // ── JsFormat：ECMA Number::toString / toFixed（V8 实测期望）────────────
+        (double Value, string Expected)[] numberCases =
+        [
+            (0.1, "0.1"), (123, "123"), (-0d, "0"), (1e21, "1e+21"), (1.5e-7, "1.5e-7"),
+            (0.000001, "0.000001"), (1e-7, "1e-7"), (1.2345678901234568e20, "123456789012345680000"),
+            (-1234.5678, "-1234.5678"), (5e-324, "5e-324"), (1.7976931348623157e308, "1.7976931348623157e+308"),
+            (0.5, "0.5"), (100.6, "100.6"), (204.5, "204.5"),
+        ];
+        foreach (var (value, expected) in numberCases)
+        {
+            AddExact(fields, "rules/js-format", $"Number({expected})", expected, JsFormat.Number(value));
+        }
+        (double Value, int Digits, string Expected)[] fixedCases =
+        [
+            (0.125, 2, "0.13"), (-0.125, 2, "-0.13"), (2.5, 0, "3"), (-2.5, 0, "-3"),
+            (1.005, 2, "1.00"), (0.615, 2, "0.61"), (1.0049999999999999, 2, "1.00"),
+            (99.995, 2, "100.00"), (-99.995, 2, "-100.00"), (0.1, 1, "0.1"),
+            (12.36, 1, "12.4"), (7.575, 2, "7.58"), (0, 2, "0.00"),
+        ];
+        foreach (var (value, digits, expected) in fixedCases)
+        {
+            AddExact(
+                fields,
+                "rules/js-format",
+                $"toFixed({value.ToString("R", System.Globalization.CultureInfo.InvariantCulture)},{digits})",
+                expected,
+                JsFormat.ToFixed(value, digits));
+        }
+
+        // ── farm 数据集：字节指纹 + 解析/再序列化闭环 ───────────────────────────
+        AddExact(
+            fields,
+            "rules/farm",
+            "csv.sha256",
+            "71be7cb1f832754ee964920d7d2e0b76ba1831418ac9df79683168df68667f25",
+            Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(FarmDataset.Csv))));
+        AddExact(fields, "rules/farm", "rows.length", 400, FarmDataset.Rows.Count);
+        AddExact(
+            fields,
+            "rules/farm",
+            "toCsv(parse(csv)) == csv",
+            true,
+            RawDatasetCsv.ToCsv(FarmDataset.Rows) == FarmDataset.Csv);
+
+        // ── 原始 CSV 解析：缺席 vs 零、cost_cny 换算、行错误文案、引号转义 ─────────
+        var absent = RawDatasetCsv.Parse("material,status\nPLA,success");
+        AddExact(
+            fields,
+            "rules/raw-csv",
+            "absent.row",
+            """{"material":"PLA","status":"success","fail_reason":""}""",
+            absent.Rows[0].ToJsonObject().ToJsonString(RawRowJsonOptions));
+        AddExact(
+            fields,
+            "rules/raw-csv",
+            "absent.csv",
+            "job_id,date,machine_id,model_name,material,layer_height_mm,duration_min,filament_g,cost_fen,status,fail_reason,energy_kwh\n,,,,PLA,,,,,success,,",
+            RawDatasetCsv.ToCsv(absent.Rows));
+        var zero = RawDatasetCsv.Parse("material,status,duration_min\nPLA,success,");
+        AddExact(
+            fields,
+            "rules/raw-csv",
+            "zero.row",
+            """{"material":"PLA","status":"success","duration_min":0,"fail_reason":""}""",
+            zero.Rows[0].ToJsonObject().ToJsonString(RawRowJsonOptions));
+        AddExact(
+            fields,
+            "rules/raw-csv",
+            "zero.csv",
+            "job_id,date,machine_id,model_name,material,layer_height_mm,duration_min,filament_g,cost_fen,status,fail_reason,energy_kwh\n,,,,PLA,,0,,,success,,",
+            RawDatasetCsv.ToCsv(zero.Rows));
+        var cny = RawDatasetCsv.Parse("material,status,成本\nPLA,success,1.155");
+        AddExact(
+            fields,
+            "rules/raw-csv",
+            "cny.row",
+            """{"material":"PLA","status":"success","cost_fen":116,"fail_reason":""}""",
+            cny.Rows[0].ToJsonObject().ToJsonString(RawRowJsonOptions));
+        var dirty = RawDatasetCsv.Parse("machine_id,status,duration_min\nM1,weird,5\nM2,success,abc\nM3,fail,3");
+        AddExact(fields, "rules/raw-csv", "dirty.errors[0]", "第 2 行：status 取值无效（weird）", dirty.Errors[0]);
+        AddExact(fields, "rules/raw-csv", "dirty.errors[1]", "第 3 行：duration_min 不是有效数值（abc）", dirty.Errors[1]);
+        AddExact(fields, "rules/raw-csv", "dirty.rows.length", 1, dirty.Rows.Count);
+        AddExact(
+            fields,
+            "rules/raw-csv",
+            "dirty.rows[0]",
+            """{"machine_id":"M3","status":"fail","duration_min":3}""",
+            dirty.Rows[0].ToJsonObject().ToJsonString(RawRowJsonOptions));
+        var quoted = RawDatasetCsv.Parse(
+            "machine_id,status,fail_reason\n\"M,1\",fail,\"含\"\"引号\"\"与,逗号\"\nM2,success,ignored");
+        AddExact(
+            fields,
+            "rules/raw-csv",
+            "quoted.rows[0]",
+            """{"machine_id":"M,1","status":"fail","fail_reason":"含\"引号\"与,逗号"}""",
+            quoted.Rows[0].ToJsonObject().ToJsonString(RawRowJsonOptions));
+        AddExact(
+            fields,
+            "rules/raw-csv",
+            "quoted.csv",
+            "job_id,date,machine_id,model_name,material,layer_height_mm,duration_min,filament_g,cost_fen,status,fail_reason,energy_kwh\n,,\"M,1\",,,,,,,fail,\"含\"\"引号\"\"与,逗号\",\n,,M2,,,,,,,success,,",
+            RawDatasetCsv.ToCsv(quoted.Rows));
+
+        // ── 统计简报：文本与经典 brief.js 逐字节一致（SHA-256 金样）──────────────
+        var brief = AnalyticsBriefEngine.Build(FarmDataset.Rows);
+        AddExact(
+            fields,
+            "rules/brief",
+            "text.sha256",
+            "79d55c394290817aefa13e68a800bf0c1db4842b9791a989c941a415a8bed63a",
+            Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(brief.Text))));
+        AddExact(fields, "rules/brief", "text.length", 1762, brief.Text.Length);
+        string[] expectedHead =
+        [
+            "## 数据集概况",
+            "- 记录数：400",
+            "- 时间跨度：2026-06-29 → 2026-07-19（21 天）",
+            "- 总体失败率：17.5%（95%CI 14.1–21.5%）（70/400）",
+            "- 良品平均成本：¥1.27；耗材合计 3.97 kg；能耗 52.7 kWh",
+            "",
+        ];
+        var actualLines = brief.Text.Split('\n');
+        for (var index = 0; index < expectedHead.Length; index++)
+        {
+            AddExact(fields, "rules/brief", $"text.lines[{index}]", expectedHead[index], actualLines[index]);
+        }
+        AddExact(fields, "rules/brief", "facts.machines.ranked.length", 8, brief.Facts.Machines.Ranked.Count);
+        AddExact(fields, "rules/brief", "facts.machines.skipped.length", 0, brief.Facts.Machines.Skipped.Count);
+        AddExact(fields, "rules/brief", "facts.machines.worst", "FX-256-01", brief.Facts.Machines.Worst);
+        AddExact(
+            fields,
+            "rules/brief",
+            "facts.faults",
+            "堵料:23|断料:19|悬垂塌陷:16|热失控:8|翘边:4",
+            string.Join('|', brief.Facts.Faults.Select(static fault => $"{fault.Name}:{fault.N}")));
+        AddExact(fields, "rules/brief", "facts.dateRange.label", "2026-06-29 → 2026-07-19（21 天）", brief.Facts.DateRange?.Label);
+        AddNumber(fields, "rules/brief", "facts.overall.failRateCi.lo", 0.1409042015930453, brief.Facts.Overall.FailRateCi.Lo, absTolerance, relTolerance);
+        AddNumber(fields, "rules/brief", "facts.overall.avgCostFen", 127, brief.Facts.Overall.AvgCostFen, absTolerance, relTolerance);
+        AddNumber(fields, "rules/brief", "facts.overall.filamentG", 3968.3000000000015, brief.Facts.Overall.FilamentG, absTolerance, relTolerance);
+        AddNumber(fields, "rules/brief", "facts.overall.energyKwh", 52.68999999999994, brief.Facts.Overall.EnergyKwh, absTolerance, relTolerance);
+        var layer = brief.Facts.LayerHeight ?? throw new InvalidDataException("farm brief layerHeight missing.");
+        AddExact(
+            fields,
+            "rules/brief",
+            "facts.layerHeight.buckets",
+            "0.12:72:55|0.2:200:33|0.28:58:25",
+            string.Join('|', layer.Buckets.Select(static bucket =>
+                $"{JsFormat.Number(bucket.Lh)}:{bucket.N}:{JsFormat.Number(bucket.AvgDur)}")));
+        var partial = layer.Partial ?? throw new InvalidDataException("farm brief partial missing.");
+        AddNumber(fields, "rules/brief", "facts.layerHeight.partial.r", -0.8341227545194032, partial.R, absTolerance, relTolerance);
+        AddExact(fields, "rules/brief", "facts.layerHeight.partial.n", 330, partial.N);
+        AddExact(fields, "rules/brief", "facts.layerHeight.partial.groups", 12, partial.Groups);
+        var trend = brief.Facts.CostTrend.Trend ?? throw new InvalidDataException("farm brief trend missing.");
+        AddExact(fields, "rules/brief", "facts.costTrend.trend.n", 21, trend.N);
+        AddExact(fields, "rules/brief", "facts.costTrend.trend.S", -6L, trend.S);
+        AddNumber(fields, "rules/brief", "facts.costTrend.trend.pValue", 0.879987818000241, trend.PValue, absTolerance, relTolerance);
+        AddExact(fields, "rules/brief", "facts.costTrend.trend.direction", "flat", trend.Direction);
+        AddNumber(fields, "rules/brief", "facts.costTrend.totalFen", 42024, brief.Facts.CostTrend.TotalFen, absTolerance, relTolerance);
+        AddNumber(fields, "rules/brief", "facts.costTrend.failLossFen", 1945, brief.Facts.CostTrend.FailLossFen, absTolerance, relTolerance);
+
+        // ── 校准包验证器：例包通过 + 错误串逐字节一致 ───────────────────────────
+        var examplePath = Path.Combine(root, "contracts", "calibration", "example-bundle.json");
+        using (var example = JsonDocument.Parse(await File.ReadAllBytesAsync(examplePath, cancellationToken)))
+        {
+            var checkedExample = CalibrationBundleValidator.Validate(example.RootElement);
+            AddExact(fields, "rules/calibration-validate", "example.ok", true, checkedExample.Ok);
+            AddExact(fields, "rules/calibration-validate", "example.errors.length", 0, checkedExample.Errors.Count);
+        }
+        AssertValidator(
+            fields,
+            "bad1",
+            """
+            {"format":"x","version":2,"id":"ab","revision":0,"createdAt":"not-a-date",
+             "provenance":"weird","source":{"license":"","note":"short","extra":1},"models":[]}
+            """,
+            [
+                "format 必须是 forgex-calibration-bundle", "version 必须是 1", "bundle.id 格式无效",
+                "revision 必须是正整数", "createdAt 必须是 ISO 日期", "provenance 不受支持",
+                "source 含未知字段 extra", "source.license 必填", "source.note 至少 20 个字符",
+                "models 至少需要一项",
+            ]);
+        AssertValidator(
+            fields,
+            "bad2",
+            $$"""
+            {"format":"forgex-calibration-bundle","version":1,"id":"bundle.one","revision":2,
+             "createdAt":"2026-08-01T00:00:00Z","provenance":"real-anonymized",
+             "source":{"license":"CC0","note":"一份用于门禁断言的真实来源说明文字，超过二十个字符。"},
+             "models":[{
+               "id":"model-a","status":"active","algorithm":"theil-sen","trainedAt":"2026-08-01",
+               "trainingSetSha256":"{{new string('a', 64)}}",
+               "scope":{"machineId":"FX-1","firmware":"Marlin","material":null},
+               "coefficients":{"motionScale":20,"fixedOverheadSec":-1,"sampleCount":2},
+               "validation":{"holdoutSamples":null,"mape":2,"maxApe":9,"medianBias":-3,"evaluatedAt":"2026-08-02"},
+               "thresholds":{"maxMape":0.9,"maxBias":0.005,"minDriftSamples":1}
+             },{
+               "id":"model-a","status":"demonstration-only","algorithm":"other","trainedAt":"bad",
+               "trainingSetSha256":"ZZ","scope":{"machineId":" ","firmware":""},
+               "coefficients":{"motionScale":1,"fixedOverheadSec":10,"sampleCount":3},
+               "validation":{"holdoutSamples":5,"mape":0.1,"maxApe":0.2,"medianBias":0,"evaluatedAt":"2026-08-02T10:00:00+08:00"},
+               "thresholds":{"maxMape":0.2,"maxBias":0.2,"minDriftSamples":3},
+               "unknownField":true
+             }]}
+            """,
+            [
+                "models[0].coefficients.motionScale 超出 0.1–10",
+                "models[0].coefficients.fixedOverheadSec 超出 0–7200",
+                "models[0].coefficients.sampleCount 至少为 3",
+                "models[0].validation.holdoutSamples 必须是非负整数",
+                "models[0].validation.mape 超出 0–1",
+                "models[0].validation.maxApe 超出 0–5",
+                "models[0].validation.medianBias 超出 -1–1",
+                "models[0].thresholds.maxMape 超出 0.01–0.5",
+                "models[0].thresholds.maxBias 超出 0.01–0.5",
+                "models[0].thresholds.minDriftSamples 至少为 3",
+                "models[0] active 模型至少需要 5 个 holdout",
+                "models[0] holdout 指标未通过启用阈值",
+                "models[1] 含未知字段 unknownField",
+                "models[1].id 重复",
+                "models[1].algorithm 仅支持 theil-sen",
+                "models[1].trainedAt 必须是 ISO 日期",
+                "models[1].trainingSetSha256 必须是 SHA-256",
+                "models[1].scope.machineId 必填",
+                "models[1].scope.firmware 必填",
+                "models[1] demonstration-only 必须使用 synthetic-conformance",
+            ]);
+        AssertValidator(fields, "bad3", "\"not-an-object\"", ["bundle 必须是对象"]);
+    }
+
+    private static void AssertValidator(
+        List<FieldDiff> fields,
+        string caseId,
+        string bundleJson,
+        string[] expectedErrors)
+    {
+        using var document = JsonDocument.Parse(bundleJson);
+        var result = CalibrationBundleValidator.Validate(document.RootElement);
+        AddExact(fields, $"rules/calibration-validate/{caseId}", "ok", false, result.Ok);
+        AddExact(fields, $"rules/calibration-validate/{caseId}", "errors.length", expectedErrors.Length, result.Errors.Count);
+        for (var index = 0; index < Math.Min(expectedErrors.Length, result.Errors.Count); index++)
+        {
+            AddExact(fields, $"rules/calibration-validate/{caseId}", $"errors[{index}]", expectedErrors[index], result.Errors[index]);
+        }
     }
 
     private static void CompareNode(

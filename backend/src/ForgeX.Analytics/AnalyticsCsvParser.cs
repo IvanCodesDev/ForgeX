@@ -34,6 +34,9 @@ public static partial class AnalyticsCsvParser
     private static readonly HashSet<string> FailStatuses =
         ["fail", "failed", "failure", "error", "失败", "故障"];
 
+    /// <summary>经典 STRICT_NUMBER 文法（供原始解析器复用同一判定）。</summary>
+    public static bool IsStrictNumber(string value) => StrictNumber().IsMatch(value);
+
     public static AnalyticsCsvResult Parse(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
@@ -189,6 +192,9 @@ public static partial class AnalyticsCsvParser
     [GeneratedRegex("\\r\\n|\\n|\\r", RegexOptions.CultureInvariant)]
     private static partial Regex LineSeparator();
 
-    [GeneratedRegex("^[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$", RegexOptions.CultureInvariant)]
+    // JS 正则的 \d 恒为 ASCII [0-9]，而 .NET 的 \d 匹配 Unicode 数字（如全角１２３）——
+    // 必须显式 [0-9]，否则全角数字会越过文法检查落到"超出有限数值范围"的错误分支
+    //（经典侧报"不是有效数值"），错误文案在双跑对比中漂移。
+    [GeneratedRegex("^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$", RegexOptions.CultureInvariant)]
     private static partial Regex StrictNumber();
 }

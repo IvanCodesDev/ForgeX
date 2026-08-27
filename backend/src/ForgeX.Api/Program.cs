@@ -337,6 +337,33 @@ app.MapPost(
     .Produces<ApiProblem>(StatusCodes.Status422UnprocessableEntity, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status500InternalServerError, "application/problem+json");
 
+// ── Stage 8.3：Node 规则计算腿的接管端点（迁移期内部调用，不进公开 OpenAPI 文档）──
+app.MapGet("/api/v1/analytics/datasets/meta", RulesEngineEndpoints.Meta)
+    .WithName("GetAnalyticsDatasetMeta")
+    .ExcludeFromDescription();
+
+app.MapGet("/api/v1/analytics/datasets/farm", RulesEngineEndpoints.Farm)
+    .WithName("GetAnalyticsFarmDataset")
+    .ExcludeFromDescription();
+
+app.MapPost(
+        "/api/v1/analytics/datasets/normalize",
+        (Func<HttpContext, Task<IResult>>)RulesEngineEndpoints.NormalizeAsync)
+    .WithName("NormalizeAnalyticsDataset")
+    .ExcludeFromDescription();
+
+app.MapPost(
+        "/api/v1/analytics/briefs",
+        (Func<HttpContext, Task<IResult>>)RulesEngineEndpoints.BriefAsync)
+    .WithName("BuildAnalyticsBrief")
+    .ExcludeFromDescription();
+
+app.MapPost(
+        "/api/v1/calibration/validate",
+        (Func<HttpContext, Task<IResult>>)RulesEngineEndpoints.ValidateCalibrationAsync)
+    .WithName("ValidateCalibrationBundle")
+    .ExcludeFromDescription();
+
 app.MapPost("/api/v1/gcode/analyses", GCodeJobEndpoints.CreateAsync)
     .WithName("CreateGCodeAnalysisJob")
     .Accepts<Stream>("application/x-gcode")
