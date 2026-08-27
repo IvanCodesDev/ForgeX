@@ -62,16 +62,21 @@ class ResultCache {
 }
 
 class TaskStore {
-  constructor(cfg, log, infini, knowledge, gate, persistence) {
+  constructor(cfg, log, infini, knowledge, gate, persistence, rulesEngine) {
     this.cfg = cfg;
     this.log = log;
     this.infini = infini;
     this.knowledge = knowledge || null;
     this.gate = gate || null; // 成本闸门；null 表示不限（本地开发）
     this.persistence = persistence || null;
+    this.rulesEngine = rulesEngine || null; // 未注入时由 providers.js 自建（默认 node 模式）
     this.map = new Map();
-    this.provider = createProvider(cfg, log, { infini });
-    this.fallback = createProvider(Object.assign({}, cfg, { provider: "local" }), log, { infini, forceLocal: true });
+    this.provider = createProvider(cfg, log, { infini, rulesEngine: this.rulesEngine });
+    this.fallback = createProvider(Object.assign({}, cfg, { provider: "local" }), log, {
+      infini,
+      forceLocal: true,
+      rulesEngine: this.rulesEngine,
+    });
     this.cache = new ResultCache(cfg);
     this.onTerminal = null;
   }
@@ -120,6 +125,7 @@ class TaskStore {
     const providerImpl = ctx.infiniKey
       ? createProvider(Object.assign({}, this.cfg, { provider: "infinisynapse", mode: "infinisynapse" }), this.log, {
           infini: this.infini.withKey(ctx.infiniKey),
+          rulesEngine: this.rulesEngine,
         })
       : this.provider;
     const task = {

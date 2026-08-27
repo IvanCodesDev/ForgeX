@@ -106,7 +106,7 @@ async function main() {
   const store = new CalibrationStore({ dataDir: dir }, quiet);
   const first = candidate();
   check("内容摘要与 JSON 键顺序无关", digest(first) === digest(JSON.parse(JSON.stringify(first))));
-  const pending = store.submit(first, "reviewer-a", "Initial production candidate");
+  const pending = await store.submit(first, "reviewer-a", "Initial production candidate");
   check("候选进入 pending", pending.status === "pending" && store.pendingCount === 1);
   check("提交事件记录主体与时间", pending.events[0].actor === "reviewer-a" && pending.events[0].at > 0);
   check("同 bundle revision 不能重复提交", await rejects(() => store.submit(first, "x", "again"), 409));
@@ -118,7 +118,7 @@ async function main() {
   preactivated.models[0].status = "active";
   check("客户端不能绕过审批直接提交 active", await rejects(() => store.submit(preactivated, "x", "no"), 400));
 
-  const approved = store.review(
+  const approved = await store.review(
     first.id,
     first.revision,
     "approve",
@@ -138,8 +138,8 @@ async function main() {
 
   const second = candidate(first.id, 2);
   second.models[0].id = first.models[0].id;
-  store.submit(second, "reviewer-a", "Revision two candidate");
-  store.review(
+  await store.submit(second, "reviewer-a", "Revision two candidate");
+  await store.review(
     second.id,
     2,
     "approve",
@@ -150,7 +150,7 @@ async function main() {
 
   const poor = candidate("poor-p8", 1);
   poor.models[0].validation.holdoutSamples = 2;
-  store.submit(poor, "reviewer-a", "Insufficient holdout candidate");
+  await store.submit(poor, "reviewer-a", "Insufficient holdout candidate");
   check(
     "审核时重新执行 active holdout 门槛",
     await rejects(
@@ -159,8 +159,8 @@ async function main() {
     )
   );
   const rejectedCandidate = candidate("rejected-p8", 1);
-  store.submit(rejectedCandidate, "reviewer-a", "Candidate with disputed provenance");
-  const rejected = store.review(
+  await store.submit(rejectedCandidate, "reviewer-a", "Candidate with disputed provenance");
+  const rejected = await store.review(
     rejectedCandidate.id,
     1,
     "reject",

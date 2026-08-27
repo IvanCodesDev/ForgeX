@@ -3,7 +3,8 @@
 const crypto = require("crypto");
 const { HttpError } = require("../lib/http");
 const { createPool, withTransaction, closePool } = require("../lib/postgres");
-const { digest, validateBundle } = require("./calibration");
+const { digest } = require("./calibration");
+const { createRulesEngine } = require("./rules-engine");
 
 const MAX_SUBMISSIONS = 200;
 
@@ -39,9 +40,10 @@ function mapRecord(row) {
 }
 
 class PostgresCalibrationStore {
-  constructor(cfg, log) {
+  constructor(cfg, log, rulesEngine) {
     this.cfg = cfg;
     this.log = log || { info() {}, warn() {}, error() {} };
+    this.engine = rulesEngine || createRulesEngine({ config: cfg });
     this.pool = cfg.postgresPool || createPool(cfg);
     this.ownsPool = !cfg.postgresPool;
     this.tenantId = cfg.postgresTenantId || "tn_local";
@@ -57,8 +59,8 @@ class PostgresCalibrationStore {
     return { action, at: Date.now(), actor: String(actor || "unknown"), reason: String(reason || "").slice(0, 500) };
   }
 
-  _validateSubmit(rawBundle) {
-    const checked = validateBundle(rawBundle);
+  async _validateSubmit(rawBundle) {
+    const checked = await this.engine.validateBundle(rawBundle);
     if (!checked.ok) throw new HttpError(400, checked.errors.join(", "));
     if (!["real-anonymized", "real-consented"].includes(rawBundle.provenance)) {
       throw new HttpError(400, "服务端只接受具有真实数据来源声明的候选校准包");
@@ -69,7 +71,7 @@ class PostgresCalibrationStore {
   }
 
   async submit(rawBundle, actor, note) {
-    this._validateSubmit(rawBundle);
+    await this._validateSubmit(rawBundle);
     const bundle = clone(rawBundle);
     const key = `${bundle.id}@${bundle.revision}`;
     return withTransaction(this.pool, this.tenantId, this.ownerId, async (client) => {
@@ -132,7 +134,7 @@ class PostgresCalibrationStore {
       if (decision === "approve") {
         const published = clone(record.bundle);
         published.models.forEach((model) => { model.status = "active"; });
-        const checked = validateBundle(published);
+        const checked = await this.engine.validateBundle(published);
         if (!checked.ok) throw new HttpError(409, "候选模型未达到 active 准入条件：" + checked.errors.join(", "));
         const current = await client.query(
           "SELECT revision FROM forgex.calibration_releases WHERE tenant_id=$1 AND bundle_id=$2 FOR UPDATE",

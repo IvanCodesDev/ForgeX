@@ -5,7 +5,7 @@ const { HttpError } = require("../lib/http");
 const { createPool, withTransaction, closePool } = require("../lib/postgres");
 const { storageId } = require("../lib/identity");
 const { DatasourceStore } = require("./datasource");
-const engine = require("./local-engine");
+const { createRulesEngine } = require("./rules-engine");
 
 const MAX_SETS = 200;
 
@@ -13,7 +13,7 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function mapRecord(row) {
+function mapRecord(row, uploadProvenance) {
   return {
     id: row.id,
     name: row.name,
@@ -28,35 +28,50 @@ function mapRecord(row) {
     createdAt: new Date(row.created_at_utc).getTime(),
     expiresAt: row.expires_at_utc ? new Date(row.expires_at_utc).getTime() : undefined,
     warnings: row.warnings_json || [],
-    provenance: row.provenance_json || engine.PROVENANCE.upload,
+    provenance: row.provenance_json || uploadProvenance,
   };
 }
 
 class PostgresDatasourceStore {
-  constructor(cfg, log, pool) {
+  constructor(cfg, log, pool, rulesEngine) {
     this.cfg = cfg;
     this.log = log || { info() {}, warn() {}, error() {} };
     this.pool = pool || cfg.postgresPool || createPool(cfg);
     this.ownsPool = !pool && !cfg.postgresPool;
+    this.engine = rulesEngine || createRulesEngine({ config: cfg });
     this.map = new Map();
     this.seenTenants = new Map();
+    this._primed = null;
+    this._catalog = null;
     this._ready = null;
     this._size = 0;
+  }
 
-    const rows = engine.farmRows();
-    const csv = engine.farmCsv();
-    this.map.set("sample", {
-      id: "sample",
-      name: "内置机群仿真数据",
-      rows,
-      csv,
-      builtin: true,
-      owner: "system:public",
-      createdAt: Date.now(),
-      contentSha256: crypto.createHash("sha256").update(csv).digest("hex"),
-      cacheKey: crypto.createHash("sha256").update(csv).digest("hex"),
-      provenance: engine.PROVENANCE.farm,
-    });
+  /** farm 种子与 provenance 目录只取一次；独立于 DB 探活——数据库不可用时内置 sample 依旧可用。 */
+  _prime() {
+    if (!this._primed) {
+      this._primed = (async () => {
+        const [farm, meta] = await Promise.all([this.engine.farm(), this.engine.meta()]);
+        this._catalog = meta.provenance;
+        const digest = crypto.createHash("sha256").update(farm.csv).digest("hex");
+        this.map.set("sample", {
+          id: "sample",
+          name: "内置机群仿真数据",
+          rows: farm.rows,
+          csv: farm.csv,
+          builtin: true,
+          owner: "system:public",
+          createdAt: Date.now(),
+          contentSha256: digest,
+          cacheKey: digest,
+          provenance: farm.provenance,
+        });
+      })().catch((error) => {
+        this._primed = null;
+        throw error;
+      });
+    }
+    return this._primed;
   }
 
   _context(owner) {
@@ -67,6 +82,7 @@ class PostgresDatasourceStore {
   }
 
   async ready() {
+    await this._prime();
     if (!this._ready) {
       this._ready = withTransaction(this.pool, "tn_local", "ow_local", async (client) => {
         await client.query("SELECT 1 FROM forgex.datasources LIMIT 0");
@@ -78,14 +94,14 @@ class PostgresDatasourceStore {
     return this._ready;
   }
 
-  _parse(name, csvText, provenanceClaim, owner) {
-    const out = engine.parseCsv(csvText);
+  async _parse(name, csvText, provenanceClaim, owner) {
+    const out = await this.engine.normalizeCsv(csvText);
     if (!out.rows.length) {
       throw new HttpError(400, "CSV 解析失败：" + (out.errors[0] || "无有效数据"));
     }
-    const csv = engine.toCsv(out.rows);
+    const csv = out.csv;
     const contentSha256 = crypto.createHash("sha256").update(csv).digest("hex");
-    const provenance = DatasourceStore.sanitizeProvenance(provenanceClaim);
+    const provenance = DatasourceStore.sanitizeProvenance(provenanceClaim, this._catalog);
     const context = this._context(owner);
     const cacheKey = crypto.createHash("sha256")
       .update(contentSha256).update("\0").update(JSON.stringify(provenance)).digest("hex");
@@ -112,7 +128,7 @@ class PostgresDatasourceStore {
 
   async create(name, csvText, provenanceClaim, owner) {
     await this.ready();
-    const record = this._parse(name, csvText, provenanceClaim, owner);
+    const record = await this._parse(name, csvText, provenanceClaim, owner);
     const { tenantId, ownerId } = record;
     return withTransaction(this.pool, tenantId, ownerId, async (client) => {
       const existing = await client.query(
@@ -120,7 +136,7 @@ class PostgresDatasourceStore {
         [tenantId, ownerId, record.cacheKey]
       );
       if (existing.rowCount) {
-        const found = mapRecord(existing.rows[0]);
+        const found = mapRecord(existing.rows[0], this._catalog.upload);
         if (!found.expiresAt || Date.now() <= found.expiresAt) {
           this.map.set(found.id, found);
           return Object.assign({}, found, { deduplicated: true });
@@ -151,7 +167,10 @@ class PostgresDatasourceStore {
 
   async get(id, owner) {
     const key = String(id || "");
-    if (key === "sample") return this.map.get("sample");
+    if (key === "sample") {
+      await this._prime();
+      return this.map.get("sample");
+    }
     await this.ready();
     const cached = this.map.get(key);
     const context = this._context(owner);
@@ -167,7 +186,7 @@ class PostgresDatasourceStore {
       [key, context.tenantId, context.ownerId]
     ));
     if (!result.rowCount) return null;
-    const record = mapRecord(result.rows[0]);
+    const record = mapRecord(result.rows[0], this._catalog.upload);
     if (record.expiresAt && Date.now() > record.expiresAt) return null;
     this.map.set(record.id, record);
     this._size = Math.max(this._size, this.map.size - 1);

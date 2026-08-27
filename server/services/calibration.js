@@ -10,10 +10,7 @@ const crypto = require("crypto");
 const path = require("path");
 const { HttpError } = require("../lib/http");
 const { JsonFile } = require("../lib/store");
-
-require("../../frontend/classic/js/time-calibration.js");
-require("../../frontend/classic/js/calibration-registry.js");
-const Registry = globalThis.FXCalibrationRegistry;
+const { createRulesEngine } = require("./rules-engine");
 
 const FORMAT = "forgex-calibration-service-state";
 const VERSION = 1;
@@ -47,7 +44,9 @@ function submissionKey(id, revision) {
 }
 
 class CalibrationStore {
-  constructor(cfg, log) {
+  constructor(cfg, log, rulesEngine) {
+    // 校准包验证走异步规则引擎边界（node 模式即 classic calibration-registry，语义不变）
+    this.engine = rulesEngine || createRulesEngine({ config: cfg });
     const file = cfg.dataDir ? path.join(cfg.dataDir, "calibrations.json") : "";
     this.file = new JsonFile(
       file,
@@ -80,8 +79,8 @@ class CalibrationStore {
     };
   }
 
-  submit(rawBundle, actor, note) {
-    const checked = Registry.validateBundle(rawBundle);
+  async submit(rawBundle, actor, note) {
+    const checked = await this.engine.validateBundle(rawBundle);
     if (!checked.ok) throw new HttpError(400, checked.errors.join("；"));
     if (!["real-anonymized", "real-consented"].includes(rawBundle.provenance)) {
       throw new HttpError(400, "服务端只接受具有真实数据来源声明的候选校准包");
@@ -119,7 +118,7 @@ class CalibrationStore {
     return clone(record);
   }
 
-  review(id, revision, decision, actor, reason) {
+  async review(id, revision, decision, actor, reason) {
     const key = submissionKey(id, revision);
     const record = this.file.data.submissions[key];
     if (!record) throw new HttpError(404, "校准包提交不存在");
@@ -139,7 +138,7 @@ class CalibrationStore {
       published.models.forEach((model) => {
         model.status = "active";
       });
-      const checked = Registry.validateBundle(published);
+      const checked = await this.engine.validateBundle(published);
       if (!checked.ok) {
         throw new HttpError(409, "候选模型未达到 active 准入条件：" + checked.errors.join("；"));
       }
@@ -202,4 +201,11 @@ class CalibrationStore {
   }
 }
 
-module.exports = { CalibrationStore, digest, validateBundle: (bundle) => Registry.validateBundle(bundle) };
+/** 兼容旧引用的同步验证入口：等价于 node 模式规则引擎（惰性拉起 classic registry）。 */
+function validateBundle(bundle) {
+  require("../../frontend/classic/js/time-calibration.js");
+  require("../../frontend/classic/js/calibration-registry.js");
+  return globalThis.FXCalibrationRegistry.validateBundle(bundle);
+}
+
+module.exports = { CalibrationStore, digest, validateBundle };

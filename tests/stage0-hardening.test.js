@@ -117,7 +117,7 @@ async function main() {
     assert.strictEqual(upA1.status, 201);
     assert.strictEqual(upA1.json.datasourceId, upA2.json.datasourceId, "同租户同内容 ID 应稳定");
     assert.strictEqual(upA2.json.deduplicated, true);
-    assert.strictEqual(upA1.json.sha256, crypto.createHash("sha256").update(app.ctx.datasources.get(upA1.json.datasourceId).csv).digest("hex"));
+    assert.strictEqual(upA1.json.sha256, crypto.createHash("sha256").update((await app.ctx.datasources.get(upA1.json.datasourceId)).csv).digest("hex"));
     assert.notStrictEqual(upA1.json.datasourceId, upB.json.datasourceId, "不同租户业务 ID 必须隔离");
 
     const crossDatasource = await request(base, "/api/analyze", "beta", {

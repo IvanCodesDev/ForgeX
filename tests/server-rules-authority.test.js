@@ -58,7 +58,7 @@ async function main() {
     const probe = await app.ctx.tasks.probeProvider();
     assert.strictEqual(probe.ok, true);
     assert.strictEqual(app.ctx.tasks.provider.id, "server-rules");
-    const task = app.ctx.tasks.create("概览", app.ctx.datasources.get("sample"), "test", { caller: "test" });
+    const task = app.ctx.tasks.create("概览", await app.ctx.datasources.get("sample"), "test", { caller: "test" });
     for (let i = 0; i < 100 && task.status === "running"; i++) await new Promise((resolve) => setTimeout(resolve, 5));
     assert.strictEqual(task.status, "done");
     assert.strictEqual(task.report.engine, "server-rules");

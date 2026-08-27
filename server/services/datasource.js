@@ -3,28 +3,46 @@
    每个数据源都带 provenance——内置 sample 是合成数据，必须一路标到报告里。 */
 "use strict";
 const crypto = require("crypto");
-const engine = require("./local-engine");
+const { createRulesEngine } = require("./rules-engine");
 const { HttpError } = require("../lib/http");
 const { FileStore } = require("../lib/store");
 
 const MAX_SETS = 200;
 
 class DatasourceStore {
-  constructor(cfg, log) {
+  constructor(cfg, log, rulesEngine) {
     this.cfg = cfg;
+    // 规则计算腿（CSV 规范化 / farm 种子 / provenance 目录）统一走异步引擎边界；
+    // 未注入时自建（默认 node 模式，行为与直接 require classic 逻辑一致）。
+    this.engine = rulesEngine || createRulesEngine({ config: cfg });
     // 落盘：重启后用户上传的数据源仍在（此前重启即全丢，分享出去的链接也就废了）
     this.map = new FileStore({
       dir: cfg.dataDir, name: "datasources", ttlMs: cfg.taskTtlMs, max: MAX_SETS, log: log,
     });
+    this._ready = null;
+  }
+
+  /** 构造不再同步取 farm 数据：首次使用时种子化（记忆化，失败可重试）。 */
+  ready() {
+    if (!this._ready) {
+      this._ready = this._seedSample().catch((error) => {
+        this._ready = null;
+        throw error;
+      });
+    }
+    return this._ready;
+  }
+
+  async _seedSample() {
     // 内置数据源是**物理仿真产出**的机群数据，不是概率合成——
     // 开箱即用的那份数据，其结论必须是能被证伪的。
-    const rows = engine.farmRows();
+    const farm = await this.engine.farm();
     // 内置数据集每次启动都重建（它由代码决定，不该被旧盘数据固化）
     this.map.set({
-      id: "sample", name: "内置机群仿真数据", rows, csv: engine.farmCsv(),
+      id: "sample", name: "内置机群仿真数据", rows: farm.rows, csv: farm.csv,
       builtin: true, owner: "system:public", createdAt: Date.now(),
-      contentSha256: crypto.createHash("sha256").update(engine.farmCsv()).digest("hex"),
-      provenance: engine.PROVENANCE.farm,
+      contentSha256: crypto.createHash("sha256").update(farm.csv).digest("hex"),
+      provenance: farm.provenance,
     });
   }
 
@@ -40,10 +58,12 @@ class DatasourceStore {
    * 声明 synthetic:true 一律采信（多标一次无害）；
    * 声明 synthetic:false 不采信——后端无法验证，默认按上传数据处理即可。
    */
-  static sanitizeProvenance(claim) {
-    const base = engine.PROVENANCE.upload;
+  static sanitizeProvenance(claim, catalog) {
+    // catalog 由调用方从 engine.meta() 取得；未传时回退 classic 目录（兼容旧调用）
+    const provenanceCatalog = catalog || require("./local-engine").PROVENANCE;
+    const base = provenanceCatalog.upload;
     if (!claim || typeof claim !== "object") return base;
-    const known = engine.PROVENANCE[claim.source] || null;
+    const known = provenanceCatalog[claim.source] || null;
     if (known && known.synthetic) return known;              // 已知的合成来源，原样采用
     if (claim.synthetic === true) {
       // 未知来源但自称合成：保守起见照样标出来，只是措辞泛化
@@ -58,15 +78,17 @@ class DatasourceStore {
     return base;
   }
 
-  create(name, csvText, provenanceClaim, owner) {
-    const out = engine.parseCsv(csvText);
+  async create(name, csvText, provenanceClaim, owner) {
+    await this.ready();
+    const out = await this.engine.normalizeCsv(csvText);
     if (!out.rows.length) {
       throw new HttpError(400, "CSV 解析失败：" + (out.errors[0] || "无有效数据"));
     }
-    const csv = engine.toCsv(out.rows);   // 规范化后再摘要，换行/空白差异不制造重复数据源
+    const csv = out.csv;   // 规范化后再摘要，换行/空白差异不制造重复数据源
     const contentSha256 = crypto.createHash("sha256").update(csv).digest("hex");
     const ownerKey = String(owner || "legacy:unowned");
-    const provenance = DatasourceStore.sanitizeProvenance(provenanceClaim);
+    const meta = await this.engine.meta();
+    const provenance = DatasourceStore.sanitizeProvenance(provenanceClaim, meta.provenance);
     const cacheKey = crypto.createHash("sha256")
       .update(contentSha256).update("\0").update(JSON.stringify(provenance)).digest("hex");
     const id = "ds_" + crypto.createHash("sha256")
@@ -92,7 +114,8 @@ class DatasourceStore {
     return ds;
   }
 
-  get(id) {
+  async get(id) {
+    await this.ready();
     return this.map.get(id);
   }
 

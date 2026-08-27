@@ -22,6 +22,7 @@ const { ShareStore } = require("./services/share");
 const { PostgresShareStore } = require("./services/postgres-share");
 const { CalibrationStore } = require("./services/calibration");
 const { PostgresCalibrationStore } = require("./services/postgres-calibration");
+const { createRulesEngine } = require("./services/rules-engine");
 const { InfiniClient } = require("./services/infini");
 const { PartnerSSO } = require("./services/partner-sso");
 const { CostGate } = require("./lib/quota");
@@ -62,9 +63,12 @@ function createApp(overrides) {
   const persistenceCfg = persistenceEnabled
     ? Object.assign({}, cfg, { postgresPool: persistencePool })
     : cfg;
+  // 规则计算腿单例：RULES_ENGINE_AUTHORITY=node（默认，行为不变）/ csharp（代理 ForgeX.Api）。
+  // 所有消费方共享同一实例，farm/meta 之类的缓存也只取一次。
+  const rulesEngine = createRulesEngine({ config: cfg });
   const datasources = persistenceEnabled
-    ? new PostgresDatasourceStore(persistenceCfg, log, persistencePool)
-    : new DatasourceStore(cfg, log);
+    ? new PostgresDatasourceStore(persistenceCfg, log, persistencePool, rulesEngine)
+    : new DatasourceStore(cfg, log, rulesEngine);
   const knowledge = persistenceEnabled
     ? new PostgresKnowledgeStore(persistenceCfg, log, persistencePool)
     : new KnowledgeStore(cfg, log);
@@ -74,10 +78,10 @@ function createApp(overrides) {
   const taskPersistence = persistenceEnabled
     ? new PostgresAnalysisStore(persistenceCfg, log, persistencePool)
     : null;
-  const tasks = new TaskStore(cfg, log, infini, knowledge, gate, taskPersistence);
+  const tasks = new TaskStore(cfg, log, infini, knowledge, gate, taskPersistence, rulesEngine);
   const calibrations = cfg.persistenceProvider === "file"
-    ? new CalibrationStore(cfg, log)
-    : new PostgresCalibrationStore(persistenceCfg, log);
+    ? new CalibrationStore(cfg, log, rulesEngine)
+    : new PostgresCalibrationStore(persistenceCfg, log, rulesEngine);
 
   /* 运行指标。不引依赖，就是几个计数器——够 /metrics 用，也够排查线上问题。 */
   const metrics = {
@@ -124,6 +128,7 @@ function createApp(overrides) {
     cfg,
     log,
     infini,
+    rulesEngine,
     datasources,
     tasks,
     knowledge,

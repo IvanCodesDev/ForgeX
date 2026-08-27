@@ -23,8 +23,12 @@
      3. 叙述里的每个数字都能在 evidence 里找到出处，不是 LLM 心算的。 */
 "use strict";
 
-const engine = require("./local-engine");
-const { buildBrief } = require("./brief");
+const { createRulesEngine } = require("./rules-engine");
+
+/** 统计核与简报统一走规则引擎边界；未注入时自建（默认 node 模式，行为不变）。 */
+function resolveRulesEngine(cfg, rulesEngine) {
+  return rulesEngine || createRulesEngine({ config: cfg });
+}
 
 function authorityRow(row) {
   const value = row || {};
@@ -115,7 +119,8 @@ function csharpAnalyticsProvider(cfg) {
 
 /* ══ 本地规则引擎 provider ═══════════════════ */
 
-function localProvider(cfg) {
+function localProvider(cfg, rulesEngine) {
+  const rules = resolveRulesEngine(cfg, rulesEngine);
   return {
     id: "server-rules",
     label: "后端规则引擎（无 AI）",
@@ -136,7 +141,7 @@ function localProvider(cfg) {
         onProgress({ stage, message, progress });
         if (cfg.mockDelayMs > 0) await sleep(cfg.mockDelayMs);
       }
-      const report = engine.analyze(question, dataset.rows, { provenance: dataset.provenance || null });
+      const report = await rules.analyze(question, dataset.rows, { provenance: dataset.provenance || null });
       report.engine = "server-rules";
       return report;
     },
@@ -233,7 +238,8 @@ function extractJson(text) {
 
 /* ══ InfiniSynapse provider ══════════════════ */
 
-function infiniProvider(cfg, log, infini) {
+function infiniProvider(cfg, log, infini, rulesEngine) {
+  const rules = resolveRulesEngine(cfg, rulesEngine);
   return {
     id: "infinisynapse",
     label: "InfiniSynapse 云端 AI",
@@ -251,8 +257,8 @@ function infiniProvider(cfg, log, infini) {
 
     async analyze({ question, dataset, knowledge, onProgress }) {
       onProgress({ stage: "stats", message: "本地统计核计算中（置信区间与显著性检验）", progress: 0.15 });
-      const local = engine.analyze(question, dataset.rows, { provenance: dataset.provenance || null });
-      const brief = buildBrief(dataset.rows);
+      const local = await rules.analyze(question, dataset.rows, { provenance: dataset.provenance || null });
+      const brief = await rules.buildBrief(dataset.rows);
 
       onProgress({ stage: "submit", message: "提交 InfiniSynapse 分析任务", progress: 0.25 });
       let prog = 0.25;
@@ -295,7 +301,8 @@ function infiniProvider(cfg, log, infini) {
  * 本地 Ollama（/v1）、vLLM、以及各家国产兼容端点。
  * 配置见 server/.env.example 的 OPENAI_* 段。
  */
-function openaiProvider(cfg, log) {
+function openaiProvider(cfg, log, rulesEngine) {
+  const rules = resolveRulesEngine(cfg, rulesEngine);
   return {
     id: "openai-compatible",
     label: "OpenAI 兼容 AI（" + (cfg.openaiModel || "未指定模型") + "）",
@@ -317,8 +324,8 @@ function openaiProvider(cfg, log) {
 
     async analyze({ question, dataset, knowledge, onProgress }) {
       onProgress({ stage: "stats", message: "本地统计核计算中（置信区间与显著性检验）", progress: 0.2 });
-      const local = engine.analyze(question, dataset.rows, { provenance: dataset.provenance || null });
-      const brief = buildBrief(dataset.rows);
+      const local = await rules.analyze(question, dataset.rows, { provenance: dataset.provenance || null });
+      const brief = await rules.buildBrief(dataset.rows);
 
       onProgress({ stage: "submit", message: "请求 " + cfg.openaiModel, progress: 0.4 });
       const url = cfg.openaiBaseUrl.replace(/\/$/, "") + "/chat/completions";
@@ -369,8 +376,9 @@ function openaiProvider(cfg, log) {
  * routes / analysis 不需要知道有哪些 provider 存在。
  */
 function createProvider(cfg, log, deps) {
-  if (cfg.provider === "infinisynapse") return infiniProvider(cfg, log, deps.infini);
-  if (cfg.provider === "openai") return openaiProvider(cfg, log);
+  const rules = resolveRulesEngine(cfg, deps && deps.rulesEngine);
+  if (cfg.provider === "infinisynapse") return infiniProvider(cfg, log, deps.infini, rules);
+  if (cfg.provider === "openai") return openaiProvider(cfg, log, rules);
   if (
     !(deps && deps.forceLocal) &&
     !cfg.forceMock &&
@@ -380,7 +388,7 @@ function createProvider(cfg, log, deps) {
   ) {
     return csharpAnalyticsProvider(cfg);
   }
-  return localProvider(cfg);
+  return localProvider(cfg, rules);
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
