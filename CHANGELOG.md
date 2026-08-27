@@ -9,6 +9,28 @@
 
 ## [Unreleased]
 
+### 自带 AI 端点（BYO-AI）：InfiniSynapse 集成整体退役
+- 按产品决策移除全部 InfiniSynapse 专属代码：AI provider（`services/infini.js`）、
+  Partner SSO 全套（Node `partner-sso.js`/透明代理与 C# `PartnerSsoService`/`PartnerSsoEndpoints`、
+  `AUTH_AUTHORITY` 开关）、`infini:` 身份支及相关测试与部署配置。`CallerContext` 收敛为
+  API Key / 匿名 / 校准审核三腿，AuthGate 授权矩阵缩编为 23/23 全绿。经典 `/legacy`
+  保留期由服务端「静默墓碑」路由（`/api/auth/infini/me` → `enabled:false`）保持零控制台
+  噪声（冻结的 classic 启动时仍会探测一次登录态），随 classic 删除（Stage 7.4）一并移除。
+- AI 叙述统一走 OpenAI 兼容通道并支持**用户自带端点**：分析请求可携带
+  `aiBaseUrl / aiApiKey / aiModel`（优先级：请求级 > 环境变量 `OPENAI_*` > 本地规则回退）。
+  服务端校验仅 http(s)、禁内嵌凭据/查询/片段、字段长度上限；密钥只活在单次请求的
+  provider 闭包里——不落日志、不回显、不持久化，无密钥端点（本地 Ollama 等）不发送空
+  Authorization 头；`tests/ai-endpoint-override.test.js` 以假 OpenAI 端点证明覆盖优先级
+  与「上游把密钥回显进错误报文也不会进入任务错误信息」。
+- React 工作台「关于」弹窗内新增 **AI 设置**表单（Base URL / API Key / 模型名，仅存
+  本浏览器 localStorage，随分析请求逐次发送）；登录门与账号胶囊 UI 随 SSO 退役移除；
+  洞察面板引擎标签与提示文案改为 OpenAI 兼容口径（classic 同句同步一行，保持 parity）。
+  入口放在弹窗内是刻意的：常驻界面受 react-parity 像素门禁锁定，弹窗只在用户主动打开时出现。
+- 顺带修复 `tests/auth-authority.test.js` 硬 `process.exit` 与 undici keep-alive 收尾竞态
+  在 Windows 触发 libuv 断言崩溃的问题（改 `process.exitCode` 排水退出，同 rules-authority 惯例）。
+- 验证：`npm test` 全绿（发布门禁 45/45）、dotnet:build 0 警告 0 错误、AuthGate 23/23、
+  前端 vitest 68/68、Chromium E2E 全量通过（含 parity 10 状态与离线 3 条修后重跑）。
+
 ### Stage 10.3：G-code 导入迁出主线程（Web Worker 收口）
 - 核验判定原实现不达标：引擎层 `createIncrementalParser` 早已具备流式能力但零调用方，
   导入链路在主线程一次性 `TextDecoder.decode` + 同步 `parse()`（64 MB 档主线程最大长任务

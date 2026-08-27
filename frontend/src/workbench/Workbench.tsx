@@ -14,7 +14,6 @@ import { ContextPanel } from "./workflow/ContextPanel";
 import { FlowPills } from "./workflow/FlowPills";
 import { useImportAssets } from "./workflow/useImportAssets";
 import { useWorkflowNav } from "./workflow/useWorkflowNav";
-import { useAuth } from "./useAuth";
 import { useLegacyWorkbench } from "./useLegacyWorkbench";
 
 /* 工作台外壳：结构与 index.html 逐节点对应，样式复用 css/style.css。
@@ -28,7 +27,6 @@ export function Workbench() {
   const assets = useImportAssets(handles);
   const overlays = useOverlays(handles);
   const insight = useInsight(handles, nav.close);
-  const auth = useAuth();
 
   const pickFile = (handler: (file: File) => void) => (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -53,17 +51,6 @@ export function Workbench() {
         </div>
       </div>
 
-      <section id="auth-gate" className="auth-gate" hidden={!auth.gate} aria-label="InfiniSynapse 登录">
-        <div className="auth-card">
-          <a id="auth-login" className="auth-login" href={auth.gate ? auth.loginUrl : "#"}>
-            <span aria-hidden="true">↪</span>使用 InfiniSynapse 登录
-          </a>
-          <p id="auth-message" className="auth-message" role="status">
-            {auth.gate?.message ?? ""}
-          </p>
-        </div>
-      </section>
-
       <header id="topbar">
         <div className="top-left">
           <div className="brand pill-card boot-item">
@@ -84,19 +71,6 @@ export function Workbench() {
                 <i />
               </div>
             </div>
-          </div>
-          <div className="account-pill pill-card" id="account-pill" hidden={!auth.account}>
-            <span className="account-shield" aria-hidden="true">
-              ✓
-            </span>
-            <img id="account-avatar" alt="" hidden={!auth.account?.avatar} src={auth.account?.avatar ?? undefined} />
-            <span className="account-copy">
-              <strong id="account-name">{auth.account?.name ?? "InfiniSynapse 用户"}</strong>
-              <small>InfiniSynapse 已连接</small>
-            </span>
-            <button id="account-logout" type="button" disabled={auth.loggingOut} onClick={auth.logout}>
-              <span aria-hidden="true">↪</span>退出
-            </button>
           </div>
         </div>
 

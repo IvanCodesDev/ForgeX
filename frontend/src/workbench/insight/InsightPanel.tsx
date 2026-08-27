@@ -21,8 +21,8 @@ const CONFIDENCE_LABEL: Readonly<Record<string, string>> = {
 /** 引擎标识 → 界面文案。规则引擎必须自称规则引擎，只有真 AI provider 才能带「AI」字样。 */
 function engineLabel(id?: string): string {
   switch (id) {
-    case "infinisynapse":
-      return "InfiniSynapse 云端 AI";
+    case "openai-compatible":
+      return "OpenAI 兼容云端 AI";
     case "server-rules":
       return "后端规则引擎（无 AI）";
     case "local-rules":
@@ -61,8 +61,8 @@ function EngineNote({ mode, authority }: { readonly mode: Insight["engineMode"];
       ) : (
         <>
           后端已连接，运行的是<b>后端规则引擎</b>（未配置 AI provider）。<b>它不是 AI</b>
-          ，但结论同样带置信区间与显著性检验。配置 <span className="mono">INFINI_API_KEY</span> 或{" "}
-          <span className="mono">OPENAI_API_KEY</span> 后可接 AI。
+          ，但结论同样带置信区间与显著性检验。配置 <span className="mono">OPENAI_API_KEY</span> 或自带 OpenAI
+          兼容端点后可接 AI。
         </>
       )}
     </div>

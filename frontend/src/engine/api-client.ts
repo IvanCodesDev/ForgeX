@@ -1,7 +1,8 @@
-/* FORGE·X 智造洞察 — 后端 API 客户端（对接自有薄后端 → InfiniSynapse Server API）。
+/* FORGE·X 智造洞察 — 后端 API 客户端（对接自有薄后端：规则引擎 / 自带 OpenAI 兼容端点）。
    自 js/api-client.js 机械迁移：行为逐行保留，仅换模块壳并加类型。
    当前后端未部署时 available=false，
    insight 面板自动落到浏览器内的本地规则引擎（FXInsightEngine），后端上线后零改动切换。 */
+import { aiOverrideBodyFields } from "./ai-endpoint";
 
 export interface ApiCapabilities {
   ai: boolean;
@@ -13,14 +14,6 @@ export interface CalibrationSyncState {
   status: "idle" | "syncing" | "ready" | "offline";
   count: number;
   error: string;
-}
-
-export interface AuthState {
-  enabled: boolean;
-  authenticated: boolean;
-  user: { nickname?: string; email?: string; avatar?: string } | null;
-  canUseAi: boolean;
-  integration?: string;
 }
 
 export interface AnalyzeTask {
@@ -49,7 +42,7 @@ interface ApiClientState {
 const state: ApiClientState = {
   base: (typeof window !== "undefined" && (window as { FX_API_BASE?: string }).FX_API_BASE) || "",
   available: false, // healthz 探测结果
-  engineMode: "", // 后端引擎 id（server-rules / infinisynapse / openai-compatible）
+  engineMode: "", // 后端引擎 id（server-rules / openai-compatible）
   providerLabel: "", // 人类可读的 provider 名称
   capabilities: null,
   calibrationSync: { status: "idle", count: 0, error: "" },
@@ -59,20 +52,6 @@ const state: ApiClientState = {
 
 function join(p: string): string {
   return state.base + p;
-}
-
-export function authMe(): Promise<AuthState> {
-  return fetch(join("/api/auth/infini/me"), { method: "GET", credentials: "same-origin" }).then((r) => {
-    if (!r.ok) throw new Error("登录状态读取失败");
-    return r.json() as Promise<AuthState>;
-  });
-}
-
-export function logout(): Promise<unknown> {
-  return fetch(join("/api/auth/infini/logout"), { method: "POST", credentials: "same-origin" }).then((r) => {
-    if (!r.ok) throw new Error("退出失败");
-    return r.json();
-  });
 }
 
 /** 探测后端可用性（file:// 直开 / 后端未部署时静默失败） */
@@ -128,12 +107,14 @@ export function pullCalibrations(): Promise<unknown[]> {
     });
 }
 
-/** 发起分析任务：POST /api/analyze → {taskId} */
+/** 发起分析任务：POST /api/analyze → {taskId}
+    若用户在「AI 设置」里配置了自带端点，则随请求携带 aiBaseUrl / aiApiKey / aiModel，
+    该次分析由后端直连用户端点做叙述（数字仍由统计核算出）。 */
 export function analyze(question: string, datasourceId: string): Promise<AnalyzeTask> {
   return fetch(join("/api/analyze"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, datasourceId }),
+    body: JSON.stringify({ question, datasourceId, ...aiOverrideBodyFields() }),
   }).then((r) => {
     if (!r.ok) throw new Error("分析请求失败（HTTP " + r.status + "）");
     return r.json() as Promise<AnalyzeTask>;
@@ -275,8 +256,6 @@ export const FXApiClientCompat = {
     state.calibrationSync = v;
   },
   url: join,
-  authMe,
-  logout,
   probe,
   pullCalibrations,
   analyze,
