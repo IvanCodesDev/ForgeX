@@ -9,7 +9,21 @@
 
 ## [Unreleased]
 
-### Stage 8.5：ForgeX.Api 静态托管（StaticHosting 开关）
+### Stage 10.3：G-code 导入迁出主线程（Web Worker 收口）
+- 核验判定原实现不达标：引擎层 `createIncrementalParser` 早已具备流式能力但零调用方，
+  导入链路在主线程一次性 `TextDecoder.decode` + 同步 `parse()`（64 MB 档主线程最大长任务
+  2724ms、rAF 冻结 3.7s）。已 Worker 化：读取/SHA-256/流式解码（4 MiB 分块喂增量解析器）/
+  解析/顶点缓冲构建全部离主线程，结果以 TypedArray 打包 + Transferable 零拷贝回传，
+  主线程 32k 点/片分片装配（片间让出、可取消），刻意不 postMessage 对象图——百万级小对象
+  的结构化克隆本身就是秒级长任务。Worker 以 `?worker&inline` 内联，普通构建与离线单文件
+  同路径；构造失败自动回退旧同步路径，保 file:// 零依赖直开。
+- 改造后 64 MB 档渲染隔离口径：导入 1.75s、主线程 ≥50ms 长任务 0 条、rAF 最大 50ms；
+  `attachToolpath` 消费预计算缓冲 4–5ms。`gcode-parser.ts` 纯函数零改动。
+- 卡口固化：vitest 新增 7 项（打包→重建与 parse 同构、采样逐 float32 一致、transfer 清单），
+  E2E `gcode-worker.spec.js`（16 MiB + 比例断言）入默认套件；64 MB 全量测量可用
+  `node tools/gcode-worker-audit.js` 手动复跑（夹具仅存临时目录）。前端 vitest 68/68、
+  全量 Chromium E2E 32 通过 / 1 跳过，react-parity 无漂移。测量报告归档
+  optimization/stage10-worker-audit/（仓库外）。
 - ForgeX.Api 新增与 Node `server/lib/http.js` 逐条对齐的静态托管：`StaticHosting:Enabled/Root`
   （默认关闭零变化，启用时 Root 与 Node `staticRoot` 同语义）。对齐面包括：`/` 的 React
   优先/经典回退、`/react[/]`/`/legacy[/]` 入口与 `/react/assets/*` 资产映射、STATIC_ALLOW

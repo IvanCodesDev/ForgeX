@@ -17,6 +17,7 @@ import { clamp, deg2rad, mulberry32 } from "./util.ts";
 import { buildGeometry, type BuiltModel } from "./models.ts";
 import type { SliceLayerOut, SlicePath, SliceResultOut } from "./slicer.ts";
 import type { MachineSpec } from "./profile-registry.ts";
+import { buildToolpathBuffers, type ToolpathBuffers } from "./toolpath-buffers.ts";
 
 const V3 = (x?: number, y?: number, z?: number) => new THREE.Vector3(x, y, z);
 
@@ -446,29 +447,12 @@ export abstract class FXPrinterBase {
   }
 
   /** 真实 G-code 没有成品三角网格：用分层线框作为幽灵与已完成层累计显示。 */
-  attachToolpath(slice: SliceResultOut, colorHex: number): void {
+  attachToolpath(slice: SliceResultOut, colorHex: number, precomputed?: ToolpathBuffers): void {
     this.clearPart();
     this.hideSlicePreview();
-    const maxSegments = 400000;
-    let totalSegments = 0;
-    for (const layer of slice.layers) for (const path of layer.paths) totalSegments += Math.max(0, path.pts.length - 1);
-    const stride = Math.max(1, Math.ceil(totalSegments / maxSegments));
-    const positions: number[] = [];
-    const ranges: Array<{ z: number; count: number }> = [];
-    let seen = 0;
-    for (const layer of slice.layers) {
-      for (const path of layer.paths) {
-        for (let i = 1; i < path.pts.length; i++) {
-          if (seen % stride === 0) {
-            const a = path.pts[i - 1]!,
-              b = path.pts[i]!;
-            positions.push(a.x, layer.z, -a.y, b.x, layer.z, -b.y);
-          }
-          seen++;
-        }
-      }
-      ranges.push({ z: layer.z, count: positions.length / 3 });
-    }
+    /* G-code 导入链路在 Worker 里预先算好顶点缓冲（V1 §5.5），主线程直接挂载；
+       切片器链路仍在此就地构建，两条路径共用同一采样实现。 */
+    const { positions, ranges, stride } = precomputed ?? buildToolpathBuffers(slice.layers);
     if (!positions.length) return;
     const makeGeometry = () => {
       const geo = new THREE.BufferGeometry();

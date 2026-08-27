@@ -16,6 +16,7 @@ import {
   type MachineLogState,
   type ParsedGcode,
 } from "../../legacy/engine";
+import { GcodeImportError, importGcodeFile, type GcodeImportHandle, type GcodeImportPhase } from "./gcode-import";
 import type { WorkbenchHandles } from "../useLegacyWorkbench";
 
 /** 与旧实现一致的图片模型再生成防抖。 */
@@ -53,9 +54,19 @@ const AUTHORITY_IDLE: Omit<GcodeAuthorityState, "mode"> = {
   error: null,
 };
 
+/** 浏览器侧 G-code 解析（Worker）的进行中状态；idle 表示无解析在途。 */
+export interface GcodeImportProgressState {
+  readonly status: "idle" | "parsing";
+  readonly phase: GcodeImportPhase | null;
+  readonly progress: number;
+}
+
+const GCODE_IMPORT_IDLE: GcodeImportProgressState = { status: "idle", phase: null, progress: 0 };
+
 export interface ImportAssets {
   readonly image: ImageModelState;
   readonly gcode: GcodeImportState | null;
+  readonly gcodeImport: GcodeImportProgressState;
   readonly machineLog: MachineLogState | null;
   readonly authority: GcodeAuthorityState;
   handleImageFile(file: File): void;
@@ -82,6 +93,7 @@ function printLocked(sim: LegacySim): boolean {
 export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets {
   const [image, setImage] = useState<ImageModelState>(INITIAL_IMAGE_STATE);
   const [gcode, setGcode] = useState<GcodeImportState | null>(null);
+  const [gcodeImport, setGcodeImport] = useState<GcodeImportProgressState>(GCODE_IMPORT_IDLE);
   const [machineLog, setMachineLog] = useState<MachineLogState | null>(null);
   const authorityMode = resolveAuthorityMode(import.meta.env);
   const [authority, setAuthority] = useState<GcodeAuthorityState>({ mode: authorityMode, ...AUTHORITY_IDLE });
@@ -91,6 +103,7 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
   gcodeRef.current = gcode;
   const regenTimer = useRef<number | null>(null);
   const authorityAbort = useRef<AbortController | null>(null);
+  const gcodeImportHandle = useRef<GcodeImportHandle | null>(null);
 
   const sim = handles?.sim ?? null;
   const ui = handles?.ui ?? null;
@@ -156,6 +169,9 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
   );
 
   const clearImportChain = useCallback(() => {
+    gcodeImportHandle.current?.cancel();
+    gcodeImportHandle.current = null;
+    setGcodeImport(GCODE_IMPORT_IDLE);
     setGcode(null);
     setMachineLog(null);
     authorityAbort.current?.abort();
@@ -222,6 +238,8 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
     [sim, ui, updateImage]
   );
 
+  /* 解析在 Web Worker 内流式完成（读取/SHA-256/分块解码/行解析/顶点缓冲，V1 §5.5），
+     主线程只做分片装配与结果挂载；Worker 基建不可用时客户端自动退回旧同步路径。 */
   const handleGcodeFile = useCallback(
     (file: File) => {
       if (!sim || !ui) return;
@@ -230,35 +248,37 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
       if (file.size > gcodeParser.MAX_BYTES)
         return ui.toast(`G-code 超过 ${Math.round(gcodeParser.MAX_BYTES / 1024 / 1024)}MB`, "err");
       if (printLocked(sim)) return ui.toast("打印中不可导入 G-code", "warn");
-      const reader = new FileReader();
-      reader.onerror = () => ui.toast("G-code 文件读取失败", "err");
-      reader.onload = () => {
-        const buffer = reader.result as ArrayBuffer;
-        gcodeParser
-          .sha256(buffer)
-          .then((sha256) => {
-            const sourceText = new TextDecoder("utf-8").decode(new Uint8Array(buffer));
-            const origin = String(sim.printer.KIN_TAG || "").toLowerCase() === "delta" ? "center" : "corner";
-            const parsed = gcodeParser.parse(sourceText, {
-              densityG: sim.material.densityG,
-              bedSize: sim.printer.BED_SIZE || 256,
-              origin,
-            });
-            parsed.sha256 = sha256;
-            const reconcile = gcodeParser.reconcile(parsed);
-            sim.loadImportedToolpath(parsed, { name: file.name, sourceText });
-            /* 几何随导入固化：setGcode 触发重渲，参数面板锁定标签随 React 状态立即生效 */
-            setGcode({ name: file.name, parsed, reconcile, sha256 });
-            setMachineLog(null);
-            ui.toast(`已解析 ${parsed.totalLayers} 层真实 G-code · SHA-256 ${sha256.slice(0, 12)}…`, "ok");
-            requestAuthority(file, { densityG: sim.material.densityG, bedSize: sim.printer.BED_SIZE || 256, origin });
-          })
-          .catch((error) => {
-            console.error("[gcode-import]", error);
-            ui.toast("G-code 导入失败：" + String((error as Error)?.message ?? error), "err");
-          });
-      };
-      reader.readAsArrayBuffer(file);
+      const origin = String(sim.printer.KIN_TAG || "").toLowerCase() === "delta" ? "center" : "corner";
+      const options = { densityG: sim.material.densityG, bedSize: sim.printer.BED_SIZE || 256, origin } as const;
+      gcodeImportHandle.current?.cancel();
+      setGcodeImport({ status: "parsing", phase: "read", progress: 0 });
+      const handle = importGcodeFile(file, options, (progress) =>
+        setGcodeImport({ status: "parsing", phase: progress.phase, progress: progress.progress })
+      );
+      gcodeImportHandle.current = handle;
+      handle.promise
+        .then(({ parsed, sourceText, sha256, toolpath }) => {
+          if (gcodeImportHandle.current !== handle) return; // 已被更新的导入替换
+          const legacyParsed = parsed as unknown as ParsedGcode;
+          const reconcile = gcodeParser.reconcile(legacyParsed);
+          sim.loadImportedToolpath(legacyParsed, { name: file.name, sourceText, toolpath });
+          /* 几何随导入固化：setGcode 触发重渲，参数面板锁定标签随 React 状态立即生效 */
+          setGcode({ name: file.name, parsed: legacyParsed, reconcile, sha256 });
+          setMachineLog(null);
+          ui.toast(`已解析 ${parsed.totalLayers} 层真实 G-code · SHA-256 ${sha256.slice(0, 12)}…`, "ok");
+          requestAuthority(file, options);
+        })
+        .catch((error: unknown) => {
+          if (error instanceof GcodeImportError && error.code === "CANCELLED") return;
+          console.error("[gcode-import]", error);
+          ui.toast("G-code 导入失败：" + String((error as Error)?.message ?? error), "err");
+        })
+        .finally(() => {
+          if (gcodeImportHandle.current === handle) {
+            gcodeImportHandle.current = null;
+            setGcodeImport(GCODE_IMPORT_IDLE);
+          }
+        });
     },
     [sim, ui, requestAuthority]
   );
@@ -372,6 +392,7 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
     () => ({
       image,
       gcode,
+      gcodeImport,
       machineLog,
       authority,
       handleImageFile,
@@ -386,6 +407,7 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
     [
       image,
       gcode,
+      gcodeImport,
       machineLog,
       authority,
       handleImageFile,

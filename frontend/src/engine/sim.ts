@@ -9,6 +9,7 @@ import type { ParsedGcodeResult } from "./gcode-parser.ts";
 import type { SlicePath } from "./slicer.ts";
 import type { FXScene } from "./scene.ts";
 import type { FXPrinterBase } from "./printer3d.ts";
+import type { ToolpathBuffers } from "./toolpath-buffers.ts";
 
 interface FallbackMaterial {
   id: string;
@@ -608,8 +609,12 @@ export class FXSim {
     this.bus.emit("settings");
   }
 
-  /** 载入真实 G-code 解析结果。路径结构与切片器同构，直接复用预览和状态机。 */
-  loadImportedToolpath(parsed: ParsedGcodeResult, meta?: { name?: string; sourceText?: string }): SimModel {
+  /** 载入真实 G-code 解析结果。路径结构与切片器同构，直接复用预览和状态机。
+      meta.toolpath 为 Worker 预计算的顶点缓冲（可选）；缺省时 attachToolpath 就地构建。 */
+  loadImportedToolpath(
+    parsed: ParsedGcodeResult,
+    meta?: { name?: string; sourceText?: string; toolpath?: ToolpathBuffers }
+  ): SimModel {
     if (!parsed || !parsed.layers || !parsed.layers.length) throw new Error("G-code 路径为空");
     if (!["idle", "done"].includes(this.state)) throw new Error("打印进行中，无法导入 G-code");
     meta = meta || {};
@@ -639,7 +644,7 @@ export class FXSim {
     if (parsed.claims && parsed.claims.nozzleTemp != null) this.settings.nozzleTemp = parsed.claims.nozzleTemp;
     if (parsed.claims && parsed.claims.bedTemp != null) this.settings.bedTemp = parsed.claims.bedTemp;
     this._slicedSpeed = this.settings.speed;
-    this.printer.attachToolpath(parsed as never, this.partColor);
+    this.printer.attachToolpath(parsed as never, this.partColor, meta.toolpath);
     this.printer.showGhost(true);
     this.progress = 0;
     this.layerIdx = 0;

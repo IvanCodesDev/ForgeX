@@ -19,6 +19,7 @@ import { FXScene } from "../engine/scene";
 import { FXSim } from "../engine/sim";
 import * as statsModule from "../engine/stats-kernel";
 import * as timeCalibrationModule from "../engine/time-calibration";
+import type { ToolpathBuffers } from "../engine/toolpath-buffers";
 import * as utilModule from "../engine/util";
 
 export interface LegacyEventBus {
@@ -341,7 +342,10 @@ export interface LegacySim {
   injectFault(kind: string): void;
   updateTf(patch: Partial<{ scale: number; rotZ: number; offX: number; offY: number }>): void;
   reslice(): void;
-  loadImportedToolpath(parsed: ParsedGcode, meta: { name: string; sourceText: string }): void;
+  loadImportedToolpath(
+    parsed: ParsedGcode,
+    meta: { name: string; sourceText: string; toolpath?: ToolpathBuffers | undefined }
+  ): void;
   estimateRemaining(): number;
   estimateTotal(): number;
   start(): void;

@@ -9,6 +9,7 @@ import {
   type MachineLogState,
 } from "../../../legacy/engine";
 import { Slider } from "../../controls/Slider";
+import type { GcodeImportPhase } from "../gcode-import";
 import type { ImportAssets } from "../useImportAssets";
 
 /* 内联 SVG 路径与旧实现一致（ui.js 的 ICONS / 内置模型图标）。 */
@@ -357,9 +358,19 @@ function AuthoritySummary({ ctx }: { readonly ctx: PageContext }) {
   );
 }
 
+/** Worker 解析阶段 → 用户可读文案（浏览器解析在后台线程进行，主界面不冻结） */
+const GCODE_PHASE_LABEL: Readonly<Record<GcodeImportPhase, string>> = {
+  read: "读取文件",
+  hash: "SHA-256 校验",
+  parse: "流式解析",
+  pack: "打包路径",
+  rebuild: "装配结果",
+};
+
 function GcodeSection(ctx: PageContext) {
   const { sim, assets } = ctx;
   const gcode = assets.gcode;
+  const importing = assets.gcodeImport;
   return (
     <>
       <div className="sec-label">真实 G-code · 导入复盘</div>
@@ -371,6 +382,13 @@ function GcodeSection(ctx: PageContext) {
         onClick={() => document.getElementById("gcode-input")?.click()}
         onFile={assets.handleGcodeFile}
       />
+      {importing.status === "parsing" ? (
+        <div className="note" data-gcode-import={importing.phase ?? "read"}>
+          {`正在后台解析 G-code（界面保持可交互）：${GCODE_PHASE_LABEL[importing.phase ?? "read"]} · ${Math.round(
+            importing.progress * 100
+          )}%`}
+        </div>
+      ) : null}
       {gcode && sim.importedToolpath ? (
         <>
           <GcodeSummary gcode={gcode} />
