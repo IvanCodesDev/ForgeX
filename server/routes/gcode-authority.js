@@ -85,7 +85,7 @@ function responseHeaders(upstream, reqId) {
   return headers;
 }
 
-function proxyAnalyze(req, res, rc, ctx, targetPath) {
+async function proxyAnalyze(req, res, rc, ctx, targetPath) {
   const { cfg, log } = ctx;
   const analytics = targetPath === ANALYTICS_PATH;
   const calibration = targetPath === CALIBRATION_PATH;
@@ -107,7 +107,7 @@ function proxyAnalyze(req, res, rc, ctx, targetPath) {
       : "G-code 超过 64 MiB 上限";
   // 与其他写接口共用同一身份优先级和同一 IP 冷却窗口；守卫与限流都在
   // 创建 sidecar 连接前执行，拒绝的请求不会向权威计算进程泄漏任何字节。
-  const identity = resolveIdentity(req, rc, ctx);
+  const identity = await resolveIdentity(req, rc, ctx);
   ctx.rateLimit(rc.ip);
 
   if (analytics && !cfg.analyticsAuthorityEnabled) {
@@ -271,9 +271,9 @@ function proxyAnalyze(req, res, rc, ctx, targetPath) {
   });
 }
 
-function proxyJobControl(req, res, rc, ctx, targetPath, rateLimited) {
+async function proxyJobControl(req, res, rc, ctx, targetPath, rateLimited) {
   const { cfg, log } = ctx;
-  const identity = resolveIdentity(req, rc, ctx);
+  const identity = await resolveIdentity(req, rc, ctx);
   if (rateLimited) ctx.rateLimit(rc.ip);
   if (!cfg.gcodeAsyncJobsEnabled) {
     sendProblem(res, 503, "async_jobs_disabled", "异步 G-code 作业已关闭", rc.reqId);

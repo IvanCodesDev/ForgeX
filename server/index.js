@@ -25,6 +25,7 @@ const { PostgresCalibrationStore } = require("./services/postgres-calibration");
 const { createRulesEngine } = require("./services/rules-engine");
 const { InfiniClient } = require("./services/infini");
 const { PartnerSSO } = require("./services/partner-sso");
+const { PartnerSSOProxy } = require("./services/partner-sso-proxy");
 const { CostGate } = require("./lib/quota");
 const { Auth } = require("./lib/auth");
 const { createPool, closePool } = require("./lib/postgres");
@@ -56,7 +57,11 @@ function createApp(overrides) {
   const infini = new InfiniClient(cfg, log);
   const gate = new CostGate(cfg, log);
   const auth = new Auth(cfg, log);
-  const partnerSSO = new PartnerSSO(cfg, log);
+  // Stage 8.2：AUTH_AUTHORITY=csharp 时 Partner SSO 与会话由 ForgeX.Api 权威承担，
+  // 本进程退化为透明代理；默认 node 保持既有内存会话，行为零变化。
+  const partnerSSO = cfg.authAuthority === "csharp"
+    ? new PartnerSSOProxy(cfg, log)
+    : new PartnerSSO(cfg, log);
   const persistenceEnabled = cfg.persistenceProvider !== "file";
   const persistencePool = persistenceEnabled ? (cfg.postgresPool || createPool(cfg)) : null;
   const ownsPersistencePool = persistenceEnabled && !cfg.postgresPool;
@@ -145,7 +150,15 @@ function createApp(overrides) {
   router.add("GET", /^\/healthz$/, async (req, res) => {
     // engine 与报告里的 engine 字段取同一个值（provider.id），避免 healthz 说一套、报告说另一套
     const p = tasks.provider;
-    const partnerIdentity = partnerSSO.enabled ? partnerSSO.identity(req) : null;
+    let partnerIdentity = null;
+    if (partnerSSO.enabled) {
+      try {
+        partnerIdentity = await partnerSSO.identity(req);
+      } catch (error) {
+        // 探活接口不因会话服务不可用而失败；身份按未登录处理（仅影响能力标签）。
+        log.warn("healthz partner identity unavailable", { error: error.message });
+      }
+    }
     const userAi = !!(partnerIdentity && partnerIdentity.apiKey);
     let calibrationStats;
     try {

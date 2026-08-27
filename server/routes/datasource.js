@@ -7,7 +7,7 @@ function register(router, ctx) {
   const { datasources } = ctx;
 
   router.add("POST", /^\/api\/datasource$/, async (req, res, m, rc) => {
-    const identity = resolveIdentity(req, rc, ctx);
+    const identity = await resolveIdentity(req, rc, ctx);
     const body = await readJson(req, 4 * 1024 * 1024 + 64 * 1024);   // CSV 4MB + JSON 包装余量
     if (typeof body.csv !== "string" || !body.csv.trim()) throw new HttpError(400, "csv 字段不能为空");
     const ds = await datasources.create(body.name, body.csv, body.provenance, identity.tenantId);

@@ -70,7 +70,8 @@ function noNulBytes(dir) {
 
 async function main() {
   console.log("\n[Stage0-1] 认证优先级");
-  const ssoIdentity = resolveIdentity(
+  // Stage 8.2 起 resolveIdentity 为 async（csharp 模式下会话身份是远程反查），断言语义不变。
+  const ssoIdentity = await resolveIdentity(
     { headers: {} },
     { ip: "127.0.0.1" },
     {
@@ -79,7 +80,7 @@ async function main() {
     }
   );
   assert.strictEqual(ssoIdentity.source, "partner-sso", "有效 SSO 必须先于 API Key 守卫");
-  const apiIdentity = resolveIdentity(
+  const apiIdentity = await resolveIdentity(
     { headers: {} },
     { ip: "127.0.0.1" },
     {
@@ -88,7 +89,7 @@ async function main() {
     }
   );
   assert.strictEqual(apiIdentity.source, "api-key", "双身份模式应允许服务 API Key");
-  assert.throws(() => resolveIdentity(
+  await assert.rejects(() => resolveIdentity(
     { headers: {} }, { ip: "127.0.0.1" },
     {
       partnerSSO: { enabled: true, identity: () => null },

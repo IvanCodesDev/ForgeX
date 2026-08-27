@@ -13,6 +13,11 @@
     <EmbeddedResource Include="openapi\v1.json" LogicalName="ForgeX.Api.openapi.v1.json" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Stage 8.2：授权矩阵门禁需要驱动内部的 CallerContextBoundary / PartnerSsoService。 -->
+    <InternalsVisibleTo Include="ForgeX.AuthGate" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>

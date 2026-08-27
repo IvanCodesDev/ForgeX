@@ -5,46 +5,65 @@ namespace ForgeX.Api;
 
 /// <summary>
 /// Stage 8.2: direct caller identity resolved inside ForgeX.Api, mirroring the Node
-/// chain (server/lib/auth.js + identity.js) exactly so tenants keep their data when
-/// traffic moves off the Node proxy:
-///   API key  → caller "key:{first 8 hex of sha256(key)}"
-///   anonymous → caller "ip:{remote address}"
+/// chain (server/lib/auth.js + identity.js + services/partner-sso.js) exactly so
+/// tenants keep their data when traffic moves off the Node proxy:
+///   Partner SSO session → caller "infini:{user.id}"
+///   API key             → caller "key:{first 8 hex of sha256(key)}"
+///   anonymous           → caller "ip:{remote address}"
 /// and canonical ids tn_/ow_ + first 32 hex of sha256(caller). Semantics preserved:
-/// auth activates only when keys are configured, RequireAuth without keys degrades
-/// to disabled, and key comparison is constant-time over the whole key list.
+/// a valid SSO session outranks API keys, an enabled SSO rejects anonymous callers
+/// outright (Node identity.js line 41), API-key auth activates only when keys are
+/// configured, RequireAuth without keys degrades to disabled, and key comparison is
+/// constant-time over the whole key list. Calibration review keys stay a separate
+/// table (Node auth.js identifyReviewer): holding an ordinary key never implies
+/// review rights, and the shared digest keeps the four-eyes rule enforceable.
 /// </summary>
 internal sealed class DirectAuthOptions
 {
-    public DirectAuthOptions(IReadOnlyList<string> apiKeys, bool requireAuth)
+    public DirectAuthOptions(IReadOnlyList<string> apiKeys, bool requireAuth, IReadOnlyList<string>? calibrationReviewKeys = null)
     {
         ApiKeys = apiKeys;
         Enabled = apiKeys.Count > 0;
         // Node parity: REQUIRE_AUTH without configured keys cannot protect anything.
         RequireAuth = requireAuth && Enabled;
+        CalibrationReviewKeys = calibrationReviewKeys ?? [];
+        ReviewEnabled = CalibrationReviewKeys.Count > 0;
     }
 
     public IReadOnlyList<string> ApiKeys { get; }
     public bool Enabled { get; }
     public bool RequireAuth { get; }
+    public IReadOnlyList<string> CalibrationReviewKeys { get; }
+    public bool ReviewEnabled { get; }
 
     public static DirectAuthOptions FromConfiguration(IConfiguration configuration)
     {
-        var keys = (configuration["DirectAuth:ApiKeys"] ?? string.Empty)
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var keys = SplitKeys(configuration["DirectAuth:ApiKeys"]);
+        var reviewKeys = SplitKeys(configuration["DirectAuth:CalibrationReviewKeys"]);
         var required = string.Equals(configuration["DirectAuth:RequireAuth"], "true", StringComparison.OrdinalIgnoreCase)
             || configuration["DirectAuth:RequireAuth"] == "1";
-        return new DirectAuthOptions(keys, required);
+        return new DirectAuthOptions(keys, required, reviewKeys);
     }
+
+    private static string[] SplitKeys(string? value) =>
+        (value ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 }
 
 internal static class DirectCallerAuthentication
 {
     /// <summary>
-    /// Resolves a direct caller (no trusted-node headers present). Returns a problem
-    /// result only when RequireAuth rejects an unauthenticated request.
+    /// Resolves a direct caller (no trusted-node headers present) with Node's
+    /// resolveIdentity() priority: Partner SSO session > API key > anonymous IP.
+    /// Returns a problem result when the caller must be rejected.
     /// </summary>
-    public static IResult? Resolve(HttpContext context, DirectAuthOptions options, out ForgeXCallerContext? caller)
+    public static IResult? Resolve(HttpContext context, DirectAuthOptions options, PartnerSsoService? sso, out ForgeXCallerContext? caller)
     {
+        if (sso is { Enabled: true } && sso.Identity(context.Request) is { } session)
+        {
+            caller = FromCallerString("infini:" + session.User.Id);
+            return null;
+        }
+
         var key = ReadApiKey(context.Request);
         if (options.Enabled && key.Length > 0)
         {
@@ -54,6 +73,18 @@ internal static class DirectCallerAuthentication
                 caller = FromCallerString("key:" + keyId);
                 return null;
             }
+        }
+
+        // Node parity (identity.js): once Partner SSO is configured, anonymous
+        // callers no longer reach protected resources even when RequireAuth is off.
+        if (sso is { Enabled: true })
+        {
+            caller = null;
+            return ApiProblemResults.Create(
+                context,
+                StatusCodes.Status401Unauthorized,
+                "sso_or_api_key_required",
+                "请使用 InfiniSynapse 登录或提供有效 API Key");
         }
 
         if (options.RequireAuth)
@@ -69,6 +100,18 @@ internal static class DirectCallerAuthentication
         var remote = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         caller = FromCallerString("ip:" + remote);
         return null;
+    }
+
+    /// <summary>
+    /// Node auth.js identifyReviewer(): matches only the review-key table and returns
+    /// the same 8-hex digest id as ordinary keys, or null when the credential carries
+    /// no review authority. Ordinary API keys never gain review rights implicitly.
+    /// </summary>
+    public static string? IdentifyReviewer(HttpRequest request, DirectAuthOptions options)
+    {
+        if (!options.ReviewEnabled) return null;
+        var key = ReadApiKey(request);
+        return key.Length == 0 ? null : MatchKey(options.CalibrationReviewKeys, key);
     }
 
     /// <summary>Same caller string → same canonical ids as Node's storageId()/opaqueContextId().</summary>

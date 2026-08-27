@@ -156,6 +156,13 @@ function getConfig(overrides) {
       //（与 G-code 权威共用同一 sidecar origin）。
       rulesEngineAuthority: String(env.RULES_ENGINE_AUTHORITY || "node").trim().toLowerCase(),
       rulesEngineTimeoutMs: num(env.RULES_ENGINE_TIMEOUT_MS, 30000),
+      // ── Stage 8.2：Partner SSO 与会话权威切流（迁移期双向开关）─────────────
+      // node = 本进程内存会话（默认，行为不变）；csharp = /api/auth/infini/* 透明
+      // 代理到 ForgeX.Api，会话存储与校验由 C# 承担，Node 业务路由经内部信任通道
+      // 反查会话身份。凭据（INFINI_PARTNER_CLIENT_ID/SECRET、PUBLIC_BASE）继续作为
+      // 启用判定，两侧配置需保持一致（C# 侧为 DirectSso:*）。
+      authAuthority: String(env.AUTH_AUTHORITY || "node").trim().toLowerCase(),
+      authAuthorityTimeoutMs: num(env.AUTH_AUTHORITY_TIMEOUT_MS, 15000),
       calibrationAuthorityEnabled: env.CALIBRATION_AUTHORITY_ENABLED !== "0",
       calibrationAuthorityTimeoutMs: num(env.CALIBRATION_AUTHORITY_TIMEOUT_MS, 30000),
       calibrationAuthorityMaxBytes: CALIBRATION_AUTHORITY_HARD_MAX_BYTES,
@@ -211,6 +218,17 @@ function getConfig(overrides) {
     throw new Error("RULES_ENGINE_AUTHORITY=csharp 需要先配置 GCODE_AUTHORITY_URL（共用同一 C# sidecar）");
   }
   cfg.rulesEngineTimeoutMs = Math.max(1, num(cfg.rulesEngineTimeoutMs, 30000));
+  cfg.authAuthority = String(cfg.authAuthority || "node").trim().toLowerCase();
+  if (!["node", "csharp"].includes(cfg.authAuthority)) {
+    throw new Error("AUTH_AUTHORITY must be node or csharp");
+  }
+  if (cfg.authAuthority === "csharp" && !cfg.gcodeAuthorityUrl) {
+    throw new Error("AUTH_AUTHORITY=csharp 需要先配置 GCODE_AUTHORITY_URL（共用同一 C# sidecar）");
+  }
+  if (cfg.authAuthority === "csharp" && !cfg.gcodeAuthorityInternalSecret) {
+    throw new Error("AUTH_AUTHORITY=csharp 需要配置 GCODE_AUTHORITY_INTERNAL_SECRET（会话身份经内部信任通道解析）");
+  }
+  cfg.authAuthorityTimeoutMs = Math.max(1, num(cfg.authAuthorityTimeoutMs, 15000));
   if (!["file", "postgres", "postgresql"].includes(cfg.persistenceProvider)) {
     throw new Error("PERSISTENCE_PROVIDER must be file or postgres");
   }

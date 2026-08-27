@@ -149,6 +149,9 @@ jobs:
       - name: JS/C# 规则计算腿全语料双跑门禁
         run: npm run dotnet:rules-authority
 
+      - name: 授权矩阵门禁（匿名/API Key/SSO/双身份/错租户/非 owner/管理员）
+        run: node tools/run-dotnet.js run --project backend/tests/ForgeX.AuthGate/ForgeX.AuthGate.csproj --configuration Release --no-build
+
       - uses: actions/upload-artifact@v4
         with:
           name: gcode-golden-diff-dotnet-10.0.302
@@ -187,6 +190,13 @@ jobs:
         with:
           name: rules-authority-dualrun-dotnet-10.0.302
           path: backend/artifacts/rules-authority-dualrun.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: auth-matrix-dotnet-10.0.302
+          path: backend/artifacts/auth-matrix.json
           if-no-files-found: error
           retention-days: 14
 

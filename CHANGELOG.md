@@ -9,6 +9,23 @@
 
 ## [Unreleased]
 
+### Stage 8.2 收尾：Partner SSO 与会话迁 C#（AUTH_AUTHORITY 开关）
+- ForgeX.Api 新增 `PartnerSsoService`/`PartnerSsoEndpoints`：`server/services/partner-sso.js`
+  逐字节移植——OAuth begin/callback、内存会话表（60 秒清扫 + 惰性过期）、cookie 名与属性序、
+  上游 `X-Client-Id/Secret` 协议、全部失败路径的状态码与文案、Node 式 `{error}` 响应包络
+  （代理透传后浏览器契约不变）；另设内部会话解析端点（仅走 `X-ForgeX-Internal-Token`
+  信任通道，响应含用户 Partner API Key 不可浏览器直达）。`CallerContext` 解析优先级与
+  Node `resolveIdentity` 对齐：SSO 会话 > API Key > 匿名，SSO 身份派生同源 `tn_/ow_` 哈希；
+  新增 `DirectAuth:CalibrationReviewKeys`（审核/管理员腿，与普通 key 表隔离保四眼）。
+- Node 侧新增迁移期开关 `AUTH_AUTHORITY=node|csharp`（默认 node 行为零变化；csharp 下
+  `/api/auth/infini/*` 四路由透明代理——原始路径+query 转发、仅透传 cookie/accept、
+  凭据不外泄、多值 Set-Cookie 逐字节回传，携带会话遇 sidecar 故障 fail-closed 502；
+  启用时强制校验 `GCODE_AUTHORITY_URL` 与 `GCODE_AUTHORITY_INTERNAL_SECRET`）。
+- 授权矩阵进 CI：新门禁 `ForgeX.AuthGate` 43/43（匿名 / API Key / SSO / 双身份 / 错租户 /
+  非 owner / 管理员，外加可信通道优先级与过期会话），artifact `auth-matrix.json` 随
+  `dotnet-authority` job 上传；Node 假 sidecar 集成测试 36 项入 `npm test` 链。
+  验证：dotnet:build 0 警告 0 错误、AnalyticsGate 1062/1062 无回归、npm test 全绿。
+
 ### Stage 10.1：TypeScript 编译约束补齐（工程强化）
 - `tsconfig.app.json` 启用 `useUnknownInCatchVariables` 与 `verbatimModuleSyntax`（V1 §5.2
   推荐项落地）：探针实验确认开关真实生效（TS1484），现有代码零改动通过——TS 迁移期

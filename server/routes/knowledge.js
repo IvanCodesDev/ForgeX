@@ -17,7 +17,7 @@ function register(router, ctx) {
   const { knowledge, tasks } = ctx;
 
   router.add("POST", /^\/api\/knowledge$/, async (req, res, m, rc) => {
-    const identity = resolveIdentity(req, rc, ctx);
+    const identity = await resolveIdentity(req, rc, ctx);
     const body = await readJson(req, 600 * 1024);
     if (typeof body.text !== "string") throw new HttpError(400, "text 字段不能为空");
     const doc = await knowledge.create(body.name, body.text, identity.tenantId);
@@ -38,7 +38,7 @@ function register(router, ctx) {
 
   /** 检索预览：让用户能自己验证「问这个问题时会检索到什么」，而不是盲信 */
   router.add("POST", /^\/api\/knowledge\/search$/, async (req, res, m, rc) => {
-    const identity = resolveIdentity(req, rc, ctx);
+    const identity = await resolveIdentity(req, rc, ctx);
     const body = await readJson(req, 8 * 1024);
     const q = String(body.question || "").trim();
     if (!q) throw new HttpError(400, "question 不能为空");

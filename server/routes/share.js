@@ -63,7 +63,7 @@ function register(router, ctx) {
   const csharp = cfg.sharesAuthority === "csharp";
 
   router.add("POST", /^\/api\/share\/([A-Za-z0-9_]+)$/, async (req, res, m, rc) => {
-    const identity = resolveIdentity(req, rc, ctx);
+    const identity = await resolveIdentity(req, rc, ctx);
     if (typeof tasks.ready === "function") await tasks.ready(identity.tenantId);
     const task = tasks.get(m[1]);
     if (!task) throw new HttpError(404, "任务不存在或已过期");
@@ -116,7 +116,7 @@ function register(router, ctx) {
      csharp 模式下归属校验由 RLS 承担：他人租户的 token 一律 not_found，
      不再像 node 模式那样用 403 暴露「存在但不属于你」。 */
   router.add("POST", /^\/api\/share\/([a-f0-9]+)\/revoke$/, async (req, res, m, rc) => {
-    const identity = resolveIdentity(req, rc, ctx);
+    const identity = await resolveIdentity(req, rc, ctx);
     const body = await readJson(req, 4 * 1024);
     if (csharp) {
       let response;

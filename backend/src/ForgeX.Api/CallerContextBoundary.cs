@@ -20,11 +20,41 @@ internal static class CallerContextBoundary
         path.StartsWithSegments("/api/v1/shares", StringComparison.Ordinal) ||
         path.StartsWithSegments("/api/v1/analysis-tasks", StringComparison.Ordinal);
 
+    /// <summary>
+    /// The exact middleware used by Program.cs, exposed so the authorization-matrix
+    /// gate exercises the same code path over a real Kestrel pipeline.
+    /// </summary>
+    public static Func<HttpContext, RequestDelegate, Task> BuildMiddleware(
+        string sharedSecret,
+        string previousSharedSecret,
+        DirectAuthOptions? directAuth = null,
+        PartnerSsoService? partnerSso = null)
+    {
+        return async (context, next) =>
+        {
+            if (!AppliesTo(context.Request.Path))
+            {
+                await next(context);
+                return;
+            }
+
+            var problem = Resolve(context, sharedSecret, previousSharedSecret, directAuth, partnerSso);
+            if (problem is not null)
+            {
+                await problem.ExecuteAsync(context);
+                return;
+            }
+
+            await next(context);
+        };
+    }
+
     public static IResult? Resolve(
         HttpContext context,
         string sharedSecret,
         string previousSharedSecret,
-        DirectAuthOptions? directAuth = null)
+        DirectAuthOptions? directAuth = null,
+        PartnerSsoService? partnerSso = null)
     {
         var secretsConfigured = !string.IsNullOrEmpty(sharedSecret) || !string.IsNullOrEmpty(previousSharedSecret);
         var tokenSupplied = context.Request.Headers.ContainsKey(InternalTokenHeader);
@@ -59,11 +89,12 @@ internal static class CallerContextBoundary
             return null;
         }
 
-        // ② Stage 8.2 直连身份：配置了 DirectAuth:ApiKeys 后，无内部令牌的请求
-        //    按 Node 同一套映射解析（API key → key:{id8}，匿名 → ip:{addr}）。
-        if (directAuth is { Enabled: true })
+        // ② Stage 8.2 直连身份：配置了 DirectAuth:ApiKeys 或 DirectSso 后，无内部令牌
+        //    的请求按 Node 同一套映射与优先级解析（SSO 会话 → infini:{userId}，
+        //    API key → key:{id8}，匿名 → ip:{addr}；SSO 启用时匿名直接 401）。
+        if (directAuth is { Enabled: true } || partnerSso is { Enabled: true })
         {
-            var problem = DirectCallerAuthentication.Resolve(context, directAuth, out var caller);
+            var problem = DirectCallerAuthentication.Resolve(context, directAuth ?? new DirectAuthOptions([], false), partnerSso, out var caller);
             if (problem is not null) return problem;
             context.Items[ContextItemKey] = caller!;
             return null;
@@ -101,7 +132,7 @@ internal static class CallerContextBoundary
         return true;
     }
 
-    private static bool FixedTimeEquals(string supplied, string expected)
+    internal static bool FixedTimeEquals(string supplied, string expected)
     {
         if (string.IsNullOrEmpty(expected)) return false;
         var suppliedHash = SHA256.HashData(Encoding.UTF8.GetBytes(supplied));

@@ -10,7 +10,7 @@ function register(router, ctx) {
 
   router.add("POST", /^\/api\/analyze$/, async (req, res, m, rc) => {
     // 先统一 SSO/API Key 身份，再做限流和资源授权；有效 SSO 不再被 API Key 守卫误拒。
-    const identity = resolveIdentity(req, rc, ctx);
+    const identity = await resolveIdentity(req, rc, ctx);
     if (typeof tasks.ready === "function") await tasks.ready(identity.tenantId);
     const partnerIdentity = identity.partner;
     if (partnerIdentity && !partnerIdentity.apiKey) {
@@ -51,7 +51,7 @@ function register(router, ctx) {
   });
 
   router.add("GET", /^\/api\/analyze\/([A-Za-z0-9_]+)\/stream$/, async (req, res, m, rc) => {
-    const identity = resolveIdentity(req, rc, ctx);
+    const identity = await resolveIdentity(req, rc, ctx);
     if (typeof tasks.ready === "function") await tasks.ready(identity.tenantId);
     const task = tasks.get(m[1]);
     if (!task) throw new HttpError(404, "任务不存在或已过期");
@@ -62,7 +62,7 @@ function register(router, ctx) {
   });
 
   router.add("GET", /^\/api\/analyze\/([A-Za-z0-9_]+)\/result$/, async (req, res, m, rc) => {
-    const identity = resolveIdentity(req, rc, ctx);
+    const identity = await resolveIdentity(req, rc, ctx);
     if (typeof tasks.ready === "function") await tasks.ready(identity.tenantId);
     const task = tasks.get(m[1]);
     if (!task) throw new HttpError(404, "任务不存在或已过期");
@@ -74,7 +74,7 @@ function register(router, ctx) {
 
   // 轮询兜底（SSE 不可用的网络环境，doc §4.2「优雅降级」）
   router.add("GET", /^\/api\/analyze\/([A-Za-z0-9_]+)$/, async (req, res, m, rc) => {
-    const identity = resolveIdentity(req, rc, ctx);
+    const identity = await resolveIdentity(req, rc, ctx);
     if (typeof tasks.ready === "function") await tasks.ready(identity.tenantId);
     const task = tasks.get(m[1]);
     if (!task) throw new HttpError(404, "任务不存在或已过期");
