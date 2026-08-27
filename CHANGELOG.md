@@ -9,6 +9,23 @@
 
 ## [Unreleased]
 
+### Stage 7.2 / 7.3：离线单文件验收与 react-parity 全流程扩面
+- **修复离线单文件的真实缺陷**：`frontend/classic/css/style.css` 文件头 UTF-8 BOM 被打包器
+  内联进 `<style>` 后粘连在 `:root` 选择器前，整套设计令牌失效、离线界面完全坍塌
+  （外链加载时 BOM 由解码层剥掉，服务模式与经典 file:// 均无症状，故一直未被发现；
+  既有 CI 校验只查「无外部引用」不做渲染验收）。修复为去除 BOM（对齐 `.editorconfig`
+  无 BOM 约定），新增 `tests/e2e/react-offline.spec.js` 3 条 file:// 验收（启动与设计令牌、
+  四机型装载、切片预演、洞察本地规则报告），验收前强制重新打包。
+- react-parity 从 2 项扩到 10 个状态 × 契约/像素双层断言：全部 5 个流程页
+  （模型/切片/校准/质量/洞察）+ 四机型真实点击路径切换，布局契约含几何、24 项计算样式、
+  文案与引擎侧数值。扩面契约抓到并修复一处结构漂移：洞察面板空闲态 React 常驻渲染
+  `.ai-bar` 骨架而经典版惰性追加，`InsightPanel.tsx` 已对齐惰性构建。像素层全部状态
+  差异 0–7 像素（基数 921,600，阈值余量约 280 倍），零阈值调整。
+- README 双入口指引更新（React 离线单文件为推荐路径，经典 `index.html` 注明过渡降级；
+  修正 7.1 后 `/` 与 `/legacy` 的路由现状）。视觉校验记录归档
+  `optimization/stage7-classic-retirement/`（qa-report.md + 23 张截图，仓库外归档）。
+  完整 Chromium E2E 31 通过 / 1 按设计跳过。
+
 ### Stage 8.2 收尾：Partner SSO 与会话迁 C#（AUTH_AUTHORITY 开关）
 - ForgeX.Api 新增 `PartnerSsoService`/`PartnerSsoEndpoints`：`server/services/partner-sso.js`
   逐字节移植——OAuth begin/callback、内存会话表（60 秒清扫 + 惰性过期）、cookie 名与属性序、

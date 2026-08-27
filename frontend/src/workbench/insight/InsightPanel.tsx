@@ -472,16 +472,24 @@ export function InsightPanel({ insight, ui }: InsightPanelProps) {
               ))}
             </div>
 
+            {/* 空闲态是空容器：进度条骨架只在分析进行中存在（与旧 _pushStage 的惰性构建一致） */}
             <div className="ai-steps" hidden={!insight.stages.length}>
-              <div className="ai-bar">
-                <i style={{ width: `${(insight.progress * 100).toFixed(1)}%` }} />
-              </div>
-              {insight.stages.map((stage, index) => (
-                <div key={stage.id} className={index === insight.stages.length - 1 ? "ai-step run" : "ai-step done"}>
-                  <span className="as-dot" />
-                  <span>{stage.message}</span>
-                </div>
-              ))}
+              {insight.stages.length ? (
+                <>
+                  <div className="ai-bar">
+                    <i style={{ width: `${(insight.progress * 100).toFixed(1)}%` }} />
+                  </div>
+                  {insight.stages.map((stage, index) => (
+                    <div
+                      key={stage.id}
+                      className={index === insight.stages.length - 1 ? "ai-step run" : "ai-step done"}
+                    >
+                      <span className="as-dot" />
+                      <span>{stage.message}</span>
+                    </div>
+                  ))}
+                </>
+              ) : null}
             </div>
 
             <ReportView insight={insight} ui={ui} />
