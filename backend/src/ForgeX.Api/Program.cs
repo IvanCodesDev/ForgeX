@@ -228,6 +228,16 @@ app.UseStatusCodePages(async statusCodeContext =>
         .ExecuteAsync(context);
 });
 
+// ── Stage 8：静态托管（V2 手册 §4.2 工作项 5「ForgeX.Api 托管 dist/react，单进程交付」）──
+// 默认不配置 = 不注册中间件，行为与迁移前完全一致；启用后按 server/lib/http.js 的
+// allowlist / 缓存 / 穿越防护逐条对齐（ForgeX.StaticGate 双跑锁定）。端点路由恒优先：
+// 中间件只接手未被任何端点认领的 GET/HEAD 非 /api/ 路径，静态路径也不进 CallerContext 边界。
+var staticHosting = StaticHostingOptions.FromConfiguration(builder.Configuration, builder.Environment.ContentRootPath);
+if (staticHosting.Enabled)
+{
+    app.Use(StaticFileHosting.BuildMiddleware(staticHosting));
+}
+
 var serviceVersion = typeof(Program).Assembly.GetName().Version?.ToString() ?? "1.0.0";
 
 app.MapGet("/health/live", () => Results.Ok(new HealthResponse(

@@ -9,6 +9,25 @@
 
 ## [Unreleased]
 
+### Stage 8.5：ForgeX.Api 静态托管（StaticHosting 开关）
+- ForgeX.Api 新增与 Node `server/lib/http.js` 逐条对齐的静态托管：`StaticHosting:Enabled/Root`
+  （默认关闭零变化，启用时 Root 与 Node `staticRoot` 同语义）。对齐面包括：`/` 的 React
+  优先/经典回退、`/react[/]`/`/legacy[/]` 入口与 `/react/assets/*` 资产映射、STATIC_ALLOW
+  白名单逐字节、缓存两档（immutable 资产 vs no-cache）、16 项 MIME 表、无 SPA 深链回退
+  （如实不自创）、原始 request-target 级路径穿越防护（RawTarget + 严格 decodeURIComponent
+  移植，杜绝 `%2e%2e%2F` 被服务器规范化洗白）、404/400 JSON 文案逐字节、静态面不卷入
+  CallerContext 鉴权。API/SSE/share/健康检查路由恒优先。
+- 新门禁 `ForgeX.StaticGate` 56/56（恶意路径走原始 TCP socket 防客户端规范化干扰），
+  artifact `static-hosting-parity.json`；`tools/verify-static-hosting.js` 单进程部署实测：
+  构建 dist/react → 单独启动 ForgeX.Api（file 持久化）→ 静态面 8 项 → 真实 G-code 异步
+  分析至 succeeded → 杀进程换端口重启 → 作业跨重启可读，15/18 通过 0 失败（分享腿 3 项
+  如实 skip：C# shares 自 8.1 起 postgres-only 且本机无 PG，脚本支持 `POSTGRES_URL` 时
+  跑全链）。两者均接入 CI `dotnet-authority` job。
+- **遗留决策点（Node 退场前二选一）**：dotnet-authority job 加 PostgreSQL service 容器把
+  分享腿纳入 CI，或为 C# 分享存储补 file 腿——否则 file 持久化的单进程部署比 Node 少
+  分享能力。OPTIONS 全局 204 与 `/api/*` 404 文案属 Node 服务器层语义，留待工作项 6
+  「Node 退场」通盘核对。
+
 ### Stage 7.2 / 7.3：离线单文件验收与 react-parity 全流程扩面
 - **修复离线单文件的真实缺陷**：`frontend/classic/css/style.css` 文件头 UTF-8 BOM 被打包器
   内联进 `<style>` 后粘连在 `:root` 选择器前，整套设计令牌失效、离线界面完全坍塌

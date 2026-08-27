@@ -152,6 +152,15 @@ jobs:
       - name: 授权矩阵门禁（匿名/API Key/SSO/双身份/错租户/非 owner/管理员）
         run: node tools/run-dotnet.js run --project backend/tests/ForgeX.AuthGate/ForgeX.AuthGate.csproj --configuration Release --no-build
 
+      - name: 静态托管 Node/C# 行为对齐门禁（allowlist/缓存/穿越防护/路由优先级）
+        run: node tools/run-dotnet.js run --project backend/tests/ForgeX.StaticGate/ForgeX.StaticGate.csproj --configuration Release --no-build
+
+      - name: 安装锁定依赖（单进程实测需构建 dist/react）
+        run: npm ci --no-audit --no-fund
+
+      - name: 静态托管单进程部署实测（构建前端 → 静态 → 上传 → 分析 → 重启持久化）
+        run: node tools/verify-static-hosting.js
+
       - uses: actions/upload-artifact@v4
         with:
           name: gcode-golden-diff-dotnet-10.0.302
@@ -197,6 +206,15 @@ jobs:
         with:
           name: auth-matrix-dotnet-10.0.302
           path: backend/artifacts/auth-matrix.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: static-hosting-dotnet-10.0.302
+          path: |
+            backend/artifacts/static-hosting-parity.json
+            backend/artifacts/static-hosting-drill.json
           if-no-files-found: error
           retention-days: 14
 

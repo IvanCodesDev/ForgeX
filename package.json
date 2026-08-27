@@ -51,6 +51,8 @@
     "dotnet:auth-matrix": "npm run dotnet:build && node tools/run-dotnet.js run --project backend/tests/ForgeX.AuthGate/ForgeX.AuthGate.csproj --configuration Release --no-build",
     "dotnet:openapi-runtime": "node tools/verify-openapi-runtime.js",
     "dotnet:rules-authority": "node tools/verify-rules-authority.js",
+    "dotnet:static-parity": "npm run dotnet:build && node tools/run-dotnet.js run --project backend/tests/ForgeX.StaticGate/ForgeX.StaticGate.csproj --configuration Release --no-build",
+    "dotnet:static-drill": "npm run dotnet:build && node tools/verify-static-hosting.js",
     "dotnet:api": "node tools/run-dotnet.js run --project backend/src/ForgeX.Api/ForgeX.Api.csproj",
     "postgres:migrations:check": "node tools/validate-postgres-migrations.js",
     "containers:check": "node tools/validate-containers.js",

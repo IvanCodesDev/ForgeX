@@ -16,6 +16,9 @@ services:
       Kestrel__Endpoints__Http__Url: "http://0.0.0.0:8788"
       # 网关经服务别名访问，Host 头为 forgex-api；不加入白名单会被主机过滤拒为 400。
       AllowedHosts: "localhost;127.0.0.1;forgex-api"
+      # Stage 8 工作项 5：ForgeX.Api 已支持 StaticHosting__Enabled/StaticHosting__Root
+      # 静态托管（默认关闭）。本编排仍由 forgex(Node) 服务承担静态与入口；
+      # 切换单进程交付随工作项 6「Node 退场」收口，此处暂不启用。
       Storage__Root: "/app/data"
       Persistence__Provider: "file"
       InternalAuth__SharedSecret: "${GCODE_AUTHORITY_INTERNAL_SECRET:?Set a random secret of at least 32 bytes}"

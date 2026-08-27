@@ -20,6 +20,10 @@ RUN dotnet publish backend/src/ForgeX.Api/ForgeX.Api.csproj \
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.10-alpine3.23 AS runtime
 WORKDIR /app
+# Stage 8 工作项 5：ForgeX.Api 已具备静态托管能力（StaticHosting__Enabled=1 +
+# StaticHosting__Root 指向含 index.html / frontend/classic / contracts / dist/react
+# 的静态根，默认关闭、零行为变化）。本镜像刻意不 COPY 前端构建产物——静态与入口
+# 目前仍由 Node 容器承担；切换单进程交付随工作项 6「Node 退场」一并调整 build 阶段。
 ENV Kestrel__Endpoints__Http__Url=http://0.0.0.0:8788 \
     Storage__Root=/app/data \
     Persistence__Provider=file \
