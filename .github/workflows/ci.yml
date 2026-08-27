@@ -139,6 +139,9 @@ jobs:
       - name: JS/C# 分析统计与 CSV 双跑门禁
         run: node tools/run-dotnet.js run --project backend/tests/ForgeX.AnalyticsGate/ForgeX.AnalyticsGate.csproj --configuration Release --no-build
 
+      - name: JS/C# 规则计算腿全语料双跑门禁
+        run: npm run dotnet:rules-authority
+
       - uses: actions/upload-artifact@v4
         with:
           name: gcode-golden-diff-dotnet-10.0.302
@@ -170,6 +173,13 @@ jobs:
         with:
           name: analytics-golden-diff-dotnet-10.0.302
           path: backend/artifacts/analytics-golden-diff.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rules-authority-dualrun-dotnet-10.0.302
+          path: backend/artifacts/rules-authority-dualrun.json
           if-no-files-found: error
           retention-days: 14
 
