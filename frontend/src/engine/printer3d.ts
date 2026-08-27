@@ -810,8 +810,8 @@ export class FXPrinterCoreXY extends FXPrinterBase {
      （表现为切换机型即崩、喷头 TIP_DZ 错位、Delta 并联臂断线）。 */
   declare beam: THREE.Group;
   declare TIP_DZ: number;
-  protected declare screwPos: Array<[number, number]>;
-  protected declare frameDims: { HX: number; HZ: number; Y0: number; Y1: number };
+  declare protected screwPos: Array<[number, number]>;
+  declare protected frameDims: { HX: number; HZ: number; Y0: number; Y1: number };
 
   protected _buildMachine(): void {
     this.MODEL_NAME = "FX-256 睿造";

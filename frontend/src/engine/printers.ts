@@ -176,7 +176,7 @@ export class FXPrinterDelta extends FXPrinterBase {
   declare ARM_L: number;
   declare TOWER_R: number;
   declare towers: Array<{ x: number; z: number; u: { x: number; z: number }; car: THREE.Mesh }>;
-  private declare _arms?: THREE.Mesh[][];
+  declare private _arms?: THREE.Mesh[][];
 
   protected _buildMachine(): void {
     this.MODEL_NAME = "FX-Δ260 迅影";
