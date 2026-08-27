@@ -33,7 +33,10 @@ FORGE·X Insight 把“打印前检查”和“打印后复盘”放进同一个
 
 ### 方式一：零安装体验（推荐新手）
 
-直接双击仓库根目录的 `index.html`。经典工作台可通过 `file://` 离线运行，不需要安装依赖，也不会连接打印机。
+不需要启动服务，也不会连接打印机，两种入口都能通过 `file://` 直接离线打开：
+
+- **React 工作台单文件（推荐）**：执行一次 `npm run frontend:build:offline`，双击生成的 `dist/react-offline/FORGE-X-React-Offline.html` 即可使用；它是自包含的单 HTML 文件，也可以直接拷贝分发。切片预演、G-code 解析回放和洞察面板的本地规则分析在离线下全部可用。
+- **经典工作台**：直接双击仓库根目录的 `index.html`，无需构建、无需安装依赖。经典入口已降级为过渡入口（服务模式下对应 `/legacy`），保留一个发布周期后退役。
 
 想快速走完一遍流程，可使用 [`demo/`](./demo/) 中已经准备好的合成演示素材。
 
@@ -49,8 +52,8 @@ npm start
 
 启动后可访问：
 
-- [http://127.0.0.1:8787](http://127.0.0.1:8787)：经典工作台；
-- [http://127.0.0.1:8787/react/](http://127.0.0.1:8787/react/)：React + TypeScript 工作台。
+- [http://127.0.0.1:8787](http://127.0.0.1:8787)：React + TypeScript 工作台（根入口）；
+- [http://127.0.0.1:8787/legacy](http://127.0.0.1:8787/legacy)：经典工作台（退役过渡期保留）。
 
 ### 方式三：前端开发模式
 
@@ -174,7 +177,7 @@ docker compose -f deploy/docker-compose.yml up -d
 ## 常见问题
 
 <details>
-<summary><strong>直接打开 index.html 后，哪些功能不可用？</strong></summary>
+<summary><strong>通过 file:// 离线打开（React 单文件或经典 index.html）后，哪些功能不可用？</strong></summary>
 
 本地切片预演、G-code 解析、路径回放和本地规则分析可以使用；登录、服务端持久化、分享、知识检索和可选 AI 叙述需要启动 Node.js 服务。
 
@@ -183,7 +186,7 @@ docker compose -f deploy/docker-compose.yml up -d
 <details>
 <summary><strong>为什么同时保留经典工作台和 React 工作台？</strong></summary>
 
-经典工作台是稳定、可离线直开的完整基线；React 工作台承载正在迁移的新界面和权威计算接入。两者共用核心契约，并通过端到端测试校验关键行为。
+React 工作台已通过像素级一致性验收并接管根入口；经典工作台在 `/legacy` 保留一个发布周期，作为迁移期的回退路径。两者共用核心契约，一致性由端到端测试逐页校验。
 
 </details>
 
