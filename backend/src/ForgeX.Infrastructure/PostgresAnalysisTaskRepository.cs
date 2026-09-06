@@ -34,22 +34,15 @@ public sealed record AnalysisTaskRecord(
 /// </summary>
 public sealed class PostgresAnalysisTaskRepository : IAsyncDisposable
 {
-    private readonly NpgsqlDataSource _dataSource;
+    private readonly PostgresSession _session;
 
     public PostgresAnalysisTaskRepository(string connectionString)
     {
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            throw new ArgumentException("A PostgreSQL connection string is required.", nameof(connectionString));
-        }
-
-        var builder = new NpgsqlDataSourceBuilder(connectionString);
-        builder.ConnectionStringBuilder.ApplicationName = "forgex-api";
-        _dataSource = builder.Build();
+        _session = new PostgresSession(connectionString);
     }
 
     public Task ProbeAsync(CancellationToken cancellationToken) =>
-        WithOwnerTransactionAsync("tn_local", "ow_local", async (connection, transaction) =>
+        _session.WithOwnerTransactionAsync("tn_local", "ow_local", async (connection, transaction) =>
         {
             await using var command = new NpgsqlCommand(
                 "SELECT 1 FROM forgex.node_analysis_tasks LIMIT 0",
@@ -65,7 +58,7 @@ public sealed class PostgresAnalysisTaskRepository : IAsyncDisposable
         string ownerId,
         int limit,
         CancellationToken cancellationToken) =>
-        WithOwnerTransactionAsync<IReadOnlyList<AnalysisTaskRecord>>(tenantId, ownerId, async (connection, transaction) =>
+        _session.WithOwnerTransactionAsync<IReadOnlyList<AnalysisTaskRecord>>(tenantId, ownerId, async (connection, transaction) =>
         {
             await using var select = new NpgsqlCommand(
                 """
@@ -95,7 +88,7 @@ public sealed class PostgresAnalysisTaskRepository : IAsyncDisposable
         string ownerId,
         string id,
         CancellationToken cancellationToken) =>
-        WithOwnerTransactionAsync(tenantId, ownerId, async (connection, transaction) =>
+        _session.WithOwnerTransactionAsync(tenantId, ownerId, async (connection, transaction) =>
         {
             await using var select = new NpgsqlCommand(
                 """
@@ -112,30 +105,7 @@ public sealed class PostgresAnalysisTaskRepository : IAsyncDisposable
             return await reader.ReadAsync(cancellationToken) ? Map(reader) : null;
         }, cancellationToken);
 
-    public ValueTask DisposeAsync() => _dataSource.DisposeAsync();
-
-    private async Task<T> WithOwnerTransactionAsync<T>(
-        string tenantId,
-        string ownerId,
-        Func<NpgsqlConnection, NpgsqlTransaction, Task<T>> work,
-        CancellationToken cancellationToken)
-    {
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await using (var guc = new NpgsqlCommand(
-            "SELECT set_config('app.tenant_id', $1, true), set_config('app.owner_id', $2, true)",
-            connection,
-            transaction))
-        {
-            guc.Parameters.Add(Text(tenantId));
-            guc.Parameters.Add(Text(ownerId));
-            await guc.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        var result = await work(connection, transaction);
-        await transaction.CommitAsync(cancellationToken);
-        return result;
-    }
+    public ValueTask DisposeAsync() => _session.DisposeAsync();
 
     private static AnalysisTaskRecord Map(NpgsqlDataReader reader)
     {
@@ -164,11 +134,8 @@ public sealed class PostgresAnalysisTaskRepository : IAsyncDisposable
             ReadTimestamp(reader, reader.GetOrdinal("updated_at_utc")));
     }
 
-    private static string? NullableString(NpgsqlDataReader reader, string column)
-    {
-        var ordinal = reader.GetOrdinal(column);
-        return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
-    }
+    private static string? NullableString(NpgsqlDataReader reader, string column) =>
+        PostgresSession.ReadNullableString(reader, column);
 
     private static DateTimeOffset ReadTimestamp(NpgsqlDataReader reader, int ordinal)
     {
@@ -176,9 +143,7 @@ public sealed class PostgresAnalysisTaskRepository : IAsyncDisposable
         return new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc));
     }
 
-    private static NpgsqlParameter Text(string value) =>
-        new() { Value = value, NpgsqlDbType = NpgsqlDbType.Text };
+    private static NpgsqlParameter Text(string value) => PostgresSession.Text(value);
 
-    private static NpgsqlParameter Timestamp(DateTimeOffset value) =>
-        new() { Value = value.UtcDateTime, NpgsqlDbType = NpgsqlDbType.TimestampTz };
+    private static NpgsqlParameter Timestamp(DateTimeOffset value) => PostgresSession.Timestamp(value);
 }

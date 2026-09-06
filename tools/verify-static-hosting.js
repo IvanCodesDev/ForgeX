@@ -6,9 +6,9 @@
      1. 静态面可达：/ → React 构建产物、/legacy 经典入口、/react/assets/* immutable 缓存、
         contracts 白名单、dist 不直达、路径穿越防护；API/健康检查路由优先级不受影响；
      2. 上传数据集/发起分析：POST /api/v1/gcode/analyses 真实执行异步 G-code 分析作业至终态；
-     3. 创建分享 → 撤销：C# shares 自 Stage 8.1 起仅支持 PostgreSQL（Node ShareStore 有 file 腿，
-        C# 没有）。提供 FORGEX_DRILL_POSTGRES_URL / POSTGRES_URL 且 forgex.shares 已迁移时真实跑通；
-        否则该腿如实记 skipped 并给出原因，绝不伪造通过；
+     3. 创建分享 → 撤销：提供 FORGEX_DRILL_POSTGRES_URL / POSTGRES_URL 且 forgex.shares 已迁移时走
+        postgres 腿；否则走 Stage 8.6a 新增的 C# file 腿（Shares__Provider=file），两条腿都真实跑通，
+        产物 mode.shares 如实记录用的是哪条腿。FORGEX_DRILL_REQUIRE_ALL=1 时任何 skip 都判失败；
      4. 重启进程（新随机端口）：file 作业仓库跨重启可读、静态面仍可达、分享撤销状态保持；
      5. 清理临时运行目录与分享数据。
    端口一律随机分配（getFreePort），不硬编码；产物：backend/artifacts/static-hosting-drill.json。 */
@@ -27,7 +27,7 @@ const apiDll = path.join(root, "backend", "src", "ForgeX.Api", "bin", "Release",
 const artifactPath = path.join(root, "backend", "artifacts", "static-hosting-drill.json");
 
 const steps = [];
-let skippedCount = 0;
+const skippedCount = 0;
 
 function step(name, pass, detail) {
   steps.push({ name, result: pass ? "pass" : "fail", detail: detail === undefined ? null : String(detail) });
@@ -35,11 +35,9 @@ function step(name, pass, detail) {
   process.stdout.write(`  PASS  ${name}\n`);
 }
 
-function skipStep(name, reason) {
-  skippedCount += 1;
-  steps.push({ name, result: "skipped", detail: reason });
-  process.stdout.write(`  SKIP  ${name} — ${reason}\n`);
-}
+// Stage 8.6a 起演练不再有可跳过的步骤（shares 有 file 腿兜底）；skippedCount 保留在产物里以稳定 schema。
+// FORGEX_DRILL_REQUIRE_ALL=1（CI）额外要求：给了 PostgreSQL 连接就必须真的走 postgres 腿。
+const requireAll = process.env.FORGEX_DRILL_REQUIRE_ALL === "1";
 
 const sha256 = (text) => crypto.createHash("sha256").update(Buffer.from(text, "utf8")).digest("hex");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -144,7 +142,7 @@ function ensureFrontendBuild() {
   return { reused: !rebuild, indexSha256: sha256(html), assets };
 }
 
-/* ── 分享腿前置探测（C# shares 为 postgres-only，见文件头注释） ─────────────── */
+/* ── 分享腿前置探测：PostgreSQL 可用则走 postgres 腿，否则回退 C# file 腿（见文件头注释） ── */
 
 async function probeShares(postgresUrl) {
   let Client;
@@ -212,10 +210,15 @@ async function main() {
   step("frontend-build-artifacts", frontendBuild.assets.length > 0, JSON.stringify(frontendBuild.assets));
 
   const sharesUrl = process.env.FORGEX_DRILL_POSTGRES_URL || process.env.POSTGRES_URL || "";
-  let sharesMode = { enabled: false, reason: "未提供 FORGEX_DRILL_POSTGRES_URL / POSTGRES_URL" };
+  let sharesMode = { provider: "file", fallbackReason: "未提供 FORGEX_DRILL_POSTGRES_URL / POSTGRES_URL" };
   if (sharesUrl) {
     const probe = await probeShares(sharesUrl);
-    sharesMode = probe.ok ? { enabled: true, reason: null } : { enabled: false, reason: probe.reason };
+    sharesMode = probe.ok
+      ? { provider: "postgres", fallbackReason: null }
+      : { provider: "file", fallbackReason: probe.reason };
+  }
+  if (requireAll && sharesUrl && sharesMode.provider !== "postgres") {
+    throw new Error(`提供了 PostgreSQL 连接却无法走 postgres 腿：${sharesMode.fallbackReason}`);
   }
 
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "forgex-static-drill-"));
@@ -235,7 +238,8 @@ async function main() {
         Storage__Root: storageRoot,
         StaticHosting__Enabled: "1",
         StaticHosting__Root: root,
-        ...(sharesMode.enabled ? { Shares__Provider: "postgres", Shares__PostgresUrl: sharesUrl } : {}),
+        Shares__Provider: sharesMode.provider,
+        ...(sharesMode.provider === "postgres" ? { Shares__PostgresUrl: sharesUrl } : {}),
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -316,11 +320,11 @@ async function main() {
       `status=${terminal.status} phase=${terminal.phase}`
     );
 
-    // ── 3. 创建分享 → 撤销（postgres-only，见文件头注释；不可用时如实 skip） ──
+    // ── 3. 创建分享 → 撤销（postgres 或 file 腿，见文件头注释；永不 skip） ─────
     let revokedToken = null;
     let survivorToken = null;
     let survivorRevokeKey = null;
-    if (sharesMode.enabled) {
+    {
       const shareBody = (title) =>
         JSON.stringify({
           report: { title, verdict: "静态托管单进程实测通过", rowCount: 3, sections: [] },
@@ -361,12 +365,13 @@ async function main() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ revokeKey: first.json.revokeKey }),
       });
-      step("share-revoked", revoke.status === 200 && revoke.json && revoke.json.ok === true, `status=${revoke.status}`);
+      step(
+        "share-revoked",
+        revoke.status === 200 && revoke.json && revoke.json.revoked === true,
+        `status=${revoke.status} body=${revoke.text}`
+      );
       const gone = await jfetch(base, `/share/${revokedToken}`);
       step("share-revoked-page-404", gone.status === 404, `status=${gone.status}`);
-    } else {
-      skipStep("share-created", sharesMode.reason);
-      skipStep("share-revoked", sharesMode.reason);
     }
 
     // ── 4. 重启进程（新随机端口，同一 file 存储）：持久化与撤销状态保持 ───────
@@ -392,7 +397,7 @@ async function main() {
       homeAfter.status === 200 && homeAfter.text === home.text,
       `status=${homeAfter.status}`
     );
-    if (sharesMode.enabled) {
+    {
       const stillGone = await jfetch(base2, `/share/${revokedToken}`);
       step("restart-share-revocation-held", stillGone.status === 404, `status=${stillGone.status}`);
       const survivor = await jfetch(base2, `/share/${survivorToken}`);
@@ -407,8 +412,6 @@ async function main() {
         body: JSON.stringify({ revokeKey: survivorRevokeKey }),
       });
       step("share-cleanup-revoked", cleanupRevoke.status === 200, `status=${cleanupRevoke.status}`);
-    } else {
-      skipStep("restart-share-revocation-held", sharesMode.reason);
     }
   } finally {
     await stop(phase1 && phase1.child);
@@ -429,8 +432,8 @@ main()
       mode: {
         persistence: "file",
         staticRoot: "repository root (Node cfg.staticRoot equivalent)",
-        shares: sharesMode.enabled ? "postgres" : "skipped",
-        sharesSkipReason: sharesMode.reason,
+        shares: sharesMode.provider,
+        sharesFallbackReason: sharesMode.fallbackReason,
       },
       frontendBuild,
       evidence,

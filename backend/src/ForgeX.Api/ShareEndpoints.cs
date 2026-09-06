@@ -2,8 +2,8 @@ using System.Globalization;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using ForgeX.Application;
 using ForgeX.Contracts;
-using ForgeX.Infrastructure;
 
 namespace ForgeX.Api;
 
@@ -19,31 +19,41 @@ internal static class ShareEndpoints
     private const long MaxCreateBodyBytes = 5L * 1024 * 1024;
     private const long MaxRevokeBodyBytes = 4L * 1024;
 
-    public static async Task<IResult> CreateAsync(HttpContext context, PostgresShareRepository shares)
+    /// <summary>Registers the share routes; shared by Program.cs and the ResourceGate so both wire the same handlers.</summary>
+    public static void Map(IEndpointRouteBuilder app)
+    {
+        app.MapPost("/api/v1/shares", CreateAsync)
+            .WithName("CreateShare")
+            .Accepts<ShareCreateRequestDto>("application/json")
+            .Produces<ShareCreateResponseDto>(StatusCodes.Status201Created)
+            .Produces<ApiProblem>(StatusCodes.Status400BadRequest, "application/problem+json")
+            .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
+            .Produces<ApiProblem>(StatusCodes.Status413PayloadTooLarge, "application/problem+json");
+
+        app.MapPost("/api/v1/shares/{token}/revoke", RevokeAsync)
+            .WithName("RevokeShare")
+            .Accepts<ShareRevokeRequestDto>("application/json")
+            .Produces<ShareRevokeResponseDto>()
+            .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
+            .Produces<ApiProblem>(StatusCodes.Status403Forbidden, "application/problem+json")
+            .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
+
+        app.MapGet("/share/{token}", RenderAsync)
+            .WithName("RenderSharePage")
+            .Produces(StatusCodes.Status200OK, contentType: "text/html")
+            .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
+    }
+
+    public static async Task<IResult> CreateAsync(HttpContext context, IShareRepository shares)
     {
         var caller = CallerContextBoundary.GetRequired(context);
-        if (context.Request.ContentLength is > MaxCreateBodyBytes)
+        var body = await EndpointBodies.ReadJsonAsync<ShareCreateRequestDto>(context, MaxCreateBodyBytes, "Share payload is too large");
+        if (body.Problem is not null)
         {
-            return ApiProblemResults.Create(context, 413, "payload_too_large", "Share payload is too large");
+            return body.Problem;
         }
 
-        ShareCreateRequestDto? request;
-        try
-        {
-            request = await JsonSerializer.DeserializeAsync<ShareCreateRequestDto>(
-                LimitedBody(context, MaxCreateBodyBytes),
-                new JsonSerializerOptions(JsonSerializerDefaults.Web),
-                context.RequestAborted);
-        }
-        catch (JsonException)
-        {
-            return ApiProblemResults.Create(context, 400, "invalid_json", "Request body must be valid JSON");
-        }
-        catch (InvalidDataException)
-        {
-            return ApiProblemResults.Create(context, 413, "payload_too_large", "Share payload is too large");
-        }
-
+        var request = body.Value;
         if (request is null || request.Report.ValueKind != JsonValueKind.Object)
         {
             return ApiProblemResults.Create(context, 400, "invalid_report", "report must be a JSON object");
@@ -89,31 +99,16 @@ internal static class ShareEndpoints
         return Results.Json(response, statusCode: StatusCodes.Status201Created);
     }
 
-    public static async Task<IResult> RevokeAsync(HttpContext context, string token, PostgresShareRepository shares)
+    public static async Task<IResult> RevokeAsync(HttpContext context, string token, IShareRepository shares)
     {
         var caller = CallerContextBoundary.GetRequired(context);
-        if (context.Request.ContentLength is > MaxRevokeBodyBytes)
+        var body = await EndpointBodies.ReadJsonAsync<ShareRevokeRequestDto>(context, MaxRevokeBodyBytes, "Revoke payload is too large");
+        if (body.Problem is not null)
         {
-            return ApiProblemResults.Create(context, 413, "payload_too_large", "Revoke payload is too large");
+            return body.Problem;
         }
 
-        ShareRevokeRequestDto? request;
-        try
-        {
-            request = await JsonSerializer.DeserializeAsync<ShareRevokeRequestDto>(
-                LimitedBody(context, MaxRevokeBodyBytes),
-                new JsonSerializerOptions(JsonSerializerDefaults.Web),
-                context.RequestAborted);
-        }
-        catch (JsonException)
-        {
-            return ApiProblemResults.Create(context, 400, "invalid_json", "Request body must be valid JSON");
-        }
-        catch (InvalidDataException)
-        {
-            return ApiProblemResults.Create(context, 413, "payload_too_large", "Revoke payload is too large");
-        }
-
+        var request = body.Value;
         var outcome = await shares.RevokeAsync(
             token,
             request?.RevokeKey,
@@ -129,7 +124,7 @@ internal static class ShareEndpoints
         };
     }
 
-    public static async Task<IResult> RenderAsync(HttpContext context, string token, PostgresShareRepository shares)
+    public static async Task<IResult> RenderAsync(HttpContext context, string token, IShareRepository shares)
     {
         var record = await shares.GetPublicAsync(token, context.RequestAborted);
         if (record is null)
@@ -139,16 +134,6 @@ internal static class ShareEndpoints
 
         context.Response.Headers.CacheControl = "no-cache";
         return Results.Content(RenderShareHtml(record), "text/html; charset=utf-8");
-    }
-
-    private static Stream LimitedBody(HttpContext context, long maxBytes)
-    {
-        var feature = context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
-        if (feature is { IsReadOnly: false })
-        {
-            feature.MaxRequestBodySize = maxBytes;
-        }
-        return context.Request.Body;
     }
 
     // ── 服务端渲染：renderShareHtml 的 C# 移植，结构与样式保持一致，全部文本转义 ──

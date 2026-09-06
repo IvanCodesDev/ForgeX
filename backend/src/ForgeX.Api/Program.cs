@@ -41,22 +41,14 @@ if (!string.Equals(persistenceProvider, "file", StringComparison.OrdinalIgnoreCa
         "Persistence:Provider currently supports only 'file'. The versioned PostgreSQL schema is staged but its runtime driver is not active.");
 }
 
-// ── Stage 8.1：shares 迁 C#（V2.0 手册 §4.2 第 1 项）────────────────────────
+var storageRoot = Path.GetFullPath(builder.Configuration["Storage:Root"] ?? "data/dotnet-preview", builder.Environment.ContentRootPath);
+
+// ── Stage 8.1 / 8.6a：shares 迁 C#（V2.0 手册 §4.2 第 1 项）──────────────────
 // 默认 disabled：不配置时不注册端点，行为与 1.0.0 完全一致；
-// 配置 postgres 后复用 Node 侧同一张 forgex.shares 表与 RLS 策略。
-var sharesProvider = (builder.Configuration["Shares:Provider"] ?? "disabled").Trim().ToLowerInvariant();
-var sharesPostgresUrl = builder.Configuration["Shares:PostgresUrl"]
-    ?? Environment.GetEnvironmentVariable("POSTGRES_URL")
-    ?? string.Empty;
-if (sharesProvider is not ("disabled" or "postgres"))
-{
-    throw new InvalidOperationException("Shares:Provider must be 'disabled' or 'postgres'.");
-}
-if (sharesProvider == "postgres" && string.IsNullOrWhiteSpace(sharesPostgresUrl))
-{
-    throw new InvalidOperationException("Shares:PostgresUrl (or POSTGRES_URL) is required when Shares:Provider=postgres.");
-}
-var sharesEnabled = sharesProvider == "postgres";
+// postgres 复用 Node 侧同一张 forgex.shares 表与 RLS 策略；
+// file（8.6a 新增）落在 Storage:Root/shares，保住零依赖单进程部署。
+var sharesProvider = ResourceProviderOptions.Read(builder.Configuration, "Shares");
+var sharesEnabled = sharesProvider.Enabled;
 if (sharesEnabled)
 {
     var shareTtlMs = ReadInt(builder.Configuration, "Shares:TtlMs", 24 * 60 * 60 * 1000);
@@ -66,10 +58,9 @@ if (sharesEnabled)
     }
     var shareMaxPerOwner = ReadInt(builder.Configuration, "Shares:MaxPerOwner", PostgresShareRepository.DefaultMaxSharesPerOwner);
     builder.Services.AddSingleton(new SharePublicBase(builder.Configuration["Shares:PublicBase"]?.TrimEnd('/') ?? string.Empty));
-    builder.Services.AddSingleton(_ => new PostgresShareRepository(
-        sharesPostgresUrl,
-        TimeSpan.FromMilliseconds(shareTtlMs),
-        shareMaxPerOwner));
+    builder.Services.AddSingleton<IShareRepository>(_ => sharesProvider.IsPostgres
+        ? new PostgresShareRepository(sharesProvider.PostgresUrl, TimeSpan.FromMilliseconds(shareTtlMs), shareMaxPerOwner)
+        : new FileShareRepository(Path.Combine(storageRoot, "shares"), TimeSpan.FromMilliseconds(shareTtlMs), shareMaxPerOwner));
 }
 
 // ── Stage 8.1：Node 分析任务历史读取 + SSE 汇入 jobs 事件模型 ────────────────
@@ -91,6 +82,94 @@ if (analysisTasksEnabled)
 {
     builder.Services.AddSingleton(_ => new PostgresAnalysisTaskRepository(analysisTasksPostgresUrl));
 }
+
+// ── Stage 8.6a：数据源 / 知识库迁 C#（V2.0 手册 §4.2 第 6 项 a/b）─────────────
+// 默认 disabled；file 落 Storage:Root/{datasources,knowledge}，postgres 复用 Node 同表同 RLS。
+// TtlMs=0 表示永不过期（对齐 Node TASK_TTL_MS 为 0 的语义）。
+var datasourcesProvider = ResourceProviderOptions.Read(builder.Configuration, "Datasources");
+if (datasourcesProvider.Enabled)
+{
+    var ttlMs = ReadLong(builder.Configuration, "Datasources:TtlMs", DatasourceOptions.DefaultTtlMs);
+    var maxPerOwner = ReadInt(builder.Configuration, "Datasources:MaxPerOwner", DatasourceOptions.DefaultMaxPerOwner);
+    if (ttlMs < 0 || maxPerOwner < 1)
+    {
+        throw new InvalidOperationException("Datasources:TtlMs must be >= 0 and Datasources:MaxPerOwner must be positive.");
+    }
+    builder.Services.AddSingleton(new DatasourceOptions(ttlMs, maxPerOwner));
+    builder.Services.AddSingleton<IDatasourceRepository>(_ => datasourcesProvider.IsPostgres
+        ? new PostgresDatasourceRepository(datasourcesProvider.PostgresUrl, maxPerOwner)
+        : new FileDatasourceRepository(Path.Combine(storageRoot, "datasources"), maxPerOwner));
+}
+
+var knowledgeProvider = ResourceProviderOptions.Read(builder.Configuration, "Knowledge");
+if (knowledgeProvider.Enabled)
+{
+    var ttlMs = ReadLong(builder.Configuration, "Knowledge:TtlMs", KnowledgeOptions.DefaultTtlMs);
+    var maxPerOwner = ReadInt(builder.Configuration, "Knowledge:MaxPerOwner", KnowledgeOptions.DefaultMaxPerOwner);
+    if (ttlMs < 0 || maxPerOwner < 1)
+    {
+        throw new InvalidOperationException("Knowledge:TtlMs must be >= 0 and Knowledge:MaxPerOwner must be positive.");
+    }
+    builder.Services.AddSingleton(new KnowledgeOptions(ttlMs, maxPerOwner));
+    builder.Services.AddSingleton<IKnowledgeRepository>(_ => knowledgeProvider.IsPostgres
+        ? new PostgresKnowledgeRepository(knowledgeProvider.PostgresUrl, maxPerOwner)
+        : new FileKnowledgeRepository(Path.Combine(storageRoot, "knowledge"), maxPerOwner));
+}
+
+// Stage 8.6a: calibration governance is deployment-scoped (Node: cfg.postgresTenantId || "tn_local"),
+// so the tenant comes from configuration, never from the caller. The file leg shares Node's
+// forgex-calibration-service-state v1 format (decision A1): point Calibrations:StateFile at the
+// Node DATA_DIR/calibrations.json to take the governance state over as-is.
+var calibrationsProvider = ResourceProviderOptions.Read(builder.Configuration, "Calibrations");
+if (calibrationsProvider.Enabled)
+{
+    var maxSubmissions = ReadInt(builder.Configuration, "Calibrations:MaxSubmissions", CalibrationGovernanceRules.DefaultMaxSubmissions);
+    if (maxSubmissions < 1)
+    {
+        throw new InvalidOperationException("Calibrations:MaxSubmissions must be positive.");
+    }
+    var calibrationTenantId = builder.Configuration["Calibrations:TenantId"] ?? "tn_local";
+    var calibrationOwnerId = builder.Configuration["Calibrations:OwnerId"];
+    var calibrationStateFile = Path.GetFullPath(
+        builder.Configuration["Calibrations:StateFile"] ?? Path.Combine(storageRoot, "calibrations.json"),
+        builder.Environment.ContentRootPath);
+    builder.Services.AddSingleton<ICalibrationGovernanceStore>(_ => calibrationsProvider.IsPostgres
+        ? new PostgresCalibrationGovernanceStore(calibrationsProvider.PostgresUrl, calibrationTenantId, calibrationOwnerId, maxSubmissions)
+        : new FileCalibrationGovernanceStore(calibrationStateFile, maxSubmissions));
+}
+
+// Direct-caller identity is a singleton shared by the caller-context middleware and the calibration
+// governance endpoints (submitter / reviewer resolution, §7.2).
+var directAuth = DirectAuthOptions.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(directAuth);
+
+// Stage 8.6a: every enabled TTL-bearing repository joins the periodic sweeper (Node: 60 s setInterval)
+// and the resource gauges on /metrics.
+if (sharesEnabled)
+{
+    builder.Services.AddSingleton<IResourceSweepable>(static services => services.GetRequiredService<IShareRepository>());
+}
+if (datasourcesProvider.Enabled)
+{
+    builder.Services.AddSingleton<IResourceSweepable>(static services => services.GetRequiredService<IDatasourceRepository>());
+}
+if (knowledgeProvider.Enabled)
+{
+    builder.Services.AddSingleton<IResourceSweepable>(static services => services.GetRequiredService<IKnowledgeRepository>());
+}
+var sweepIntervalMs = ReadLong(builder.Configuration, "Resources:SweepIntervalMs", (long)ResourceSweeper.DefaultInterval.TotalMilliseconds);
+if (sweepIntervalMs < 1)
+{
+    throw new InvalidOperationException("Resources:SweepIntervalMs must be positive.");
+}
+builder.Services.AddHostedService(services => new ResourceSweeper(
+    services.GetServices<IResourceSweepable>(),
+    services.GetRequiredService<ILogger<ResourceSweeper>>(),
+    TimeSpan.FromMilliseconds(sweepIntervalMs)));
+builder.Services.AddSingleton(static services => new ResourceGaugeSampler(
+    services.GetServices<IResourceSweepable>(),
+    services.GetService<ICalibrationGovernanceStore>(),
+    services.GetRequiredService<ILogger<ResourceGaugeSampler>>()));
 
 builder.WebHost.ConfigureKestrel(options =>
 {
@@ -134,7 +213,6 @@ var admissionOptions = new GCodeJobAdmissionOptions(
     ReadInt(builder.Configuration, "GCodeJobs:Admission:MaxActivePerOwner", 4),
     ReadInt(builder.Configuration, "GCodeJobs:Admission:MaxActivePerTenant", 16)).Validate();
 builder.Services.AddSingleton(admissionOptions);
-var storageRoot = Path.GetFullPath(builder.Configuration["Storage:Root"] ?? "data/dotnet-preview", builder.Environment.ContentRootPath);
 builder.Services.AddSingleton<IContentObjectStore>(_ => new ContentAddressedObjectStore(Path.Combine(storageRoot, "objects")));
 builder.Services.AddSingleton(_ => new FileGCodeJobRepository(Path.Combine(storageRoot, "jobs")));
 builder.Services.AddSingleton<IGCodeJobRepository>(static services => services.GetRequiredService<FileGCodeJobRepository>());
@@ -195,8 +273,6 @@ app.Use(async (context, next) =>
 
 // Stage 8.2：直连身份（API key / 匿名 IP）与可信 Node 代理并行受理；
 // 未配置 DirectAuth:ApiKeys 时行为与迁移前完全一致。
-var directAuth = DirectAuthOptions.FromConfiguration(builder.Configuration);
-
 app.Use(CallerContextBoundary.BuildMiddleware(internalSharedSecret, previousInternalSharedSecret, directAuth));
 
 if (allowedOrigins.Length > 0)
@@ -286,8 +362,8 @@ app.MapGet("/healthz", () => Results.Ok(new LegacyHealthResponse(
     .WithName("GetLegacyHealth")
     .Produces<LegacyHealthResponse>();
 
-app.MapGet("/metrics", async (IGCodeJobQueue queue, IGCodeJobRepository repository, CancellationToken ct) => Results.Text(
-        metrics.Render(serviceVersion, queue, await repository.ListAsync(ct)),
+app.MapGet("/metrics", async (IGCodeJobQueue queue, IGCodeJobRepository repository, ResourceGaugeSampler gauges, CancellationToken ct) => Results.Text(
+        metrics.Render(serviceVersion, queue, await repository.ListAsync(ct), await gauges.SampleAsync(ct)),
         "text/plain; version=0.0.4; charset=utf-8"))
     .WithName("GetMetrics")
     .ExcludeFromDescription();
@@ -387,26 +463,22 @@ app.MapPost("/api/v1/jobs/{id}/cancel", GCodeJobEndpoints.CancelAsync)
 
 if (sharesEnabled)
 {
-    app.MapPost("/api/v1/shares", ShareEndpoints.CreateAsync)
-        .WithName("CreateShare")
-        .Accepts<ShareCreateRequestDto>("application/json")
-        .Produces<ShareCreateResponseDto>(StatusCodes.Status201Created)
-        .Produces<ApiProblem>(StatusCodes.Status400BadRequest, "application/problem+json")
-        .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
-        .Produces<ApiProblem>(StatusCodes.Status413PayloadTooLarge, "application/problem+json");
+    ShareEndpoints.Map(app);
+}
 
-    app.MapPost("/api/v1/shares/{token}/revoke", ShareEndpoints.RevokeAsync)
-        .WithName("RevokeShare")
-        .Accepts<ShareRevokeRequestDto>("application/json")
-        .Produces<ShareRevokeResponseDto>()
-        .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
-        .Produces<ApiProblem>(StatusCodes.Status403Forbidden, "application/problem+json")
-        .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
+if (datasourcesProvider.Enabled)
+{
+    DatasourceEndpoints.Map(app);
+}
 
-    app.MapGet("/share/{token}", ShareEndpoints.RenderAsync)
-        .WithName("RenderSharePage")
-        .Produces(StatusCodes.Status200OK, contentType: "text/html")
-        .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
+if (knowledgeProvider.Enabled)
+{
+    KnowledgeEndpoints.Map(app);
+}
+
+if (calibrationsProvider.Enabled)
+{
+    CalibrationGovernanceEndpoints.Map(app);
 }
 
 if (analysisTasksEnabled)
@@ -438,6 +510,16 @@ static int ReadInt(IConfiguration configuration, string key, int fallback)
     return string.IsNullOrWhiteSpace(value)
         ? fallback
         : int.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : throw new InvalidOperationException($"{key} must be an integer.");
+}
+
+static long ReadLong(IConfiguration configuration, string key, long fallback)
+{
+    var value = configuration[key];
+    return string.IsNullOrWhiteSpace(value)
+        ? fallback
+        : long.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
             ? parsed
             : throw new InvalidOperationException($"{key} must be an integer.");
 }

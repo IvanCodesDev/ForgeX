@@ -208,4 +208,4 @@ function validateBundle(bundle) {
   return globalThis.FXCalibrationRegistry.validateBundle(bundle);
 }
 
-module.exports = { CalibrationStore, digest, validateBundle };
+module.exports = { CalibrationStore, digest, stable, validateBundle };

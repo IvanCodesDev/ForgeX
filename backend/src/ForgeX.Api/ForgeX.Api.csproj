@@ -18,6 +18,8 @@
     <InternalsVisibleTo Include="ForgeX.AuthGate" />
     <!-- Stage 8 工作项 5：静态托管门禁需要驱动内部的 StaticHostingOptions / StaticFileHosting。 -->
     <InternalsVisibleTo Include="ForgeX.StaticGate" />
+    <!-- Stage 8.6a：资源权威门禁需要驱动内部的 CallerContextBoundary 与三类资源端点。 -->
+    <InternalsVisibleTo Include="ForgeX.ResourceGate" />
   </ItemGroup>
 
   <PropertyGroup>

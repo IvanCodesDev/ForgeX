@@ -1,0 +1,621 @@
+{
+  "schemaVersion": "1.0",
+  "stringify": [
+    {
+      "name": "chinese-raw",
+      "input": {
+        "note": "客户端声明为合成/仿真数据，非真实产线数据。",
+        "badge": "合成"
+      },
+      "expected": "{\"note\":\"客户端声明为合成/仿真数据，非真实产线数据。\",\"badge\":\"合成\"}"
+    },
+    {
+      "name": "control-chars",
+      "input": {
+        "s": "a\u0001b\u001fc\bd\fe\nf\rg\th"
+      },
+      "expected": "{\"s\":\"a\\u0001b\\u001fc\\bd\\fe\\nf\\rg\\th\"}"
+    },
+    {
+      "name": "quotes-backslash",
+      "input": {
+        "s": "say \"hi\" \\ done"
+      },
+      "expected": "{\"s\":\"say \\\"hi\\\" \\\\ done\"}"
+    },
+    {
+      "name": "html-sensitive",
+      "input": {
+        "s": "<tag> & 'quote' + plus"
+      },
+      "expected": "{\"s\":\"<tag> & 'quote' + plus\"}"
+    },
+    {
+      "name": "surrogate-pair",
+      "input": {
+        "s": "😀 emoji"
+      },
+      "expected": "{\"s\":\"😀 emoji\"}"
+    },
+    {
+      "name": "number-1e21",
+      "input": [
+        1e+21,
+        1e-7,
+        123456789012345680000
+      ],
+      "expected": "[1e+21,1e-7,123456789012345680000]"
+    },
+    {
+      "name": "number-float",
+      "input": [
+        0.30000000000000004,
+        0.3333333333333333,
+        100,
+        1.5,
+        -2.25
+      ],
+      "expected": "[0.30000000000000004,0.3333333333333333,100,1.5,-2.25]"
+    },
+    {
+      "name": "number-negative-zero",
+      "input": [
+        0,
+        0
+      ],
+      "expected": "[0,0]"
+    },
+    {
+      "name": "nested",
+      "input": {
+        "a": [
+          1,
+          {
+            "b": null,
+            "c": true,
+            "d": false
+          }
+        ],
+        "e": {},
+        "f": []
+      },
+      "expected": "{\"a\":[1,{\"b\":null,\"c\":true,\"d\":false}],\"e\":{},\"f\":[]}"
+    },
+    {
+      "name": "int-like-keys-insertion",
+      "input": {
+        "9": 4,
+        "10": 2,
+        "b": 1,
+        "a": 3
+      },
+      "expected": "{\"9\":4,\"10\":2,\"b\":1,\"a\":3}"
+    }
+  ],
+  "stable": [
+    {
+      "name": "sorted-keys",
+      "input": {
+        "zeta": 1,
+        "alpha": 2,
+        "Beta": 3,
+        "_under": 4
+      },
+      "expected": "{\"Beta\":3,\"_under\":4,\"alpha\":2,\"zeta\":1}",
+      "digest": "9dd15a91d539d523de1e7cd31627be83c4047c604b71559a65a354d9e23a23e8"
+    },
+    {
+      "name": "nested-sorted",
+      "input": {
+        "models": [
+          {
+            "status": "candidate",
+            "id": "m"
+          }
+        ],
+        "id": "x",
+        "revision": 2
+      },
+      "expected": "{\"id\":\"x\",\"models\":[{\"id\":\"m\",\"status\":\"candidate\"}],\"revision\":2}",
+      "digest": "8e039f5d3ec01ddf2da47c6a17e4311b347d93e919da99eb34dc24b650bcee21"
+    },
+    {
+      "name": "int-like-keys",
+      "input": {
+        "9": 2,
+        "10": 1,
+        "a": 3
+      },
+      "expected": "{\"10\":1,\"9\":2,\"a\":3}",
+      "digest": "d6e62753b8541dd53e8db28349f1b082a93958576574f1b34b4fd86fbbd78916"
+    },
+    {
+      "name": "chinese-keys",
+      "input": {
+        "中": 1,
+        "一": 2,
+        "a": 3
+      },
+      "expected": "{\"a\":3,\"一\":2,\"中\":1}",
+      "digest": "3b693f2f76fa34e9799e359f793e9d146c60f2614f3fea1d060ee91f00de00e6"
+    },
+    {
+      "name": "numbers-strings",
+      "input": {
+        "n": [
+          1.5,
+          1e+21,
+          0.30000000000000004
+        ],
+        "s": "ü\u0007"
+      },
+      "expected": "{\"n\":[1.5,1e+21,0.30000000000000004],\"s\":\"ü\\u0007\"}",
+      "digest": "fc3652ccd7e7d53b9d8fb34287df30ff7415a5fd4d9ac678ee25e73a0870884f"
+    }
+  ],
+  "provenance": [
+    {
+      "name": "null-claim",
+      "claim": null,
+      "expected": {
+        "source": "user-upload",
+        "synthetic": false,
+        "badge": "",
+        "note": "用户上传的 CSV。",
+        "generator": null
+      },
+      "expectedStringify": "{\"source\":\"user-upload\",\"synthetic\":false,\"badge\":\"\",\"note\":\"用户上传的 CSV。\",\"generator\":null}"
+    },
+    {
+      "name": "string-claim",
+      "claim": "farm",
+      "expected": {
+        "source": "user-upload",
+        "synthetic": false,
+        "badge": "",
+        "note": "用户上传的 CSV。",
+        "generator": null
+      },
+      "expectedStringify": "{\"source\":\"user-upload\",\"synthetic\":false,\"badge\":\"\",\"note\":\"用户上传的 CSV。\",\"generator\":null}"
+    },
+    {
+      "name": "known-synthetic-farm",
+      "claim": {
+        "source": "farm"
+      },
+      "expected": {
+        "source": "sim-farm",
+        "synthetic": true,
+        "badge": "机群仿真",
+        "note": "由虚拟机群物理仿真产出：8 台机器各有确定性的固有物理特征（热端积碳、送料咬合力、加热器功率、环境温度…），故障是这些特征与本单工艺参数相互作用的结果，没有任何一台机器被预先指定过故障率。非真实产线数据，但结论可被证伪。",
+        "generator": {
+          "name": "tools/farm-sim.js",
+          "version": 1,
+          "seed": 20260726
+        }
+      },
+      "expectedStringify": "{\"source\":\"sim-farm\",\"synthetic\":true,\"badge\":\"机群仿真\",\"note\":\"由虚拟机群物理仿真产出：8 台机器各有确定性的固有物理特征（热端积碳、送料咬合力、加热器功率、环境温度…），故障是这些特征与本单工艺参数相互作用的结果，没有任何一台机器被预先指定过故障率。非真实产线数据，但结论可被证伪。\",\"generator\":{\"name\":\"tools/farm-sim.js\",\"version\":1,\"seed\":20260726}}"
+    },
+    {
+      "name": "known-synthetic-sim-farm",
+      "claim": {
+        "source": "sim-farm"
+      },
+      "expected": {
+        "source": "sim-farm",
+        "synthetic": true,
+        "badge": "机群仿真",
+        "note": "由虚拟机群（tools/farm-sim.js）批量物理仿真产出。多台机器各有固有物理特征，失败与故障类型完全由物理演化决定，仅排产（派给哪台机、用什么材料参数）使用随机。同一 seed 完全可复现。",
+        "generator": {
+          "name": "tools/farm-sim.js",
+          "version": 1,
+          "seed": null
+        }
+      },
+      "expectedStringify": "{\"source\":\"sim-farm\",\"synthetic\":true,\"badge\":\"机群仿真\",\"note\":\"由虚拟机群（tools/farm-sim.js）批量物理仿真产出。多台机器各有固有物理特征，失败与故障类型完全由物理演化决定，仅排产（派给哪台机、用什么材料参数）使用随机。同一 seed 完全可复现。\",\"generator\":{\"name\":\"tools/farm-sim.js\",\"version\":1,\"seed\":null}}"
+    },
+    {
+      "name": "known-non-synthetic-upload",
+      "claim": {
+        "source": "upload"
+      },
+      "expected": {
+        "source": "user-upload",
+        "synthetic": false,
+        "badge": "",
+        "note": "用户上传的 CSV。",
+        "generator": null
+      },
+      "expectedStringify": "{\"source\":\"user-upload\",\"synthetic\":false,\"badge\":\"\",\"note\":\"用户上传的 CSV。\",\"generator\":null}"
+    },
+    {
+      "name": "unknown-source",
+      "claim": {
+        "source": "constructor"
+      },
+      "expected": {
+        "source": "user-upload",
+        "synthetic": false,
+        "badge": "",
+        "note": "用户上传的 CSV。",
+        "generator": null
+      },
+      "expectedStringify": "{\"source\":\"user-upload\",\"synthetic\":false,\"badge\":\"\",\"note\":\"用户上传的 CSV。\",\"generator\":null}"
+    },
+    {
+      "name": "declared-synthetic-default-badge",
+      "claim": {
+        "synthetic": true
+      },
+      "expected": {
+        "source": "client-declared-synthetic",
+        "synthetic": true,
+        "badge": "合成",
+        "note": "客户端声明为合成/仿真数据，非真实产线数据。",
+        "generator": null
+      },
+      "expectedStringify": "{\"source\":\"client-declared-synthetic\",\"synthetic\":true,\"badge\":\"合成\",\"note\":\"客户端声明为合成/仿真数据，非真实产线数据。\",\"generator\":null}"
+    },
+    {
+      "name": "declared-synthetic-long-badge",
+      "claim": {
+        "synthetic": true,
+        "badge": "很长的徽章文本超过八个字"
+      },
+      "expected": {
+        "source": "client-declared-synthetic",
+        "synthetic": true,
+        "badge": "很长的徽章文本超",
+        "note": "客户端声明为合成/仿真数据，非真实产线数据。",
+        "generator": null
+      },
+      "expectedStringify": "{\"source\":\"client-declared-synthetic\",\"synthetic\":true,\"badge\":\"很长的徽章文本超\",\"note\":\"客户端声明为合成/仿真数据，非真实产线数据。\",\"generator\":null}"
+    },
+    {
+      "name": "declared-synthetic-falsy-badge",
+      "claim": {
+        "synthetic": true,
+        "badge": 0
+      },
+      "expected": {
+        "source": "client-declared-synthetic",
+        "synthetic": true,
+        "badge": "合成",
+        "note": "客户端声明为合成/仿真数据，非真实产线数据。",
+        "generator": null
+      },
+      "expectedStringify": "{\"source\":\"client-declared-synthetic\",\"synthetic\":true,\"badge\":\"合成\",\"note\":\"客户端声明为合成/仿真数据，非真实产线数据。\",\"generator\":null}"
+    },
+    {
+      "name": "declared-synthetic-numeric-badge",
+      "claim": {
+        "synthetic": true,
+        "badge": 12345678901
+      },
+      "expected": {
+        "source": "client-declared-synthetic",
+        "synthetic": true,
+        "badge": "12345678",
+        "note": "客户端声明为合成/仿真数据，非真实产线数据。",
+        "generator": null
+      },
+      "expectedStringify": "{\"source\":\"client-declared-synthetic\",\"synthetic\":true,\"badge\":\"12345678\",\"note\":\"客户端声明为合成/仿真数据，非真实产线数据。\",\"generator\":null}"
+    },
+    {
+      "name": "declared-synthetic-control-badge",
+      "claim": {
+        "synthetic": true,
+        "badge": "a\u0001b"
+      },
+      "expected": {
+        "source": "client-declared-synthetic",
+        "synthetic": true,
+        "badge": "a\u0001b",
+        "note": "客户端声明为合成/仿真数据，非真实产线数据。",
+        "generator": null
+      },
+      "expectedStringify": "{\"source\":\"client-declared-synthetic\",\"synthetic\":true,\"badge\":\"a\\u0001b\",\"note\":\"客户端声明为合成/仿真数据，非真实产线数据。\",\"generator\":null}"
+    },
+    {
+      "name": "declared-synthetic-string-true",
+      "claim": {
+        "synthetic": "true"
+      },
+      "expected": {
+        "source": "user-upload",
+        "synthetic": false,
+        "badge": "",
+        "note": "用户上传的 CSV。",
+        "generator": null
+      },
+      "expectedStringify": "{\"source\":\"user-upload\",\"synthetic\":false,\"badge\":\"\",\"note\":\"用户上传的 CSV。\",\"generator\":null}"
+    },
+    {
+      "name": "declared-synthetic-false",
+      "claim": {
+        "synthetic": false,
+        "source": "made-up"
+      },
+      "expected": {
+        "source": "user-upload",
+        "synthetic": false,
+        "badge": "",
+        "note": "用户上传的 CSV。",
+        "generator": null
+      },
+      "expectedStringify": "{\"source\":\"user-upload\",\"synthetic\":false,\"badge\":\"\",\"note\":\"用户上传的 CSV。\",\"generator\":null}"
+    }
+  ],
+  "tokenize": [
+    {
+      "name": "mixed",
+      "input": "Hello World_x.y-z 3D打印失败率 K",
+      "expected": [
+        "hello",
+        "world_x.y-z",
+        "3d",
+        "k",
+        "打印",
+        "印失",
+        "失败",
+        "败率"
+      ]
+    },
+    {
+      "name": "kelvin-sign",
+      "input": "Kelvin İstanbul",
+      "expected": [
+        "kelvin",
+        "i",
+        "stanbul"
+      ]
+    },
+    {
+      "name": "cjk-only",
+      "input": "翘边回抽",
+      "expected": [
+        "翘边",
+        "边回",
+        "回抽"
+      ]
+    },
+    {
+      "name": "cjk-single",
+      "input": "翘 边",
+      "expected": [
+        "翘",
+        "边"
+      ]
+    },
+    {
+      "name": "empty",
+      "input": "",
+      "expected": []
+    },
+    {
+      "name": "punctuation",
+      "input": "a,b;c。d！e",
+      "expected": [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e"
+      ]
+    }
+  ],
+  "chunk": [
+    {
+      "name": "blank-line-paragraphs",
+      "input": "第一段\n\n第二段\n   \n第三段",
+      "maxLen": 400,
+      "expected": [
+        "第一段",
+        "第二段",
+        "第三段"
+      ]
+    },
+    {
+      "name": "heading-split",
+      "input": "intro line\n# Heading\nbody\n## Sub\nmore",
+      "maxLen": 400,
+      "expected": [
+        "intro line",
+        "# Heading\nbody",
+        "## Sub\nmore"
+      ]
+    },
+    {
+      "name": "long-paragraph-sentence-split",
+      "input": "喷嘴温度过高会导致拉丝。降低温度可缓解，但过低会造成层间粘接不足。回抽距离与速度需要联动调整；Bowden 挤出机通常需要更长的回抽。PETG 材料尤其容易拉丝。建议先做温度塔测试，再做回抽塔测试。This sentence is here to push the paragraph well beyond the 400 character limit so that the sentence splitter has to accumulate across several sentences before flushing a chunk. Another sentence follows! And a question? Then a semicolon; and finally the end.",
+      "maxLen": 400,
+      "expected": [
+        "喷嘴温度过高会导致拉丝。降低温度可缓解，但过低会造成层间粘接不足。回抽距离与速度需要联动调整；Bowden 挤出机通常需要更长的回抽。PETG 材料尤其容易拉丝。建议先做温度塔测试，再做回抽塔测试。This sentence is here to push the paragraph well beyond the 400 character limit so that the sentence splitter has to accumulate across several sentences before flushing a chunk. Another sentence follows! And a question? Then a semicolon; and finally the end."
+      ]
+    },
+    {
+      "name": "short-limit",
+      "input": "一句。两句。三句！四句？五句；六句;seven.eight!nine?",
+      "maxLen": 8,
+      "expected": [
+        "一句。两句。",
+        "三句！四句？",
+        "五句；六句;",
+        "seven.",
+        "eight!",
+        "nine?"
+      ]
+    },
+    {
+      "name": "empty",
+      "input": "\n\n  \n",
+      "maxLen": 400,
+      "expected": []
+    }
+  ],
+  "retrieve": [
+    {
+      "name": "chinese-hit",
+      "docs": [
+        {
+          "id": "kb_ops",
+          "name": "ops.md",
+          "text": "# 拉丝问题\n喷嘴温度过高会导致拉丝，PETG 尤其明显。\n\n# 回抽\n回抽距离 6mm、速度 40mm/s 是 Bowden 挤出机的常见起点。"
+        },
+        {
+          "id": "kb_material",
+          "name": "materials.csv.md",
+          "text": "PLA 打印温度 200-215C，热床 60C。\n\nABS 打印温度 240-260C，需要封闭腔体，否则翘边。"
+        },
+        {
+          "id": "kb_machine",
+          "name": "machine-03.md",
+          "text": "03 号机 X 轴皮带松动，层移风险高。定期检查 belt tension。"
+        }
+      ],
+      "question": "拉丝 温度",
+      "topK": 4,
+      "expected": [
+        {
+          "name": "ops.md",
+          "text": "# 拉丝问题\n喷嘴温度过高会导致拉丝，PETG 尤其明显。",
+          "score": 4.344
+        },
+        {
+          "name": "materials.csv.md",
+          "text": "PLA 打印温度 200-215C，热床 60C。",
+          "score": 1.695
+        },
+        {
+          "name": "materials.csv.md",
+          "text": "ABS 打印温度 240-260C，需要封闭腔体，否则翘边。",
+          "score": 1.557
+        }
+      ]
+    },
+    {
+      "name": "english-hit",
+      "docs": [
+        {
+          "id": "kb_ops",
+          "name": "ops.md",
+          "text": "# 拉丝问题\n喷嘴温度过高会导致拉丝，PETG 尤其明显。\n\n# 回抽\n回抽距离 6mm、速度 40mm/s 是 Bowden 挤出机的常见起点。"
+        },
+        {
+          "id": "kb_material",
+          "name": "materials.csv.md",
+          "text": "PLA 打印温度 200-215C，热床 60C。\n\nABS 打印温度 240-260C，需要封闭腔体，否则翘边。"
+        },
+        {
+          "id": "kb_machine",
+          "name": "machine-03.md",
+          "text": "03 号机 X 轴皮带松动，层移风险高。定期检查 belt tension。"
+        }
+      ],
+      "question": "belt tension layer shift",
+      "topK": 4,
+      "expected": [
+        {
+          "name": "machine-03.md",
+          "text": "03 号机 X 轴皮带松动，层移风险高。定期检查 belt tension。",
+          "score": 3.605
+        }
+      ]
+    },
+    {
+      "name": "mixed-topk-1",
+      "docs": [
+        {
+          "id": "kb_ops",
+          "name": "ops.md",
+          "text": "# 拉丝问题\n喷嘴温度过高会导致拉丝，PETG 尤其明显。\n\n# 回抽\n回抽距离 6mm、速度 40mm/s 是 Bowden 挤出机的常见起点。"
+        },
+        {
+          "id": "kb_material",
+          "name": "materials.csv.md",
+          "text": "PLA 打印温度 200-215C，热床 60C。\n\nABS 打印温度 240-260C，需要封闭腔体，否则翘边。"
+        },
+        {
+          "id": "kb_machine",
+          "name": "machine-03.md",
+          "text": "03 号机 X 轴皮带松动，层移风险高。定期检查 belt tension。"
+        }
+      ],
+      "question": "PETG 回抽",
+      "topK": 1,
+      "expected": [
+        {
+          "name": "ops.md",
+          "text": "# 回抽\n回抽距离 6mm、速度 40mm/s 是 Bowden 挤出机的常见起点。",
+          "score": 2.853
+        }
+      ]
+    },
+    {
+      "name": "no-hit",
+      "docs": [
+        {
+          "id": "kb_ops",
+          "name": "ops.md",
+          "text": "# 拉丝问题\n喷嘴温度过高会导致拉丝，PETG 尤其明显。\n\n# 回抽\n回抽距离 6mm、速度 40mm/s 是 Bowden 挤出机的常见起点。"
+        },
+        {
+          "id": "kb_material",
+          "name": "materials.csv.md",
+          "text": "PLA 打印温度 200-215C，热床 60C。\n\nABS 打印温度 240-260C，需要封闭腔体，否则翘边。"
+        },
+        {
+          "id": "kb_machine",
+          "name": "machine-03.md",
+          "text": "03 号机 X 轴皮带松动，层移风险高。定期检查 belt tension。"
+        }
+      ],
+      "question": "量子计算",
+      "topK": 4,
+      "expected": []
+    },
+    {
+      "name": "default-topk-warping",
+      "docs": [
+        {
+          "id": "kb_ops",
+          "name": "ops.md",
+          "text": "# 拉丝问题\n喷嘴温度过高会导致拉丝，PETG 尤其明显。\n\n# 回抽\n回抽距离 6mm、速度 40mm/s 是 Bowden 挤出机的常见起点。"
+        },
+        {
+          "id": "kb_material",
+          "name": "materials.csv.md",
+          "text": "PLA 打印温度 200-215C，热床 60C。\n\nABS 打印温度 240-260C，需要封闭腔体，否则翘边。"
+        },
+        {
+          "id": "kb_machine",
+          "name": "machine-03.md",
+          "text": "03 号机 X 轴皮带松动，层移风险高。定期检查 belt tension。"
+        }
+      ],
+      "question": "翘边 ABS",
+      "topK": null,
+      "expected": [
+        {
+          "name": "materials.csv.md",
+          "text": "ABS 打印温度 240-260C，需要封闭腔体，否则翘边。",
+          "score": 4.865
+        }
+      ]
+    }
+  ],
+  "datasourceIdentity": {
+    "csv": "machine,material,part,status\nM1,PLA,bracket,ok\nM2,ABS,cover,fail\n",
+    "contentSha256": "0e78bd37f7137d8b31232b37b6eeec2c4b37dc02258a0d805365e9d1a9915fec",
+    "provenance": {
+      "source": "client-declared-synthetic",
+      "synthetic": true,
+      "badge": "机群",
+      "note": "客户端声明为合成/仿真数据，非真实产线数据。",
+      "generator": null
+    },
+    "cacheKey": "c4567806f55ffbfa83a21828edcd39c1dc9f3e2e2f782c64eba0a06a0c239b00",
+    "tenantId": "tn_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "id": "ds_a8ea4777685956cc64c21c6d"
+  }
+}

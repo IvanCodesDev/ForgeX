@@ -1,32 +1,11 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using ForgeX.Application;
 using Npgsql;
 using NpgsqlTypes;
 
 namespace ForgeX.Infrastructure;
-
-public sealed record ShareRecord(
-    string Token,
-    string TenantId,
-    string OwnerId,
-    string RevokeHash,
-    string ReportJson,
-    string Question,
-    string Engine,
-    string? UpstreamTaskId,
-    DateTimeOffset CreatedAt,
-    DateTimeOffset ExpiresAt,
-    long AccessCount,
-    DateTimeOffset? LastAccessedAt);
-
-public sealed record ShareCreated(string Token, string RevokeKey, DateTimeOffset ExpiresAt);
-
-public enum ShareRevokeOutcome
-{
-    Revoked,
-    NotFound,
-    BadKey,
-}
 
 /// <summary>
 /// PostgreSQL-backed share store. Behavioral twin of the Node implementation in
@@ -36,41 +15,38 @@ public enum ShareRevokeOutcome
 /// deletion, access counting, and per-owner eviction. Divergence here would fail the
 /// Stage 8 dual-run comparison, so any intentional change must land in both runtimes.
 /// </summary>
-public sealed class PostgresShareRepository : IAsyncDisposable
+public sealed class PostgresShareRepository : IShareRepository, IAsyncDisposable
 {
     public static readonly TimeSpan DefaultTtl = TimeSpan.FromHours(24);
     public const int DefaultMaxSharesPerOwner = 2000;
 
-    private readonly NpgsqlDataSource _dataSource;
+    private readonly PostgresSession _session;
     private readonly TimeSpan _ttl;
     private readonly int _maxSharesPerOwner;
+    private readonly ConcurrentDictionary<(string TenantId, string OwnerId), byte> _seenOwners = new();
 
     public PostgresShareRepository(
         string connectionString,
         TimeSpan? ttl = null,
         int maxSharesPerOwner = DefaultMaxSharesPerOwner)
     {
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            throw new ArgumentException("A PostgreSQL connection string is required.", nameof(connectionString));
-        }
         if (maxSharesPerOwner < 1)
         {
             throw new ArgumentOutOfRangeException(nameof(maxSharesPerOwner));
         }
 
-        var builder = new NpgsqlDataSourceBuilder(connectionString);
-        builder.ConnectionStringBuilder.ApplicationName = "forgex-api";
-        _dataSource = builder.Build();
+        _session = new PostgresSession(connectionString);
         _ttl = ttl is { } value && value > TimeSpan.Zero ? value : DefaultTtl;
         _maxSharesPerOwner = maxSharesPerOwner;
     }
 
     public TimeSpan Ttl => _ttl;
 
+    public string ResourceName => "shares";
+
     /// <summary>Readiness probe mirroring the Node store: touch the table under a local context.</summary>
     public Task ProbeAsync(CancellationToken cancellationToken) =>
-        WithOwnerTransactionAsync("tn_local", "ow_local", async (connection, transaction) =>
+        _session.WithOwnerTransactionAsync("tn_local", "ow_local", async (connection, transaction) =>
         {
             await using var command = new NpgsqlCommand("SELECT 1 FROM forgex.shares LIMIT 0", connection, transaction);
             await command.ExecuteNonQueryAsync(cancellationToken);
@@ -96,7 +72,8 @@ public sealed class PostgresShareRepository : IAsyncDisposable
         var createdAt = DateTimeOffset.UtcNow;
         var expiresAt = createdAt + ttl;
 
-        await WithOwnerTransactionAsync(tenantId, ownerId, async (connection, transaction) =>
+        _seenOwners.TryAdd((tenantId, ownerId), 0);
+        await _session.WithOwnerTransactionAsync(tenantId, ownerId, async (connection, transaction) =>
         {
             await using (var insert = new NpgsqlCommand(
                 """
@@ -108,21 +85,21 @@ public sealed class PostgresShareRepository : IAsyncDisposable
                 connection,
                 transaction))
             {
-                insert.Parameters.Add(Text(token));
-                insert.Parameters.Add(Text(tenantId));
-                insert.Parameters.Add(Text(ownerId));
-                insert.Parameters.Add(Text(revokeHash));
-                insert.Parameters.Add(new NpgsqlParameter { Value = reportJson, NpgsqlDbType = NpgsqlDbType.Jsonb });
-                insert.Parameters.Add(Text(question));
-                insert.Parameters.Add(Text(engine));
+                insert.Parameters.Add(PostgresSession.Text(token));
+                insert.Parameters.Add(PostgresSession.Text(tenantId));
+                insert.Parameters.Add(PostgresSession.Text(ownerId));
+                insert.Parameters.Add(PostgresSession.Text(revokeHash));
+                insert.Parameters.Add(PostgresSession.Jsonb(reportJson));
+                insert.Parameters.Add(PostgresSession.Text(question));
+                insert.Parameters.Add(PostgresSession.Text(engine));
                 insert.Parameters.Add(new NpgsqlParameter { Value = (object?)upstreamTaskId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Varchar });
-                insert.Parameters.Add(Timestamp(createdAt));
-                insert.Parameters.Add(Timestamp(expiresAt));
+                insert.Parameters.Add(PostgresSession.Timestamp(createdAt));
+                insert.Parameters.Add(PostgresSession.Timestamp(expiresAt));
                 await insert.ExecuteNonQueryAsync(cancellationToken);
             }
 
-            // Parity note: identical to the Node _evict query, including the ASC ordering
-            // (rows beyond the cap ordered oldest-first are removed). Change both sides
+            // Parity note (decision A5): keep the newest `max` rows, remove the oldest surplus.
+            // Node's postgres-share.js `_evict` uses the same DESC window; change both sides
             // together or the dual-run comparison will flag it.
             await using (var evict = new NpgsqlCommand(
                 """
@@ -130,16 +107,16 @@ public sealed class PostgresShareRepository : IAsyncDisposable
                 WHERE tenant_id=$1 AND owner_id=$2 AND token IN (
                   SELECT token FROM forgex.shares
                   WHERE tenant_id=$1 AND owner_id=$2
-                  ORDER BY created_at_utc ASC, token ASC
+                  ORDER BY created_at_utc DESC, token DESC
                   OFFSET $3
                 )
                 """,
                 connection,
                 transaction))
             {
-                evict.Parameters.Add(Text(tenantId));
-                evict.Parameters.Add(Text(ownerId));
-                evict.Parameters.Add(new NpgsqlParameter { Value = _maxSharesPerOwner, NpgsqlDbType = NpgsqlDbType.Integer });
+                evict.Parameters.Add(PostgresSession.Text(tenantId));
+                evict.Parameters.Add(PostgresSession.Text(ownerId));
+                evict.Parameters.Add(PostgresSession.Integer(_maxSharesPerOwner));
                 await evict.ExecuteNonQueryAsync(cancellationToken);
             }
 
@@ -156,13 +133,13 @@ public sealed class PostgresShareRepository : IAsyncDisposable
     public async Task<ShareRecord?> GetPublicAsync(string token, CancellationToken cancellationToken)
     {
         var key = token ?? string.Empty;
-        var record = await WithPublicTransactionAsync(async (connection, transaction) =>
+        var record = await _session.WithPublicTransactionAsync(async (connection, transaction) =>
         {
             await using var select = new NpgsqlCommand(
                 "SELECT * FROM forgex.shares WHERE token=$1",
                 connection,
                 transaction);
-            select.Parameters.Add(Text(key));
+            select.Parameters.Add(PostgresSession.Text(key));
             await using var reader = await select.ExecuteReaderAsync(cancellationToken);
             return await reader.ReadAsync(cancellationToken) ? Map(reader) : null;
         }, cancellationToken);
@@ -174,22 +151,22 @@ public sealed class PostgresShareRepository : IAsyncDisposable
 
         if (DateTimeOffset.UtcNow > record.ExpiresAt)
         {
-            await WithOwnerTransactionAsync(record.TenantId, record.OwnerId, async (connection, transaction) =>
+            await _session.WithOwnerTransactionAsync(record.TenantId, record.OwnerId, async (connection, transaction) =>
             {
                 await using var delete = new NpgsqlCommand(
                     "DELETE FROM forgex.shares WHERE token=$1 AND tenant_id=$2 AND owner_id=$3",
                     connection,
                     transaction);
-                delete.Parameters.Add(Text(record.Token));
-                delete.Parameters.Add(Text(record.TenantId));
-                delete.Parameters.Add(Text(record.OwnerId));
+                delete.Parameters.Add(PostgresSession.Text(record.Token));
+                delete.Parameters.Add(PostgresSession.Text(record.TenantId));
+                delete.Parameters.Add(PostgresSession.Text(record.OwnerId));
                 await delete.ExecuteNonQueryAsync(cancellationToken);
                 return true;
             }, cancellationToken);
             return null;
         }
 
-        var access = await WithOwnerTransactionAsync(record.TenantId, record.OwnerId, async (connection, transaction) =>
+        var access = await _session.WithOwnerTransactionAsync(record.TenantId, record.OwnerId, async (connection, transaction) =>
         {
             await using var update = new NpgsqlCommand(
                 """
@@ -200,8 +177,8 @@ public sealed class PostgresShareRepository : IAsyncDisposable
                 """,
                 connection,
                 transaction);
-            update.Parameters.Add(Text(record.Token));
-            update.Parameters.Add(Timestamp(DateTimeOffset.UtcNow));
+            update.Parameters.Add(PostgresSession.Text(record.Token));
+            update.Parameters.Add(PostgresSession.Timestamp(DateTimeOffset.UtcNow));
             await using var reader = await update.ExecuteReaderAsync(cancellationToken);
             if (!await reader.ReadAsync(cancellationToken))
             {
@@ -225,7 +202,7 @@ public sealed class PostgresShareRepository : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         var key = token ?? string.Empty;
-        return await WithOwnerTransactionAsync(tenantId, ownerId, async (connection, transaction) =>
+        return await _session.WithOwnerTransactionAsync(tenantId, ownerId, async (connection, transaction) =>
         {
             string? storedHash;
             await using (var select = new NpgsqlCommand(
@@ -233,9 +210,9 @@ public sealed class PostgresShareRepository : IAsyncDisposable
                 connection,
                 transaction))
             {
-                select.Parameters.Add(Text(key));
-                select.Parameters.Add(Text(tenantId));
-                select.Parameters.Add(Text(ownerId));
+                select.Parameters.Add(PostgresSession.Text(key));
+                select.Parameters.Add(PostgresSession.Text(tenantId));
+                select.Parameters.Add(PostgresSession.Text(ownerId));
                 storedHash = (string?)await select.ExecuteScalarAsync(cancellationToken);
             }
 
@@ -256,9 +233,9 @@ public sealed class PostgresShareRepository : IAsyncDisposable
                 connection,
                 transaction))
             {
-                delete.Parameters.Add(Text(key));
-                delete.Parameters.Add(Text(tenantId));
-                delete.Parameters.Add(Text(ownerId));
+                delete.Parameters.Add(PostgresSession.Text(key));
+                delete.Parameters.Add(PostgresSession.Text(tenantId));
+                delete.Parameters.Add(PostgresSession.Text(ownerId));
                 await delete.ExecuteNonQueryAsync(cancellationToken);
             }
 
@@ -266,49 +243,53 @@ public sealed class PostgresShareRepository : IAsyncDisposable
         }, cancellationToken);
     }
 
-    public ValueTask DisposeAsync() => _dataSource.DisposeAsync();
-
-    private async Task<T> WithOwnerTransactionAsync<T>(
-        string tenantId,
-        string ownerId,
-        Func<NpgsqlConnection, NpgsqlTransaction, Task<T>> work,
-        CancellationToken cancellationToken)
+    /// <summary>
+    /// Live shares across the (tenant, owner) pairs this process has created for. RLS hides
+    /// everything else, so — exactly like the Node store's <c>size</c> — this is a process-local view.
+    /// </summary>
+    public async Task<long> CountAsync(CancellationToken cancellationToken)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await using (var guc = new NpgsqlCommand(
-            "SELECT set_config('app.tenant_id', $1, true), set_config('app.owner_id', $2, true)",
-            connection,
-            transaction))
+        long total = 0;
+        foreach (var (tenantId, ownerId) in _seenOwners.Keys)
         {
-            guc.Parameters.Add(Text(tenantId));
-            guc.Parameters.Add(Text(ownerId));
-            await guc.ExecuteNonQueryAsync(cancellationToken);
+            total += await _session.WithOwnerTransactionAsync(tenantId, ownerId, async (connection, transaction) =>
+            {
+                await using var count = new NpgsqlCommand(
+                    "SELECT count(*) FROM forgex.shares WHERE tenant_id=$1 AND owner_id=$2 AND expires_at_utc > $3",
+                    connection,
+                    transaction);
+                count.Parameters.Add(PostgresSession.Text(tenantId));
+                count.Parameters.Add(PostgresSession.Text(ownerId));
+                count.Parameters.Add(PostgresSession.Timestamp(DateTimeOffset.UtcNow));
+                return (long)(await count.ExecuteScalarAsync(cancellationToken) ?? 0L);
+            }, cancellationToken);
         }
 
-        var result = await work(connection, transaction);
-        await transaction.CommitAsync(cancellationToken);
-        return result;
+        return total;
     }
 
-    private async Task<T> WithPublicTransactionAsync<T>(
-        Func<NpgsqlConnection, NpgsqlTransaction, Task<T>> work,
-        CancellationToken cancellationToken)
+    public async Task<int> SweepAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await using (var guc = new NpgsqlCommand(
-            "SELECT set_config('app.share_public', '1', true)",
-            connection,
-            transaction))
+        var removed = 0;
+        foreach (var (tenantId, ownerId) in _seenOwners.Keys)
         {
-            await guc.ExecuteNonQueryAsync(cancellationToken);
+            removed += await _session.WithOwnerTransactionAsync(tenantId, ownerId, async (connection, transaction) =>
+            {
+                await using var delete = new NpgsqlCommand(
+                    "DELETE FROM forgex.shares WHERE tenant_id=$1 AND owner_id=$2 AND expires_at_utc <= $3",
+                    connection,
+                    transaction);
+                delete.Parameters.Add(PostgresSession.Text(tenantId));
+                delete.Parameters.Add(PostgresSession.Text(ownerId));
+                delete.Parameters.Add(PostgresSession.Timestamp(now));
+                return await delete.ExecuteNonQueryAsync(cancellationToken);
+            }, cancellationToken);
         }
 
-        var result = await work(connection, transaction);
-        await transaction.CommitAsync(cancellationToken);
-        return result;
+        return removed;
     }
+
+    public ValueTask DisposeAsync() => _session.DisposeAsync();
 
     private static ShareRecord Map(NpgsqlDataReader reader)
     {
@@ -320,15 +301,11 @@ public sealed class PostgresShareRepository : IAsyncDisposable
             reader.GetString(reader.GetOrdinal("report_json")),
             reader.GetString(reader.GetOrdinal("question")),
             reader.GetString(reader.GetOrdinal("engine")),
-            reader.IsDBNull(reader.GetOrdinal("upstream_task_id"))
-                ? null
-                : reader.GetString(reader.GetOrdinal("upstream_task_id")),
-            ReadTimestamp(reader, reader.GetOrdinal("created_at_utc")),
-            ReadTimestamp(reader, reader.GetOrdinal("expires_at_utc")),
+            PostgresSession.ReadNullableString(reader, "upstream_task_id"),
+            PostgresSession.ReadTimestamp(reader, "created_at_utc"),
+            PostgresSession.ReadTimestamp(reader, "expires_at_utc"),
             reader.GetInt64(reader.GetOrdinal("access_count")),
-            reader.IsDBNull(reader.GetOrdinal("last_accessed_at_utc"))
-                ? null
-                : ReadTimestamp(reader, reader.GetOrdinal("last_accessed_at_utc")));
+            PostgresSession.ReadNullableTimestamp(reader, "last_accessed_at_utc"));
     }
 
     private static DateTimeOffset ReadTimestamp(NpgsqlDataReader reader, int ordinal)
@@ -336,10 +313,4 @@ public sealed class PostgresShareRepository : IAsyncDisposable
         var value = reader.GetFieldValue<DateTime>(ordinal);
         return new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc));
     }
-
-    private static NpgsqlParameter Text(string value) =>
-        new() { Value = value, NpgsqlDbType = NpgsqlDbType.Text };
-
-    private static NpgsqlParameter Timestamp(DateTimeOffset value) =>
-        new() { Value = value.UtcDateTime, NpgsqlDbType = NpgsqlDbType.TimestampTz };
 }

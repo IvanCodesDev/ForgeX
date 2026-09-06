@@ -54,7 +54,7 @@ internal static class DirectCallerAuthentication
     /// resolveIdentity() priority: API key > anonymous IP.
     /// Returns a problem result when the caller must be rejected.
     /// </summary>
-    public static IResult? Resolve(HttpContext context, DirectAuthOptions options, out ForgeXCallerContext? caller)
+    public static IResult? Resolve(HttpContext context, DirectAuthOptions options, out ForgeXCallerContext? caller, bool enforceRequireAuth = true)
     {
         var key = ReadApiKey(context.Request);
         if (options.Enabled && key.Length > 0)
@@ -67,7 +67,9 @@ internal static class DirectCallerAuthentication
             }
         }
 
-        if (options.RequireAuth)
+        // Node parity: calibration governance routes never call resolveIdentity(), so the
+        // REQUIRE_AUTH guard does not apply there — the routes judge submitter/reviewer keys themselves.
+        if (enforceRequireAuth && options.RequireAuth)
         {
             caller = null;
             return ApiProblemResults.Create(
@@ -93,6 +95,21 @@ internal static class DirectCallerAuthentication
         var key = ReadApiKey(request);
         return key.Length == 0 ? null : MatchKey(options.CalibrationReviewKeys, key);
     }
+
+    /// <summary>
+    /// Stage 8.6a — Node routes/calibration.js submitter(): the actor of a calibration
+    /// submission is the 8-hex digest of a configured ordinary API key; anonymous or
+    /// unknown keys yield null (the route answers 401).
+    /// </summary>
+    public static string? IdentifySubmitter(HttpRequest request, DirectAuthOptions options)
+    {
+        if (!options.Enabled) return null;
+        var key = ReadApiKey(request);
+        return key.Length == 0 ? null : MatchKey(options.ApiKeys, key);
+    }
+
+    /// <summary>True when the request carries any credential at all (Node auth.keyOf(req) truthiness).</summary>
+    public static bool HasCredential(HttpRequest request) => ReadApiKey(request).Length > 0;
 
     /// <summary>Same caller string → same canonical ids as Node's storageId()/opaqueContextId().</summary>
     internal static ForgeXCallerContext FromCallerString(string callerId)

@@ -47,7 +47,7 @@ internal sealed class ForgeXMetrics
         else if (code == "gcode_tenant_active_quota_exceeded") Interlocked.Increment(ref _tenantQuotaRejections);
     }
 
-    public string Render(string serviceVersion, IGCodeJobQueue queue, IReadOnlyList<GCodeJobRecord> jobs)
+    public string Render(string serviceVersion, IGCodeJobQueue queue, IReadOnlyList<GCodeJobRecord> jobs, IReadOnlyList<ResourceGauge>? resourceGauges = null)
     {
         var output = new StringBuilder(8 * 1024);
         output.AppendLine("# HELP forgex_build_info Build and service identity.");
@@ -106,6 +106,13 @@ internal sealed class ForgeXMetrics
                 .AppendLine();
         }
         AppendJobDurationHistogram(output, jobs);
+        // Stage 8.6a: resource gauges share Node's /metrics names and HELP texts so dashboards survive the cut-over.
+        foreach (var gauge in resourceGauges ?? [])
+        {
+            output.Append("# HELP ").Append(gauge.Metric).Append(' ').AppendLine(gauge.Help);
+            output.Append("# TYPE ").Append(gauge.Metric).AppendLine(" gauge");
+            output.Append(gauge.Metric).Append(' ').Append(gauge.Value.ToString(CultureInfo.InvariantCulture)).AppendLine();
+        }
         output.AppendLine("# HELP forgex_http_requests_total Completed HTTP requests by bounded route label.");
         output.AppendLine("# TYPE forgex_http_requests_total counter");
         foreach (var item in _httpRequests.OrderBy(static item => item.Key.Method, StringComparer.Ordinal)
@@ -202,6 +209,9 @@ internal sealed class ForgeXMetrics
     private static string EscapeLabel(string value) => value.Replace("\\", "\\\\", StringComparison.Ordinal)
         .Replace("\"", "\\\"", StringComparison.Ordinal)
         .Replace("\n", "\\n", StringComparison.Ordinal);
+
+    /// <summary>One Prometheus gauge line (Node-compatible metric name + HELP text).</summary>
+    public sealed record ResourceGauge(string Metric, string Help, long Value);
 
     private readonly record struct HttpCounterKey(string Method, string Route, string Status);
     private readonly record struct HttpDurationKey(string Method, string Route);

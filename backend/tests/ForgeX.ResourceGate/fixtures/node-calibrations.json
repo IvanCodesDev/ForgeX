@@ -1,0 +1,260 @@
+{
+  "format": "forgex-calibration-service-state",
+  "version": 1,
+  "submissions": {
+    "fixture-bundle@1": {
+      "key": "fixture-bundle@1",
+      "id": "fixture-bundle",
+      "revision": 1,
+      "status": "approved",
+      "digest": "5c5b410dab3a3a51d88dbefe4943e3e29d53154af97b991a6360c2e67d860947",
+      "bundle": {
+        "format": "forgex-calibration-bundle",
+        "version": 1,
+        "id": "fixture-bundle",
+        "revision": 1,
+        "createdAt": "2026-07-28T00:00:00Z",
+        "provenance": "real-anonymized",
+        "source": {
+          "license": "CC-BY-4.0",
+          "note": "Anonymized production pairs submitted for independent calibration review."
+        },
+        "models": [
+          {
+            "id": "fixture-bundle-pla",
+            "status": "candidate",
+            "scope": {
+              "machineId": "FX-P8-01",
+              "firmware": "Klipper 0.12",
+              "material": "PLA"
+            },
+            "algorithm": "theil-sen",
+            "trainedAt": "2026-07-28T00:00:00Z",
+            "coefficients": {
+              "motionScale": 1.18,
+              "fixedOverheadSec": 80,
+              "sampleCount": 12
+            },
+            "validation": {
+              "holdoutSamples": 6,
+              "mape": 0.08,
+              "maxApe": 0.16,
+              "medianBias": 0.02,
+              "evaluatedAt": "2026-07-28T00:00:00Z"
+            },
+            "thresholds": {
+              "maxMape": 0.2,
+              "maxBias": 0.12,
+              "minDriftSamples": 5
+            },
+            "trainingSetSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        ]
+      },
+      "createdAt": 1788652801000,
+      "updatedAt": 1788652804000,
+      "submittedBy": "11111111",
+      "note": "Initial production candidate",
+      "events": [
+        {
+          "action": "submitted",
+          "at": 1788652802000,
+          "actor": "11111111",
+          "reason": "Initial production candidate"
+        },
+        {
+          "action": "approved",
+          "at": 1788652805000,
+          "actor": "22222222",
+          "reason": "Holdout metrics and anonymization evidence reviewed."
+        }
+      ],
+      "reviewedBy": "22222222",
+      "reviewReason": "Holdout metrics and anonymization evidence reviewed."
+    },
+    "fixture-bundle@2": {
+      "key": "fixture-bundle@2",
+      "id": "fixture-bundle",
+      "revision": 2,
+      "status": "pending",
+      "digest": "e215882b1fd2231c4fb52b1eceee9dee3fe9e95a2576c3618369387263ae6148",
+      "bundle": {
+        "format": "forgex-calibration-bundle",
+        "version": 1,
+        "id": "fixture-bundle",
+        "revision": 2,
+        "createdAt": "2026-07-28T00:00:00Z",
+        "provenance": "real-anonymized",
+        "source": {
+          "license": "CC-BY-4.0",
+          "note": "Anonymized production pairs submitted for independent calibration review."
+        },
+        "models": [
+          {
+            "id": "fixture-bundle-pla",
+            "status": "candidate",
+            "scope": {
+              "machineId": "FX-P8-01",
+              "firmware": "Klipper 0.12",
+              "material": "PLA"
+            },
+            "algorithm": "theil-sen",
+            "trainedAt": "2026-07-28T00:00:00Z",
+            "coefficients": {
+              "motionScale": 1.18,
+              "fixedOverheadSec": 80,
+              "sampleCount": 12
+            },
+            "validation": {
+              "holdoutSamples": 6,
+              "mape": 0.08,
+              "maxApe": 0.16,
+              "medianBias": 0.02,
+              "evaluatedAt": "2026-07-28T00:00:00Z"
+            },
+            "thresholds": {
+              "maxMape": 0.2,
+              "maxBias": 0.12,
+              "minDriftSamples": 5
+            },
+            "trainingSetSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        ]
+      },
+      "createdAt": 1788652806000,
+      "updatedAt": 1788652806000,
+      "submittedBy": "11111111",
+      "note": "Revision two candidate kept pending",
+      "events": [
+        {
+          "action": "submitted",
+          "at": 1788652807000,
+          "actor": "11111111",
+          "reason": "Revision two candidate kept pending"
+        }
+      ]
+    },
+    "fixture-rejected@1": {
+      "key": "fixture-rejected@1",
+      "id": "fixture-rejected",
+      "revision": 1,
+      "status": "rejected",
+      "digest": "ed899e70328b59d8ab4792b5333a498184cccda34d607dcfca3be71fec6a1c4e",
+      "bundle": {
+        "format": "forgex-calibration-bundle",
+        "version": 1,
+        "id": "fixture-rejected",
+        "revision": 1,
+        "createdAt": "2026-07-28T00:00:00Z",
+        "provenance": "real-anonymized",
+        "source": {
+          "license": "CC-BY-4.0",
+          "note": "Anonymized production pairs submitted for independent calibration review."
+        },
+        "models": [
+          {
+            "id": "fixture-rejected-pla",
+            "status": "candidate",
+            "scope": {
+              "machineId": "FX-P8-01",
+              "firmware": "Klipper 0.12",
+              "material": "PLA"
+            },
+            "algorithm": "theil-sen",
+            "trainedAt": "2026-07-28T00:00:00Z",
+            "coefficients": {
+              "motionScale": 1.18,
+              "fixedOverheadSec": 80,
+              "sampleCount": 12
+            },
+            "validation": {
+              "holdoutSamples": 6,
+              "mape": 0.08,
+              "maxApe": 0.16,
+              "medianBias": 0.02,
+              "evaluatedAt": "2026-07-28T00:00:00Z"
+            },
+            "thresholds": {
+              "maxMape": 0.2,
+              "maxBias": 0.12,
+              "minDriftSamples": 5
+            },
+            "trainingSetSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        ]
+      },
+      "createdAt": 1788652808000,
+      "updatedAt": 1788652810000,
+      "submittedBy": "33333333",
+      "note": "Candidate with disputed provenance",
+      "events": [
+        {
+          "action": "submitted",
+          "at": 1788652809000,
+          "actor": "33333333",
+          "reason": "Candidate with disputed provenance"
+        },
+        {
+          "action": "rejected",
+          "at": 1788652811000,
+          "actor": "22222222",
+          "reason": "Source authorization could not be verified."
+        }
+      ],
+      "reviewedBy": "22222222",
+      "reviewReason": "Source authorization could not be verified."
+    }
+  },
+  "approved": {
+    "fixture-bundle": {
+      "id": "fixture-bundle",
+      "revision": 1,
+      "digest": "80e2af2fbb5ace9872ee1b7f187d17a81da08a7d1144f6b76c0a99b992451624",
+      "bundle": {
+        "format": "forgex-calibration-bundle",
+        "version": 1,
+        "id": "fixture-bundle",
+        "revision": 1,
+        "createdAt": "2026-07-28T00:00:00Z",
+        "provenance": "real-anonymized",
+        "source": {
+          "license": "CC-BY-4.0",
+          "note": "Anonymized production pairs submitted for independent calibration review."
+        },
+        "models": [
+          {
+            "id": "fixture-bundle-pla",
+            "status": "active",
+            "scope": {
+              "machineId": "FX-P8-01",
+              "firmware": "Klipper 0.12",
+              "material": "PLA"
+            },
+            "algorithm": "theil-sen",
+            "trainedAt": "2026-07-28T00:00:00Z",
+            "coefficients": {
+              "motionScale": 1.18,
+              "fixedOverheadSec": 80,
+              "sampleCount": 12
+            },
+            "validation": {
+              "holdoutSamples": 6,
+              "mape": 0.08,
+              "maxApe": 0.16,
+              "medianBias": 0.02,
+              "evaluatedAt": "2026-07-28T00:00:00Z"
+            },
+            "thresholds": {
+              "maxMape": 0.2,
+              "maxBias": 0.12,
+              "minDriftSamples": 5
+            },
+            "trainingSetSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        ]
+      },
+      "approvedAt": 1788652803000,
+      "approvedBy": "22222222"
+    }
+  }
+}

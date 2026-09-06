@@ -3,6 +3,9 @@
   <ItemGroup>
     <ProjectReference Include="..\ForgeX.Domain\ForgeX.Domain.csproj" />
     <ProjectReference Include="..\ForgeX.Application\ForgeX.Application.csproj" />
+    <!-- Stage 8.6a：校准治理的状态机在两条存储腿之间共用 Analytics 的 JS 语义原语
+         （JsJson.Stable/Sha256Hex、CalibrationBundleValidator）。Analytics 自身不依赖任何项目。 -->
+    <ProjectReference Include="..\ForgeX.Analytics\ForgeX.Analytics.csproj" />
   </ItemGroup>
 
   <ItemGroup>

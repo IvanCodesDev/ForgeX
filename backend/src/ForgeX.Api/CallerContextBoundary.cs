@@ -3,7 +3,17 @@ using System.Text;
 
 namespace ForgeX.Api;
 
-internal sealed record ForgeXCallerContext(string TenantId, string OwnerId, bool Trusted);
+/// <summary>
+/// Caller identity for owner-scoped endpoints. <see cref="ActorKeyId"/> / <see cref="ActorRole"/> are
+/// Stage 8.6a trusted-channel extras consumed only by calibration governance: the Node proxy has already
+/// authenticated the API key / review key and forwards the 8-hex key digest plus the role it verified.
+/// </summary>
+internal sealed record ForgeXCallerContext(
+    string TenantId,
+    string OwnerId,
+    bool Trusted,
+    string? ActorKeyId = null,
+    string? ActorRole = null);
 
 internal static class CallerContextBoundary
 {
@@ -11,6 +21,10 @@ internal static class CallerContextBoundary
     private const string InternalTokenHeader = "X-ForgeX-Internal-Token";
     private const string TenantHeader = "X-ForgeX-Tenant-Id";
     private const string OwnerHeader = "X-ForgeX-Owner-Id";
+    internal const string ActorKeyHeader = "X-ForgeX-Actor-Key-Id";
+    internal const string ActorRoleHeader = "X-ForgeX-Actor-Role";
+    internal const string SubmitterRole = "submitter";
+    internal const string ReviewerRole = "reviewer";
 
     public static bool AppliesTo(PathString path) =>
         path.StartsWithSegments("/api/v1/gcode/analyses", StringComparison.Ordinal) ||
@@ -18,7 +32,20 @@ internal static class CallerContextBoundary
         // Stage 8.1: share creation/revocation need the trusted caller context;
         // the public share page (/share/{token}) intentionally stays outside.
         path.StartsWithSegments("/api/v1/shares", StringComparison.Ordinal) ||
-        path.StartsWithSegments("/api/v1/analysis-tasks", StringComparison.Ordinal);
+        path.StartsWithSegments("/api/v1/analysis-tasks", StringComparison.Ordinal) ||
+        // Stage 8.6a: datasources / knowledge are owner-scoped resources.
+        path.StartsWithSegments("/api/v1/datasources", StringComparison.Ordinal) ||
+        path.StartsWithSegments("/api/v1/knowledge", StringComparison.Ordinal) ||
+        IsCalibrationGovernance(path);
+
+    /// <summary>
+    /// Stage 8.6a: calibration submissions / reviews need an actor; the public catalog
+    /// (/api/v1/calibrations) and stats (/api/v1/calibrations/stats) stay outside the boundary.
+    /// </summary>
+    internal static bool IsCalibrationGovernance(PathString path) =>
+        path.StartsWithSegments("/api/v1/calibrations/submissions", StringComparison.Ordinal) ||
+        (path.StartsWithSegments("/api/v1/calibrations", StringComparison.Ordinal, out var remaining) &&
+         remaining.Value?.Contains("/revisions/", StringComparison.Ordinal) == true);
 
     /// <summary>
     /// The exact middleware used by Program.cs, exposed so the authorization-matrix
@@ -74,7 +101,8 @@ internal static class CallerContextBoundary
             if (!TryReadSingle(context, TenantHeader, out var tenantId) ||
                 !TryReadSingle(context, OwnerHeader, out var ownerId) ||
                 !IsCanonicalId(tenantId, "tn_") ||
-                !IsCanonicalId(ownerId, "ow_"))
+                !IsCanonicalId(ownerId, "ow_") ||
+                !TryReadOptionalActor(context, out var actorKeyId, out var actorRole))
             {
                 return ApiProblemResults.Create(
                     context,
@@ -83,7 +111,7 @@ internal static class CallerContextBoundary
                     "Trusted caller context is invalid");
             }
 
-            context.Items[ContextItemKey] = new ForgeXCallerContext(tenantId, ownerId, true);
+            context.Items[ContextItemKey] = new ForgeXCallerContext(tenantId, ownerId, true, actorKeyId, actorRole);
             return null;
         }
 
@@ -91,7 +119,11 @@ internal static class CallerContextBoundary
         //    Node 同一套映射与优先级解析（API key → key:{id8}，匿名 → ip:{addr}）。
         if (directAuth is { Enabled: true })
         {
-            var problem = DirectCallerAuthentication.Resolve(context, directAuth, out var caller);
+            var problem = DirectCallerAuthentication.Resolve(
+                context,
+                directAuth,
+                out var caller,
+                enforceRequireAuth: !IsCalibrationGovernance(context.Request.Path));
             if (problem is not null) return problem;
             context.Items[ContextItemKey] = caller!;
             return null;
@@ -115,6 +147,35 @@ internal static class CallerContextBoundary
         context.Items.TryGetValue(ContextItemKey, out var value) && value is ForgeXCallerContext caller
             ? caller
             : throw new InvalidOperationException("Caller context middleware did not run for this endpoint.");
+
+    /// <summary>
+    /// Actor headers are optional (only calibration governance consumes them), but when present on the
+    /// trusted channel they must be well-formed: key id = 8 lowercase hex, role = submitter | reviewer.
+    /// </summary>
+    private static bool TryReadOptionalActor(HttpContext context, out string? actorKeyId, out string? actorRole)
+    {
+        actorKeyId = null;
+        actorRole = null;
+        var keyPresent = context.Request.Headers.ContainsKey(ActorKeyHeader);
+        var rolePresent = context.Request.Headers.ContainsKey(ActorRoleHeader);
+        if (!keyPresent && !rolePresent)
+        {
+            return true;
+        }
+
+        if (!TryReadSingle(context, ActorKeyHeader, out var keyId) ||
+            !TryReadSingle(context, ActorRoleHeader, out var role) ||
+            keyId.Length != 8 ||
+            !keyId.All(static character => character is >= '0' and <= '9' or >= 'a' and <= 'f') ||
+            role is not (SubmitterRole or ReviewerRole))
+        {
+            return false;
+        }
+
+        actorKeyId = keyId;
+        actorRole = role;
+        return true;
+    }
 
     private static bool TryReadSingle(HttpContext context, string name, out string value)
     {
