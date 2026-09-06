@@ -89,6 +89,26 @@ jobs:
   dotnet-authority:
     name: .NET 10 authoritative core · golden gate
     runs-on: ubuntu-latest
+    # Stage 8.6a：资源存储的 postgres 腿（Node 与 C# 共用同表同 RLS）在本机通常无库可验，
+    # 由 CI 的一次性 PostgreSQL service 覆盖；POSTGRES_URL 注入后 ResourceGate / 双跑 / 静态演练自动多跑 PG 腿，
+    # FORGEX_DRILL_REQUIRE_ALL=1 保证「给了库却退回 file 腿」被判失败而不是静默 skip。
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: forgex
+          POSTGRES_PASSWORD: forgex
+          POSTGRES_DB: forgex
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U forgex"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      POSTGRES_URL: postgres://forgex:forgex@localhost:5432/forgex
+      FORGEX_DRILL_REQUIRE_ALL: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -155,10 +175,22 @@ jobs:
       - name: 静态托管 Node/C# 行为对齐门禁（allowlist/缓存/穿越防护/路由优先级）
         run: node tools/run-dotnet.js run --project backend/tests/ForgeX.StaticGate/ForgeX.StaticGate.csproj --configuration Release --no-build
 
-      - name: 安装锁定依赖（单进程实测需构建 dist/react）
+      - name: 安装锁定依赖（单进程实测需构建 dist/react；PostgreSQL 腿需 pg）
         run: npm ci --no-audit --no-fund
 
-      - name: 静态托管单进程部署实测（构建前端 → 静态 → 上传 → 分析 → 重启持久化）
+      - name: 应用 PostgreSQL 迁移到 CI service（Node + pg，不依赖 psql）
+        run: npm run postgres:migrate -- --require
+
+      - name: 资源存储 Node/C# 语义门禁（datasources / knowledge / calibrations，file + postgres 双腿）
+        run: node tools/run-dotnet.js run --project backend/tests/ForgeX.ResourceGate/ForgeX.ResourceGate.csproj --configuration Release --no-build
+
+      - name: 资源夹具新鲜度（Node 语义快照与 C# 门禁输入一致）
+        run: npm run resources:fixtures:check
+
+      - name: 资源权威真实双跑（Node 权威 vs C# 权威，file + postgres 双腿）
+        run: npm run dotnet:resource-authority
+
+      - name: 静态托管单进程部署实测（构建前端 → 静态 → 上传 → 分析 → 分享走 postgres 腿 → 重启持久化）
         run: node tools/verify-static-hosting.js
 
       - uses: actions/upload-artifact@v4
@@ -215,6 +247,15 @@ jobs:
           path: |
             backend/artifacts/static-hosting-parity.json
             backend/artifacts/static-hosting-drill.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: resource-authority-dotnet-10.0.302
+          path: |
+            backend/artifacts/resource-authority-gate.json
+            backend/artifacts/resource-authority-dualrun.json
           if-no-files-found: error
           retention-days: 14
 
