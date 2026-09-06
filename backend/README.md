@@ -223,7 +223,10 @@ Every provider accepts `disabled` (default: nothing registered), `file` (JSON do
 `Storage:Root/{datasources,knowledge,shares}` and `Calibrations:StateFile`, which reads and writes
 Node's `forgex-calibration-service-state` v1 file so a Node state file can be taken over as-is) or
 `postgres` (`{Section}:PostgresUrl`, falling back to `POSTGRES_URL`; the same tables and RLS
-policies Node uses, migrations `0002`–`0005`). Limits mirror Node: `Datasources:TtlMs/MaxPerOwner`,
+policies Node uses, migrations `0002`–`0005`). The connection string may be either the libpq URI Node's
+`pg` takes (`postgres://user:pass@host:5432/db?sslmode=require`, normalized by
+`PostgresConnectionString`) or Npgsql's `Host=...;Username=...` keyword form, so one `POSTGRES_URL`
+serves both runtimes. Limits mirror Node: `Datasources:TtlMs/MaxPerOwner`,
 `Knowledge:TtlMs/MaxPerOwner`, `Shares:TtlMs/MaxPerOwner`, `Calibrations:MaxSubmissions`; capacity
 eviction removes the oldest records on both legs (decision A5 also fixed the Node PostgreSQL stores,
 which used to delete the newest row). A `ResourceSweeper` hosted service expires records every

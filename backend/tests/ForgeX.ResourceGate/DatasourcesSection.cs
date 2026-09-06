@@ -178,9 +178,13 @@ internal static class DatasourcesSection
             string.Join(",", statuses));
 
         // TTL: 0 → never expires; a tiny TTL → 404 after expiry, and an expired dup is replaced (not deduplicated).
+        // Fresh tenants here: on the postgres leg every repository instance shares one table, so reusing
+        // tenantA would deduplicate against the 60 s record created above instead of exercising ttl=0.
+        var foreverTenant = RandomTenant();
+        var foreverOwner = "ow_" + foreverTenant[3..];
         var foreverApp = await StartAsync(gate, repositoryFactory(200, "forever"), ttlMs: 0);
-        var (forever, foreverBody) = await gate.SendAsync(Gate.Origin(foreverApp), HttpMethod.Post, Path(), JsonSerializer.Serialize(new { csv = Csv }), Gate.Trusted(tenantA, ownerA));
-        var foreverRead = await gate.SendAsync(Gate.Origin(foreverApp), HttpMethod.Get, Path("/" + Gate.Parse(foreverBody).GetProperty("datasourceId").GetString()), null, Gate.Trusted(tenantA, ownerA));
+        var (forever, foreverBody) = await gate.SendAsync(Gate.Origin(foreverApp), HttpMethod.Post, Path(), JsonSerializer.Serialize(new { csv = Csv }), Gate.Trusted(foreverTenant, foreverOwner));
+        var foreverRead = await gate.SendAsync(Gate.Origin(foreverApp), HttpMethod.Get, Path("/" + Gate.Parse(foreverBody).GetProperty("datasourceId").GetString()), null, Gate.Trusted(foreverTenant, foreverOwner));
         gate.Check($"datasources-{leg}-ttl-zero-never-expires",
             forever.StatusCode == HttpStatusCode.Created && !Gate.Parse(foreverRead.Body).TryGetProperty("expiresAt", out _),
             foreverRead.Body);

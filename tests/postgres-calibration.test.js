@@ -174,6 +174,8 @@ async function main() {
   const approved = await store.review("pg-bundle", 1, "approve", "22222222", "Reviewed the holdout metrics.");
   assert.strictEqual(approved.status, "approved");
   assert.strictEqual(approved.reviewedBy, "22222222");
+  // 提交记录保留 candidate bundle（与 file 态一致）；active 副本只出现在 releases。
+  assert.strictEqual(approved.bundle.models[0].status, "candidate");
   await rejectsWith(
     () => store.review("pg-bundle", 1, "reject", "22222222", "maybe"),
     409,
@@ -186,7 +188,9 @@ async function main() {
   assert.strictEqual(catalog.length, 1);
   assert.strictEqual(catalog[0].bundle.models[0].status, "active");
   assert.deepStrictEqual(await store.stats(), { approved: 1, pending: 0 });
-  assert.strictEqual((await store.listSubmissions()).length, 1);
+  const submissions = await store.listSubmissions();
+  assert.strictEqual(submissions.length, 1);
+  assert.strictEqual(submissions[0].bundle.models[0].status, "candidate");
   assert.match(pool.evictSql, /status <> 'pending' ORDER BY updated_at_utc ASC LIMIT GREATEST/);
 
   await store.close();

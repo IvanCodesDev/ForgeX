@@ -155,7 +155,7 @@ class PostgresCalibrationStore {
              bundle_json=EXCLUDED.bundle_json, approved_at_utc=EXCLUDED.approved_at_utc, approved_by=EXCLUDED.approved_by`,
           [this.tenantId, this.ownerId, published.id, published.revision, digest(published), JSON.stringify(published), new Date(), actor]
         );
-        record.bundle = published;
+        // 与 file 态一致：提交记录保留提交时的 candidate bundle（digest 也对应它），active 副本只进 releases。
       }
 
       record.status = decision === "approve" ? "approved" : "rejected";

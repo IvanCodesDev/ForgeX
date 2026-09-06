@@ -5,7 +5,11 @@
     "node_modules/fsevents": "2.3.2",
     "node_modules/vite/node_modules/fsevents": "2.3.3"
   },
-  "allowedSecretFixtures": [{ "file": "tests/server.test.js", "kind": "credential-url" }],
+  "allowedSecretFixtures": [
+    { "file": "tests/server.test.js", "kind": "credential-url" },
+    { "file": "tests/ai-endpoint-override.test.js", "kind": "provider-token" },
+    { "file": "tests/ai-endpoint-override.test.js", "kind": "credential-url" }
+  ],
   "allowedDotnetPackageReferences": {
     "backend/src/ForgeX.Infrastructure/ForgeX.Infrastructure.csproj": [{ "include": "Npgsql", "version": "9.0.3" }]
   },

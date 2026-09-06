@@ -41,6 +41,12 @@
   `FORGEX_DRILL_REQUIRE_ALL=1` 下静态演练 23/23 无 skip。部署文档与 Compose 增加
   `CSHARP_*_PROVIDER` / `*_AUTHORITY` 直通变量，csharp 模式下 Node `/metrics` 资源 gauge 为 0、
   以 C# `/metrics` 为准。
+- PG 腿首次在真库上跑通后的修正：C# `PostgresSession` 经 `PostgresConnectionString` 接受 Node `pg`
+  同款 libpq URI（`postgres://user:pass@host/db?sslmode=…`，此前 Npgsql 只认 keyword 形式，同一个
+  `POSTGRES_URL` 喂给 C# 立即报「initialization string」错误）；Node PG 校准存储审批后不再把提交记录的
+  bundle 覆写成 active 副本（与 file 版一致：提交记录与其 digest 保持 candidate，active 只进 releases）；
+  双跑新增 `\u0000` badge 用例并如实豁免（jsonb 不接受 NUL：Node 500 / C# 门面 502，file 腿两侧 201）。
+  ResourceGate 245 项（file）/ 339 项（file+postgres），双跑 110 一致 / 2 豁免。
 
 ### 自带 AI 端点（BYO-AI）：InfiniSynapse 集成整体退役
 - 按产品决策移除全部 InfiniSynapse 专属代码：AI provider（`services/infini.js`）、

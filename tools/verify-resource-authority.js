@@ -204,11 +204,24 @@ const CASES = [
     },
   },
   {
+    // badge 按 UTF-16 单元截到 8 位：代理对（🙂 占 2 位）两侧都必须原样保留。
     name: "ds-upload-provenance-badge",
     role: "submitter",
     method: "POST",
     path: "/api/datasource",
-    body: { csv: CSV_SIM, name: 123, provenance: { synthetic: true, badge: "机群\u0000仿真数据集合xyz" } },
+    body: { csv: CSV_SIM, name: 123, provenance: { synthetic: true, badge: "机群🙂仿真数据集合xyz" } },
+  },
+  {
+    // \u0000 能进 JSON 文件，进不了 PostgreSQL jsonb：file 腿两侧 201，postgres 腿两侧 5xx（见 WAIVERS）。
+    name: "ds-upload-provenance-badge-nul",
+    role: "submitter",
+    method: "POST",
+    path: "/api/datasource",
+    body: {
+      csv: CSV_SIM + "\r\nS3,Cube,PETG,ok,11,1.6",
+      name: "nul.csv",
+      provenance: { synthetic: true, badge: "机群\u0000仿真" },
+    },
   },
   {
     name: "ds-upload-duplicate",
@@ -548,6 +561,13 @@ const WAIVERS = [
     reason:
       "Node file 态 requireOwner 对他人数据源返回 403「无权访问该资源」；C# 侧按租户隔离对他人资源统一 404（与 Stage 8.1 shares 撤销同一取舍：不暴露「存在但不属于你」），" +
       "Node csharp 门面据此返回 404「数据源不存在或已过期，请重新上传」。批准：用户 2026-09-06（设计 §7.3 / §13）。",
+  },
+  {
+    caseName: "ds-upload-provenance-badge-nul",
+    paths: ["status", "body.error"],
+    reason:
+      "PostgreSQL jsonb 不接受 \\u0000（unsupported Unicode escape sequence）：postgres 腿 Node 权威写库失败返回 500「服务器内部错误」，" +
+      "C# 权威写库失败后 Node csharp 门面返回 502「数据源服务暂不可用，请稍后再试」；file 腿两侧都 201。控制字符是否在入口统一清洗留待 Node 权威侧决定（8.6b 待办），此处只如实记录差异。",
   },
 ];
 

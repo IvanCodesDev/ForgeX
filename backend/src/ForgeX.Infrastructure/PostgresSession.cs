@@ -19,7 +19,7 @@ public sealed class PostgresSession : IAsyncDisposable
             throw new ArgumentException("A PostgreSQL connection string is required.", nameof(connectionString));
         }
 
-        var builder = new NpgsqlDataSourceBuilder(connectionString);
+        var builder = new NpgsqlDataSourceBuilder(PostgresConnectionString.Normalize(connectionString));
         builder.ConnectionStringBuilder.ApplicationName = "forgex-api";
         _dataSource = builder.Build();
     }
