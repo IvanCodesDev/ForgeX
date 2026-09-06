@@ -42,6 +42,11 @@ function register(router, ctx) {
     const body = await readJson(req, 8 * 1024);
     const q = String(body.question || "").trim();
     if (!q) throw new HttpError(400, "question 不能为空");
+    if (typeof knowledge.search === "function") {
+      // KNOWLEDGE_AUTHORITY=csharp：检索在 C#（同一 BM25 实现）完成，响应形状不变。
+      sendJson(res, 200, await knowledge.search(identity.tenantId, q, body.topK));
+      return;
+    }
     if (typeof knowledge.ready === "function") await knowledge.ready(identity.tenantId);
     const docs = knowledge.all(identity.tenantId);
     const hits = retrieve(docs, q, { topK: Number(body.topK) || 4 });

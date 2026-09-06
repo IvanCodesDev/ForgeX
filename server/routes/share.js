@@ -6,56 +6,17 @@
    分享的存储、撤销与页面渲染改由 C#/PostgreSQL 权威承担；
    SHARES_AUTHORITY=node（默认）保持既有行为，作为回滚开关。 */
 "use strict";
-const http = require("http");
-const https = require("https");
-const crypto = require("crypto");
 const { HttpError, readJson, sendJson, escapeHtml } = require("../lib/http");
 const { resolveIdentity, requireOwner } = require("../lib/identity");
+const { authorityRequest: authorityCall } = require("../lib/authority-client");
 
-/* 与 gcode-authority.js 一致的匿名化上下文：C# 只见哈希后的 tenant/owner。 */
-function opaqueContextId(prefix, value) {
-  return prefix + crypto.createHash("sha256").update(String(value)).digest("hex").slice(0, 32);
-}
-
-/* 小体量 JSON 调用（分享创建/撤销都在 KB 级），不做流式。 */
+/* 小体量 JSON 调用（分享创建/撤销都在 KB 级），不做流式；共用 Stage 8.6a 抽出的客户端。 */
 function authorityRequest(cfg, identity, method, pathname, payload) {
-  const target = new URL(pathname, cfg.gcodeAuthorityUrl);
-  const transport = target.protocol === "https:" ? https : http;
-  const body = payload == null ? null : Buffer.from(JSON.stringify(payload), "utf8");
-  const headers = { accept: "application/json" };
-  if (body) {
-    headers["content-type"] = "application/json";
-    headers["content-length"] = String(body.length);
-  }
-  if (cfg.gcodeAuthorityInternalSecret && identity) {
-    headers["x-forgex-internal-token"] = cfg.gcodeAuthorityInternalSecret;
-    headers["x-forgex-tenant-id"] = opaqueContextId("tn_", identity.tenantId);
-    headers["x-forgex-owner-id"] = opaqueContextId("ow_", identity.caller);
-  }
-  return new Promise((resolve, reject) => {
-    const upstream = transport.request(target, { method, headers, timeout: cfg.sharesAuthorityTimeoutMs }, (res) => {
-      const chunks = [];
-      res.on("data", (chunk) => chunks.push(chunk));
-      res.on("end", () => resolve({
-        status: res.statusCode || 502,
-        contentType: res.headers["content-type"] || "application/json",
-        body: Buffer.concat(chunks),
-      }));
-      res.on("error", reject);
-    });
-    upstream.on("timeout", () => upstream.destroy(new Error("shares authority timeout")));
-    upstream.on("error", reject);
-    if (body) upstream.write(body);
-    upstream.end();
-  });
+  return authorityCall(cfg, identity, method, pathname, payload, { timeoutMs: cfg.sharesAuthorityTimeoutMs });
 }
 
 function parseAuthorityJson(response) {
-  try {
-    return JSON.parse(response.body.toString("utf8"));
-  } catch {
-    return null;
-  }
+  return response.json();
 }
 
 function register(router, ctx) {

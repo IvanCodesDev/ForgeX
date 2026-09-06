@@ -46,7 +46,10 @@ class FakeClient {
       return { rows: [], rowCount: 1 };
     }
     if (/^DELETE FROM forgex\.datasources/i.test(text)) {
-      if (/id IN/i.test(text)) return { rows: [], rowCount: 0 };
+      if (/id IN/i.test(text)) {
+        this.pool.evictSql = text;
+        return { rows: [], rowCount: 0 };
+      }
       if (params.length === 3) {
         this.pool.rows = this.pool.rows.filter((item) => item.id !== params[2]);
         return { rows: [], rowCount: 1 };
@@ -97,6 +100,8 @@ async function main() {
   assert.strictEqual(sameTenant.id, first.id);
   assert.strictEqual(await store.get(first.id, "tenant-beta"), null);
   assert.strictEqual(store.size, 2, "sample plus one persisted datasource");
+  // Stage 8.6a（A5）：容量淘汰保留最新 MAX_SETS 条——ASC 会把刚写入的记录当场删掉。
+  assert.match(pool.evictSql, /ORDER BY created_at_utc DESC, id DESC OFFSET \$3/);
 
   await store.close();
 
@@ -122,7 +127,7 @@ async function main() {
   assert.strictEqual(health.status, 200);
   assert.strictEqual((await health.json()).persistence, "postgres");
   await app.close();
-  console.log("PostgreSQL datasource boundary PASS: 10/10");
+  console.log("PostgreSQL datasource boundary PASS: 11/11");
 }
 
 main().catch((error) => {

@@ -42,8 +42,9 @@ function register(router, ctx) {
   });
 
   router.add("GET", /^\/api\/calibrations\/submissions$/, async (req, res) => {
-    reviewer(req, auth);
-    sendJson(res, 200, { submissions: await calibrations.listSubmissions() });
+    // actor 只被 C# 权威门面用作可信通道的 X-ForgeX-Actor-* 头；Node 存储忽略该参数。
+    const actor = reviewer(req, auth);
+    sendJson(res, 200, { submissions: await calibrations.listSubmissions(actor) });
   });
 
   router.add("POST", /^\/api\/calibrations\/submissions$/, async (req, res, _m, rc) => {

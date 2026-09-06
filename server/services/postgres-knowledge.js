@@ -130,13 +130,15 @@ class PostgresKnowledgeStore {
     return docs.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   }
 
+  /* 容量淘汰：保留最新 MAX_DOCS 条、删掉更早的（与 file 态 FileStore 一致）。
+     Stage 8.6a（A5）前这里是 ASC——保留最老的、把刚写入的记录当场删掉。 */
   async _evict(client, tenantId, ownerId) {
     const deleted = await client.query(
       `DELETE FROM forgex.knowledge_docs
        WHERE tenant_id=$1 AND owner_id=$2 AND id IN (
          SELECT id FROM forgex.knowledge_docs
          WHERE tenant_id=$1 AND owner_id=$2
-         ORDER BY created_at_utc ASC, id ASC
+         ORDER BY created_at_utc DESC, id DESC
          OFFSET $3
        )
        RETURNING id`,

@@ -15,7 +15,10 @@ class FakeClient {
     if (/set_config\('app\.tenant_id'/i.test(text)) return { rows: [], rowCount: 1 };
     if (/SELECT 1 FROM forgex\.knowledge_docs LIMIT 0/i.test(text)) return { rows: [], rowCount: 0 };
     if (/^DELETE FROM forgex\.knowledge_docs/i.test(text)) {
-      if (/id IN/i.test(text)) return { rows: [], rowCount: 0 };
+      if (/id IN/i.test(text)) {
+        this.pool.evictSql = text;
+        return { rows: [], rowCount: 0 };
+      }
       this.pool.rows = this.pool.rows.filter((item) => !(item.tenant_id === params[0] && item.owner_id === params[1]));
       return { rows: [], rowCount: 0 };
     }
@@ -69,8 +72,10 @@ async function main() {
   await store.ready("tenant-alpha");
   assert.strictEqual(store.all("tenant-alpha")[0].text, "翘边：首层附着失效。");
   assert.strictEqual(store.size, 1);
+  // Stage 8.6a（A5）：容量淘汰保留最新 MAX_DOCS 条——ASC 会把刚写入的记录当场删掉。
+  assert.match(pool.evictSql, /ORDER BY created_at_utc DESC, id DESC OFFSET \$3/);
   await store.close();
-  console.log("PostgreSQL knowledge boundary PASS: 7/7");
+  console.log("PostgreSQL knowledge boundary PASS: 8/8");
 }
 
 main().catch((error) => {

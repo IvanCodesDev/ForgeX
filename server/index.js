@@ -23,6 +23,9 @@ const { ShareStore } = require("./services/share");
 const { PostgresShareStore } = require("./services/postgres-share");
 const { CalibrationStore } = require("./services/calibration");
 const { PostgresCalibrationStore } = require("./services/postgres-calibration");
+const { CsharpDatasourceStore } = require("./services/csharp-datasource");
+const { CsharpKnowledgeStore } = require("./services/csharp-knowledge");
+const { CsharpCalibrationGovernanceStore } = require("./services/csharp-calibration-governance");
 const { createRulesEngine } = require("./services/rules-engine");
 const { CostGate } = require("./lib/quota");
 const { Auth } = require("./lib/auth");
@@ -63,12 +66,17 @@ function createApp(overrides) {
   // 规则计算腿单例：RULES_ENGINE_AUTHORITY=node（默认，行为不变）/ csharp（代理 ForgeX.Api）。
   // 所有消费方共享同一实例，farm/meta 之类的缓存也只取一次。
   const rulesEngine = createRulesEngine({ config: cfg });
-  const datasources = persistenceEnabled
-    ? new PostgresDatasourceStore(persistenceCfg, log, persistencePool, rulesEngine)
-    : new DatasourceStore(cfg, log, rulesEngine);
-  const knowledge = persistenceEnabled
-    ? new PostgresKnowledgeStore(persistenceCfg, log, persistencePool)
-    : new KnowledgeStore(cfg, log);
+  // Stage 8.6a：每条资源腿独立选型——csharp 时本进程只剩可信通道门面，存储/清扫/淘汰都在 ForgeX.Api。
+  const datasources = cfg.datasourcesAuthority === "csharp"
+    ? new CsharpDatasourceStore(cfg, log)
+    : persistenceEnabled
+      ? new PostgresDatasourceStore(persistenceCfg, log, persistencePool, rulesEngine)
+      : new DatasourceStore(cfg, log, rulesEngine);
+  const knowledge = cfg.knowledgeAuthority === "csharp"
+    ? new CsharpKnowledgeStore(cfg, log)
+    : persistenceEnabled
+      ? new PostgresKnowledgeStore(persistenceCfg, log, persistencePool)
+      : new KnowledgeStore(cfg, log);
   const shares = persistenceEnabled
     ? new PostgresShareStore(persistenceCfg, log, persistencePool)
     : new ShareStore(cfg, log);
@@ -76,9 +84,11 @@ function createApp(overrides) {
     ? new PostgresAnalysisStore(persistenceCfg, log, persistencePool)
     : null;
   const tasks = new TaskStore(cfg, log, knowledge, gate, taskPersistence, rulesEngine);
-  const calibrations = cfg.persistenceProvider === "file"
-    ? new CalibrationStore(cfg, log, rulesEngine)
-    : new PostgresCalibrationStore(persistenceCfg, log, rulesEngine);
+  const calibrations = cfg.calibrationGovernanceAuthority === "csharp"
+    ? new CsharpCalibrationGovernanceStore(cfg, log)
+    : cfg.persistenceProvider === "file"
+      ? new CalibrationStore(cfg, log, rulesEngine)
+      : new PostgresCalibrationStore(persistenceCfg, log, rulesEngine);
 
   /* 运行指标。不引依赖，就是几个计数器——够 /metrics 用，也够排查线上问题。 */
   const metrics = {

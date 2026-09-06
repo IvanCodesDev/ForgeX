@@ -45,7 +45,10 @@ class FakeClient {
       return { rows: row ? [{ revoke_hash: row.revoke_hash }] : [], rowCount: row ? 1 : 0 };
     }
     if (/^DELETE FROM forgex\.shares/i.test(text)) {
-      if (/token IN/i.test(text)) return { rows: [], rowCount: 0 };
+      if (/token IN/i.test(text)) {
+        this.pool.evictSql = text;
+        return { rows: [], rowCount: 0 };
+      }
       const before = this.pool.rows.length;
       if (params.length >= 3) {
         this.pool.rows = this.pool.rows.filter((item) => !(item.token === params[0]
@@ -105,8 +108,10 @@ async function main() {
   assert.strictEqual((await store.revoke(created.token, created.revokeKey, "tenant-beta")).reason, "not_found");
   assert.deepStrictEqual(await store.revoke(created.token, created.revokeKey, "tenant-alpha"), { ok: true });
   assert.strictEqual(await store.get(created.token), null);
+  // Stage 8.6a（A5）：容量淘汰保留最新 MAX_SHARES 条——ASC 会把刚创建的分享当场删掉。
+  assert.match(pool.evictSql, /ORDER BY created_at_utc DESC, token DESC OFFSET \$3/);
   await store.close();
-  console.log("PostgreSQL share boundary PASS: 8/8");
+  console.log("PostgreSQL share boundary PASS: 9/9");
 }
 
 main().catch((error) => {

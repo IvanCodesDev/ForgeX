@@ -193,13 +193,15 @@ class PostgresDatasourceStore {
     return record;
   }
 
+  /* 容量淘汰：保留最新 MAX_SETS 条、删掉更早的（与 file 态 FileStore 一致）。
+     Stage 8.6a（A5）前这里是 ASC——保留最老的、把刚写入的记录当场删掉。 */
   async _evict(client, tenantId, ownerId) {
     const deleted = await client.query(
       `DELETE FROM forgex.datasources
        WHERE tenant_id=$1 AND owner_id=$2 AND id IN (
          SELECT id FROM forgex.datasources
          WHERE tenant_id=$1 AND owner_id=$2
-         ORDER BY created_at_utc ASC
+         ORDER BY created_at_utc DESC, id DESC
          OFFSET $3
        )
        RETURNING id`,

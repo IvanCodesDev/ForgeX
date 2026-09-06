@@ -59,14 +59,16 @@ class PostgresCalibrationStore {
     return { action, at: Date.now(), actor: String(actor || "unknown"), reason: String(reason || "").slice(0, 500) };
   }
 
+  /* 文案与校验顺序与 file 态 CalibrationStore 完全一致（Stage 8.6a A6）：
+     切换持久化 provider 不该改变调用方看到的错误。 */
   async _validateSubmit(rawBundle) {
     const checked = await this.engine.validateBundle(rawBundle);
-    if (!checked.ok) throw new HttpError(400, checked.errors.join(", "));
+    if (!checked.ok) throw new HttpError(400, checked.errors.join("；"));
     if (!["real-anonymized", "real-consented"].includes(rawBundle.provenance)) {
       throw new HttpError(400, "服务端只接受具有真实数据来源声明的候选校准包");
     }
     if (!rawBundle.models.every((model) => model.status === "candidate")) {
-      throw new HttpError(400, "提交到审核队列的模型必须全部为 candidate");
+      throw new HttpError(400, "提交到审批队列的模型必须全部为 candidate");
     }
   }
 
@@ -117,8 +119,6 @@ class PostgresCalibrationStore {
 
   async review(id, revision, decision, actor, reason) {
     const key = `${id}@${revision}`;
-    if (!["approve", "reject"].includes(decision)) throw new HttpError(400, "decision 必须是 approve 或 reject");
-    if (String(reason || "").trim().length < 10) throw new HttpError(400, "审核原因至少需要 10 个字符");
     return withTransaction(this.pool, this.tenantId, this.ownerId, async (client) => {
       const found = await client.query(
         "SELECT * FROM forgex.calibration_submissions WHERE tenant_id=$1 AND owner_id=$2 AND key=$3 FOR UPDATE",
@@ -127,15 +127,18 @@ class PostgresCalibrationStore {
       if (!found.rowCount) throw new HttpError(404, "校准包提交不存在");
       const record = mapRecord(found.rows[0]);
       if (record.status !== "pending") throw new HttpError(409, "该提交已经完成审核");
+      // 与 file 态同序：先看提交是否存在 / 是否已审，再校验 decision 与 reason。
+      if (!["approve", "reject"].includes(decision)) throw new HttpError(400, "decision 必须是 approve 或 reject");
+      if (String(reason || "").trim().length < 10) throw new HttpError(400, "审核原因至少需要 10 个字符");
       if (decision === "approve" && record.submittedBy === actor) {
-        throw new HttpError(409, "提交者不能审核自己的校准包");
+        throw new HttpError(409, "提交者不能审批自己提交的校准包");
       }
 
       if (decision === "approve") {
         const published = clone(record.bundle);
         published.models.forEach((model) => { model.status = "active"; });
         const checked = await this.engine.validateBundle(published);
-        if (!checked.ok) throw new HttpError(409, "候选模型未达到 active 准入条件：" + checked.errors.join(", "));
+        if (!checked.ok) throw new HttpError(409, "候选模型未达到 active 准入条件：" + checked.errors.join("；"));
         const current = await client.query(
           "SELECT revision FROM forgex.calibration_releases WHERE tenant_id=$1 AND bundle_id=$2 FOR UPDATE",
           [this.tenantId, published.id]

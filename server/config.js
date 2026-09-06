@@ -141,6 +141,13 @@ function getConfig(overrides) {
       //（与 G-code 权威共用同一 sidecar origin 与内部信任令牌）。
       sharesAuthority: String(env.SHARES_AUTHORITY || "node").trim().toLowerCase(),
       sharesAuthorityTimeoutMs: num(env.SHARES_AUTHORITY_TIMEOUT_MS, 15000),
+      // ── Stage 8.6a：数据源 / 知识库 / 校准治理三条资源腿的权威切流 ─────────────
+      // node = 本进程存储（默认，行为不变）；csharp = 通过可信通道代理到 ForgeX.Api
+      //（共用 GCODE_AUTHORITY_URL 与 GCODE_AUTHORITY_INTERNAL_SECRET）。三者独立切换、独立回滚。
+      datasourcesAuthority: String(env.DATASOURCES_AUTHORITY || "node").trim().toLowerCase(),
+      knowledgeAuthority: String(env.KNOWLEDGE_AUTHORITY || "node").trim().toLowerCase(),
+      calibrationGovernanceAuthority: String(env.CALIBRATION_GOVERNANCE_AUTHORITY || "node").trim().toLowerCase(),
+      resourceAuthorityTimeoutMs: num(env.RESOURCE_AUTHORITY_TIMEOUT_MS, 15000),
       // ── Stage 8.3：规则计算腿权威切流（迁移期双向开关）─────────────
       // node = 本进程 classic 规则腿（默认，行为不变）；csharp = 调 ForgeX.Api
       //（与 G-code 权威共用同一 sidecar origin）。
@@ -193,6 +200,26 @@ function getConfig(overrides) {
     throw new Error("SHARES_AUTHORITY=csharp 需要先配置 GCODE_AUTHORITY_URL（共用同一 C# sidecar）");
   }
   cfg.sharesAuthorityTimeoutMs = Math.max(1, num(cfg.sharesAuthorityTimeoutMs, 15000));
+  const resourceSwitches = [
+    ["DATASOURCES_AUTHORITY", "datasourcesAuthority"],
+    ["KNOWLEDGE_AUTHORITY", "knowledgeAuthority"],
+    ["CALIBRATION_GOVERNANCE_AUTHORITY", "calibrationGovernanceAuthority"],
+  ];
+  for (const [envName, key] of resourceSwitches) {
+    cfg[key] = String(cfg[key] || "node").trim().toLowerCase();
+    if (!["node", "csharp"].includes(cfg[key])) {
+      throw new Error(envName + " must be node or csharp");
+    }
+    if (cfg[key] === "csharp" && !cfg.gcodeAuthorityUrl) {
+      throw new Error(envName + "=csharp 需要先配置 GCODE_AUTHORITY_URL（共用同一 C# sidecar）");
+    }
+    // 资源腿携带的是解析后的匿名化 tenant/owner（校准治理还有 actor 头）——没有可信通道，
+    // C# 会把每个请求都当成匿名直连，多租户隔离就形同虚设。
+    if (cfg[key] === "csharp" && !cfg.gcodeAuthorityInternalSecret) {
+      throw new Error(envName + "=csharp 需要同时配置 GCODE_AUTHORITY_INTERNAL_SECRET（可信通道）");
+    }
+  }
+  cfg.resourceAuthorityTimeoutMs = Math.max(1, num(cfg.resourceAuthorityTimeoutMs, 15000));
   cfg.rulesEngineAuthority = String(cfg.rulesEngineAuthority || "node").trim().toLowerCase();
   if (!["node", "csharp"].includes(cfg.rulesEngineAuthority)) {
     throw new Error("RULES_ENGINE_AUTHORITY must be node or csharp");
