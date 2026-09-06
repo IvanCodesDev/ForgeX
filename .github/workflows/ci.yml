@@ -187,7 +187,7 @@ jobs:
       - name: 资源夹具新鲜度（Node 语义快照与 C# 门禁输入一致）
         run: npm run resources:fixtures:check
 
-      - name: 资源权威真实双跑（Node 权威 vs C# 权威，file + postgres 双腿）
+      - name: 资源权威真实双跑（datasources / knowledge / calibrations / shares，Node 权威 vs C# 权威，file + postgres 双腿）
         run: npm run dotnet:resource-authority
 
       - name: 静态托管单进程部署实测（构建前端 → 静态 → 上传 → 分析 → 分享走 postgres 腿 → 重启持久化）

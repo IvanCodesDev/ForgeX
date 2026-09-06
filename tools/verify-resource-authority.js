@@ -1,10 +1,13 @@
-/* Stage 8.6a 真实双跑门禁：数据源 / 知识库 / 校准治理三条资源腿，Node 权威 vs C# 权威。
+/* Stage 8.6a/8.6b 真实双跑门禁：数据源 / 知识库 / 校准治理 / 分享四条资源腿，Node 权威 vs C# 权威。
 
-   与假 sidecar 测试（tests/resource-authority.test.js）不同，这里起的是真实的 ForgeX.Api Release 进程：
+   与假 sidecar 测试（tests/resource-authority.test.js、tests/shares-authority.test.js）不同，这里起的是
+   真实的 ForgeX.Api Release 进程：
      - C#：临时 Storage:Root、内部信任密钥；**不配置任何 API Key**，证明可信通道不依赖 C# 侧密钥；
      - Node A：*_AUTHORITY=node（本进程存储）；Node B：*_AUTHORITY=csharp（经可信通道代理到 C#）。
    同一份语料按顺序逐条打到 A 与 B，比对状态码与响应 JSON（规范化：去掉时间戳 / 随机 id，
    把各实例的 key 摘要映射为角色占位符），`hits[].score` 与 `digest` 精确相等。
+   分享公开页是 HTML：取全文、把字符实体规范化后整体比对（Node escapeHtml 出 `&#39;`，
+   .NET HtmlEncoder 出 `&#x27;` 与非 ASCII 数字实体——语义同、字节不同）。
    差异若命中 waivers 表（用例 + JSON 路径 + 说明）记为 waived，否则 fail → 非零退出。
 
    POSTGRES_URL 存在时再跑第二轮：C# *__Provider=postgres、Node A' PERSISTENCE_PROVIDER=postgres、
@@ -25,6 +28,8 @@ const root = path.resolve(__dirname, "..");
 const apiDll = path.join(root, "backend", "src", "ForgeX.Api", "bin", "Release", "net10.0", "ForgeX.Api.dll");
 const artifactPath = path.join(root, "backend", "artifacts", "resource-authority-dualrun.json");
 const INTERNAL_SECRET = "stage86a-resource-dualrun-internal-secret-" + crypto.randomBytes(8).toString("hex");
+// 两个 Node 实例监听不同端口，publicUrl 必须由同一个 PUBLIC_BASE 拼出来才可比。
+const PUBLIC_BASE = "https://forgex.example";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const keyId = (key) => crypto.createHash("sha256").update(key).digest("hex").slice(0, 8);
@@ -116,6 +121,7 @@ async function startNode(label, overrides) {
     logLevel: "error",
     forceMock: true,
     rateLimitMs: 0,
+    publicBase: PUBLIC_BASE,
     // reviewer 同时也是合法提交者：四眼原则用例需要「提交者不能审批自己」的场景。
     apiKeys: `${submitKey},${reviewKey}`,
     calibrationReviewKeys: reviewKey,
@@ -259,6 +265,9 @@ const CASES = [
     path: "/api/analyze",
     analyze: true,
     body: (state) => ({ datasourceId: state.dsId, question: "哪台机器的失败率最高？" }),
+    after: (json, state) => {
+      state.uploadTaskId = json && json.taskId;
+    },
   },
   {
     name: "ds-analyze-sample",
@@ -267,6 +276,9 @@ const CASES = [
     path: "/api/analyze",
     analyze: true,
     body: { datasourceId: "sample", question: "材料与失败率有什么关系" },
+    after: (json, state) => {
+      state.sampleTaskId = json && json.taskId;
+    },
   },
   {
     name: "ds-analyze-missing",
@@ -551,7 +563,133 @@ const CASES = [
     path: "/healthz",
     pick: (json) => json && json.calibrations,
   },
+  // ── 分享（8.6b）：任务归属仍由 Node 判定，存储 / 撤销 / 公开页在 csharp 模式下经可信通道到 C# ──
+  {
+    name: "share-create-missing-task",
+    role: "submitter",
+    method: "POST",
+    path: "/api/share/t_0000000000000000",
+    body: {},
+  },
+  {
+    name: "share-create-foreign-task",
+    role: "reviewer",
+    method: "POST",
+    path: (state) => "/api/share/" + state.uploadTaskId,
+    body: {},
+  },
+  {
+    name: "share-create-anonymous",
+    role: null,
+    method: "POST",
+    path: (state) => "/api/share/" + state.uploadTaskId,
+    body: {},
+  },
+  {
+    name: "share-create",
+    role: "submitter",
+    method: "POST",
+    path: (state) => "/api/share/" + state.uploadTaskId,
+    body: {},
+    after: (json, state) => {
+      state.shareToken = json && json.token;
+      state.shareRevokeKey = json && json.revokeKey;
+    },
+    pick: pickShareCreated,
+  },
+  { name: "share-page", role: null, method: "GET", path: (state) => "/share/" + state.shareToken, html: true },
+  { name: "share-page-unknown-token", role: null, method: "GET", path: "/share/deadbeefdeadbeefde", html: true },
+  {
+    name: "share-revoke-wrong-key",
+    role: "submitter",
+    method: "POST",
+    path: (state) => "/api/share/" + state.shareToken + "/revoke",
+    body: { revokeKey: "not-the-key" },
+  },
+  {
+    name: "share-revoke-foreign",
+    role: "reviewer",
+    method: "POST",
+    path: (state) => "/api/share/" + state.shareToken + "/revoke",
+    body: (state) => ({ revokeKey: state.shareRevokeKey }),
+  },
+  {
+    name: "share-page-still-live",
+    role: null,
+    method: "GET",
+    path: (state) => "/share/" + state.shareToken,
+    html: true,
+  },
+  {
+    name: "share-revoke",
+    role: "submitter",
+    method: "POST",
+    path: (state) => "/api/share/" + state.shareToken + "/revoke",
+    body: (state) => ({ revokeKey: state.shareRevokeKey }),
+  },
+  {
+    name: "share-revoke-again",
+    role: "submitter",
+    method: "POST",
+    path: (state) => "/api/share/" + state.shareToken + "/revoke",
+    body: (state) => ({ revokeKey: state.shareRevokeKey }),
+  },
+  {
+    name: "share-page-after-revoke",
+    role: null,
+    method: "GET",
+    path: (state) => "/share/" + state.shareToken,
+    html: true,
+  },
+  {
+    // 内置样例：合成 provenance 的 ⚠ 提示 + 图表行（百分比 / 数值格式化）都要在两侧渲染一致。
+    name: "share-create-sample",
+    role: "submitter",
+    method: "POST",
+    path: (state) => "/api/share/" + state.sampleTaskId,
+    body: {},
+    after: (json, state) => {
+      state.sampleShareToken = json && json.token;
+      state.sampleShareRevokeKey = json && json.revokeKey;
+    },
+    pick: pickShareCreated,
+  },
+  {
+    name: "share-page-sample",
+    role: null,
+    method: "GET",
+    path: (state) => "/share/" + state.sampleShareToken,
+    html: true,
+  },
+  {
+    name: "share-revoke-sample",
+    role: "submitter",
+    method: "POST",
+    path: (state) => "/api/share/" + state.sampleShareToken + "/revoke",
+    body: (state) => ({ revokeKey: state.sampleShareRevokeKey }),
+  },
 ];
+
+/* 分享创建响应：token / revokeKey 随机（18 hex），publicUrl 由统一的 PUBLIC_BASE + token 拼成。 */
+function pickShareCreated(json) {
+  if (!json || typeof json !== "object") return json;
+  return {
+    ...json,
+    publicUrl:
+      typeof json.publicUrl === "string" ? json.publicUrl.replace(/[a-f0-9]{18}$/, "<share-token>") : json.publicUrl,
+  };
+}
+
+/* HTML 全文比对前把字符实体规范化：数字实体（十进制 / 十六进制）与五个命名实体都还原成字符本身。
+   单趟替换：`&amp;lt;` 只还原一层，不会被误当成 `<`。 */
+const NAMED_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+function canonicalHtml(text) {
+  return String(text).replace(/&(#x([0-9a-f]+)|#([0-9]+)|amp|lt|gt|quot|apos);/gi, (match, name, hex, dec) => {
+    if (hex) return String.fromCodePoint(parseInt(hex, 16));
+    if (dec) return String.fromCodePoint(parseInt(dec, 10));
+    return NAMED_ENTITIES[name.toLowerCase()] || match;
+  });
+}
 
 /* 已知且已批准的差异（设计 §13）。path 为规范化后响应对象内的路径前缀。 */
 const WAIVERS = [
@@ -568,6 +706,13 @@ const WAIVERS = [
     reason:
       "PostgreSQL jsonb 不接受 \\u0000（unsupported Unicode escape sequence）：postgres 腿 Node 权威写库失败返回 500「服务器内部错误」，" +
       "C# 权威写库失败后 Node csharp 门面返回 502「数据源服务暂不可用，请稍后再试」；file 腿两侧都 201。控制字符是否在入口统一清洗留待 Node 权威侧决定（8.6b 待办），此处只如实记录差异。",
+  },
+  {
+    caseName: "share-revoke-foreign",
+    paths: ["status", "body.error"],
+    reason:
+      "他人持正确 revokeKey 撤销：Node node 态先 shares.get 再 requireOwner，返回 403「无权访问该资源」；csharp 态归属校验由 C# 租户 / owner 隔离承担，" +
+      "他人 token 一律 404「分享不存在或已过期」（Stage 8.1 routes/share.js 注明的取舍：不暴露「存在但不属于你」，与 ds-analyze-foreign 同源）。",
   },
 ];
 
@@ -590,6 +735,8 @@ const ID_PATTERNS = [
   [/^ds_[a-f0-9]{24}$/, "<datasource-id>"],
   [/^kb_[a-f0-9]{16}$/, "<knowledge-id>"],
   [/^t_[a-f0-9]{16}$/, "<task-id>"],
+  // 分享 token 与 revokeKey：两侧都是 randomBytes(9) 的 18 位小写 hex。
+  [/^[a-f0-9]{18}$/, "<share-secret>"],
 ];
 
 function normalize(value, instance) {
@@ -644,21 +791,27 @@ async function jfetch(baseUrl, pathname, init) {
   } catch {
     json = { nonJson: text.slice(0, 200) };
   }
-  return { status: response.status, json };
+  return { status: response.status, contentType: response.headers.get("content-type") || "", text, json };
 }
 
 async function runCase(instance, testCase) {
   const headers = { "Content-Type": "application/json" };
   if (testCase.role) headers.Authorization = "Bearer " + instance.keys[testCase.role];
   const body = typeof testCase.body === "function" ? testCase.body(instance.state) : testCase.body;
-  const response = await jfetch(instance.baseUrl, testCase.path, {
+  const pathname = typeof testCase.path === "function" ? testCase.path(instance.state) : testCase.path;
+  const response = await jfetch(instance.baseUrl, pathname, {
     method: testCase.method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (testCase.after) testCase.after(response.json, instance.state);
   let picked = response.json;
-  if (testCase.analyze && response.status === 202 && response.json && response.json.taskId) {
+  if (testCase.html) {
+    // 公开页：成功时是 HTML 全文（实体规范化后整体比对），失败时是 Node 的 JSON 错误体。
+    picked = /json/i.test(response.contentType)
+      ? { contentType: response.contentType, json: response.json }
+      : { contentType: response.contentType, html: canonicalHtml(response.text) };
+  } else if (testCase.analyze && response.status === 202 && response.json && response.json.taskId) {
     // 规则引擎异步任务：等到终态后比对报告本体（缓存/耗时等易变字段由 normalize 去掉）。
     const deadline = Date.now() + 15_000;
     let result = null;
@@ -695,6 +848,7 @@ async function runLeg(leg, options) {
       datasourcesAuthority: "node",
       knowledgeAuthority: "node",
       calibrationGovernanceAuthority: "node",
+      sharesAuthority: "node",
       ...(leg === "postgres"
         ? { persistenceProvider: "postgres", postgresUrl: options.postgresUrl, postgresTenantId: randomTenant() }
         : {}),
@@ -704,6 +858,7 @@ async function runLeg(leg, options) {
       datasourcesAuthority: "csharp",
       knowledgeAuthority: "csharp",
       calibrationGovernanceAuthority: "csharp",
+      sharesAuthority: "csharp",
       gcodeAuthorityUrl: api.baseUrl,
       gcodeAuthorityInternalSecret: INTERNAL_SECRET,
     });

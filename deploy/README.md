@@ -105,7 +105,10 @@ on the C# `/metrics` (plus `forgex_calibrations_approved` / `forgex_calibrations
 `/healthz` keeps probing whichever leg is active and returns `503 persistence_unavailable` if the
 authority is down. Cross-tenant reads return `404` on the C# leg where the Node file leg returned
 `403` (the row-level-security convention already used by shares); this is the only approved
-difference in the CI dual-run report `resource-authority-dualrun.json`.
+difference in the CI dual-run report `resource-authority-dualrun.json`, which since Stage 8.6b also
+replays the shares flow (`SHARES_AUTHORITY`) on both storage legs — the public share page is compared
+as a full HTML document, so a `csharp` cut-over renders byte-for-byte the same content Node did.
+`SHARES_AUTHORITY_TIMEOUT_MS` (default 15000) bounds the share proxy's upstream wait.
 
 Production objectives and alert response are defined in [`SLO.md`](./SLO.md),
 [`alerts/forgex.rules.yml`](./alerts/forgex.rules.yml), and [`RUNBOOK.md`](./RUNBOOK.md). Before each

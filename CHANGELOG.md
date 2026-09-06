@@ -9,6 +9,23 @@
 
 ## [Unreleased]
 
+### Stage 8.6b：分享腿（SHARES_AUTHORITY）双跑证据补齐到 8.6a 口径
+- 分享（Stage 8.1 迁 C#，8.6a 补 file 腿）此前只有静态演练直打 C# 的 5 步证据，没有 Node 权威 vs C#
+  权威的语料级比对，也没有假 sidecar 集成测试。本刀不改产品行为，只补证据：
+  `tools/verify-resource-authority.js` 并入 15 例分享语料（复用分析任务：任务不存在 / 他人任务 / 匿名 →
+  Node 本地 404/403；创建 201；公开页 **HTML 全文比对**——Node `escapeHtml` 出 `&#39;`、.NET
+  `HtmlEncoder` 出 `&#x27;` 与非 ASCII 数字实体，实体规范化后两侧逐字节一致，含内置样例的 ⚠ 合成提示
+  与图表行；错误 revokeKey 403；撤销 200 / 再撤销 404 / 撤销后页面 404 / 未知 token 404），两个 Node
+  实例统一 `PUBLIC_BASE` 使 `publicUrl` 可比。唯一差异「他人持正确 revokeKey 撤销」Node 403 vs C# 404
+  显式豁免（与 8.6a A7 同源：C# 侧不暴露「存在但不属于你」）。双跑 71 例 × file/postgres 两腿：
+  138 一致 / 4 豁免 / 0 失败。
+- 新增 `tests/shares-authority.test.js`（25 项，入 `npm test`）：开关配置校验；node 模式 sidecar 零调用；
+  csharp 模式创建转发体 / 匿名化 tenant-owner 头 / 不泄漏 cookie-authorization、`publicUrl` 三种改写
+  （PUBLIC_BASE / Origin / 相对路径 + note）、sidecar 5xx 与 201 无 token → 502、公开页不带身份头且
+  HTML / content-type / Cache-Control 原样透传、撤销 200 / 404 / 403 / 其它 → 502、
+  `SHARES_AUTHORITY_TIMEOUT_MS` 超时与 sidecar 不可达 → 502、csharp 模式下 `/metrics forgex_shares` 为 0。
+- 分析任务历史（`AnalysisTasks:Provider`）的 Node 切流开关留给 8.6c 创建链一并接线（用户 2026-09-06 决定）。
+
 ### Stage 8.6a：数据源 / 知识库 / 校准治理端点迁 C#（Node 退场第一刀）
 - ForgeX.Api 接管 Node 剩余三条资源腿的存储与语义：`POST/GET /api/v1/datasources`、
   `POST/GET /api/v1/knowledge` + `/search`、`GET /api/v1/calibrations[/stats]`、

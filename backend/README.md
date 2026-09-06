@@ -250,6 +250,11 @@ runs automatically when `POSTGRES_URL` is set) consumes Node-generated fixtures
 (`npm run resources:fixtures[:check]`), and `npm run dotnet:resource-authority` runs a real dual-run:
 one ForgeX.Api plus a node-authority and a csharp-authority Node instance replay the same corpus and
 every normalized response must match (artifact `backend/artifacts/resource-authority-dualrun.json`).
+Since Stage 8.6b the corpus also covers shares end to end (`SHARES_AUTHORITY`): creation, the public
+page as a full HTML comparison after entity canonicalization (Node's `escapeHtml` writes `&#39;`,
+.NET's `HtmlEncoder` writes `&#x27;` and numeric entities for non-ASCII text), wrong-key and foreign
+revocation, revoke / re-revoke / revoked-page semantics. The fake-sidecar contract tests live in
+`tests/resource-authority.test.js` and `tests/shares-authority.test.js`.
 CI provides a PostgreSQL service and applies the migrations with `npm run postgres:migrate -- --require`
 so both legs are covered on every push.
 
