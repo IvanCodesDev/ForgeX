@@ -207,6 +207,54 @@ loopback sidecar boundary. Missing or invalid internal authentication is rejecte
 cross-tenant status, SSE, and cancellation requests return the same not-found response. An empty
 secret keeps the explicit `tn_local` / `ow_local` development scope for direct local smoke tests.
 
+## Stage 8.6a resource authority (datasources, knowledge, calibration governance)
+
+ForgeX.Api now owns the storage and semantics of the three remaining Node-side resources, behind
+internal endpoints that stay out of the public OpenAPI document (the Stage 8.1 shares precedent):
+
+| Resource | Endpoints | Provider key |
+| --- | --- | --- |
+| Datasources | `POST /api/v1/datasources`, `GET /api/v1/datasources/{id}` (incl. `sample`) | `Datasources:Provider` |
+| Knowledge | `POST /api/v1/knowledge`, `GET /api/v1/knowledge`, `POST /api/v1/knowledge/search` | `Knowledge:Provider` |
+| Calibration governance | `GET /api/v1/calibrations`, `GET /api/v1/calibrations/stats`, `GET/POST /api/v1/calibrations/submissions`, `POST /api/v1/calibrations/{id}/revisions/{rev}/review` | `Calibrations:Provider` |
+| Shares (8.1, file leg added) | unchanged | `Shares:Provider` |
+
+Every provider accepts `disabled` (default: nothing registered), `file` (JSON documents under
+`Storage:Root/{datasources,knowledge,shares}` and `Calibrations:StateFile`, which reads and writes
+Node's `forgex-calibration-service-state` v1 file so a Node state file can be taken over as-is) or
+`postgres` (`{Section}:PostgresUrl`, falling back to `POSTGRES_URL`; the same tables and RLS
+policies Node uses, migrations `0002`–`0005`). Limits mirror Node: `Datasources:TtlMs/MaxPerOwner`,
+`Knowledge:TtlMs/MaxPerOwner`, `Shares:TtlMs/MaxPerOwner`, `Calibrations:MaxSubmissions`; capacity
+eviction removes the oldest records on both legs (decision A5 also fixed the Node PostgreSQL stores,
+which used to delete the newest row). A `ResourceSweeper` hosted service expires records every
+`Resources:SweepIntervalMs` (default 60000) and `/metrics` publishes Node's gauge names and HELP texts
+(`forgex_datasources`, `forgex_knowledge_docs`, `forgex_shares`, `forgex_calibrations_approved`,
+`forgex_calibrations_pending`) so dashboards survive the cut-over.
+
+Identity rides the trusted sidecar channel: Node derives `X-ForgeX-Tenant-Id` / `X-ForgeX-Owner-Id`
+from the API key or client IP exactly as its own stores do, and for calibration governance adds the
+pair `X-ForgeX-Actor-Key-Id` + `X-ForgeX-Actor-Role` (`submitter` | `reviewer`, both or neither) so
+the four-eyes rule (a submitter cannot approve its own bundle) is enforced in C#. Governance is
+deployment-scoped (`Calibrations:TenantId`, default `tn_local`), matching Node. Cross-tenant reads
+return not-found on the C# legs (RLS convention); the Node file leg answered `403` — the single
+approved waiver in the dual-run report.
+
+Byte-level parity with the JavaScript implementation is pinned in three Analytics primitives:
+`JsJson` (JSON.stringify semantics for digests, incl. lone surrogates and duplicate keys),
+`Bm25Retrieval` (per-character `toLowerCase` folding, identical scoring/rounding) and
+`DatasetProvenanceSanitizer`. `ForgeX.ResourceGate` (224 checks on the file leg; the postgres leg
+runs automatically when `POSTGRES_URL` is set) consumes Node-generated fixtures
+(`npm run resources:fixtures[:check]`), and `npm run dotnet:resource-authority` runs a real dual-run:
+one ForgeX.Api plus a node-authority and a csharp-authority Node instance replay the same corpus and
+every normalized response must match (artifact `backend/artifacts/resource-authority-dualrun.json`).
+CI provides a PostgreSQL service and applies the migrations with `npm run postgres:migrate -- --require`
+so both legs are covered on every push.
+
+Node-side switches (default `node`, zero change): `DATASOURCES_AUTHORITY`, `KNOWLEDGE_AUTHORITY`,
+`CALIBRATION_GOVERNANCE_AUTHORITY` (`csharp` requires `GCODE_AUTHORITY_URL` and
+`GCODE_AUTHORITY_INTERNAL_SECRET`; `RESOURCE_AUTHORITY_TIMEOUT_MS` bounds the upstream wait). In
+`csharp` mode Node's own `/metrics` resource gauges read `0` — use the C# `/metrics`.
+
 ## Persistence and recovery
 
 `Persistence:Provider=file` remains the only active runtime provider in this slice. The file job

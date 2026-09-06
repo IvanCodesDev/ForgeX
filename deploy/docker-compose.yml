@@ -21,6 +21,14 @@ services:
       # 切换单进程交付随工作项 6「Node 退场」收口，此处暂不启用。
       Storage__Root: "/app/data"
       Persistence__Provider: "file"
+      # Stage 8.6a：C# 资源存储腿（分享 / 数据源 / 知识库 / 校准治理）默认 disabled = 不注册端点、
+      # 行为与迁移前一致。切 C# 权威时先把对应 Provider 置 file（落 /app/data）或 postgres
+      # （与 Node 共用同一 POSTGRES_URL、同表同 RLS），再把下方 Node 侧 *_AUTHORITY 切到 csharp。
+      Shares__Provider: "${CSHARP_SHARES_PROVIDER:-disabled}"
+      Datasources__Provider: "${CSHARP_DATASOURCES_PROVIDER:-disabled}"
+      Knowledge__Provider: "${CSHARP_KNOWLEDGE_PROVIDER:-disabled}"
+      Calibrations__Provider: "${CSHARP_CALIBRATIONS_PROVIDER:-disabled}"
+      POSTGRES_URL: "${POSTGRES_URL:-}"
       InternalAuth__SharedSecret: "${GCODE_AUTHORITY_INTERNAL_SECRET:?Set a random secret of at least 32 bytes}"
       InternalAuth__PreviousSharedSecret: "${GCODE_AUTHORITY_INTERNAL_SECRET_PREVIOUS:-}"
       GCodeJobs__QueueCapacity: "${GCODE_JOB_QUEUE_CAPACITY:-64}"
@@ -84,6 +92,12 @@ services:
       GCODE_AUTHORITY_ALLOW_REMOTE: "1"
       GCODE_AUTHORITY_INTERNAL_SECRET: "${GCODE_AUTHORITY_INTERNAL_SECRET:?Set a random secret of at least 32 bytes}"
       GCODE_ASYNC_JOBS_ENABLED: "1"
+      # Stage 8.1 / 8.6a：按资源逐个切流的迁移期开关，默认 node（零变化）；csharp 经上面的
+      # GCODE_AUTHORITY_URL 可信通道代理到 forgex-api，任一资源异常改回 node 重启即回滚。
+      SHARES_AUTHORITY: "${SHARES_AUTHORITY:-node}"
+      DATASOURCES_AUTHORITY: "${DATASOURCES_AUTHORITY:-node}"
+      KNOWLEDGE_AUTHORITY: "${KNOWLEDGE_AUTHORITY:-node}"
+      CALIBRATION_GOVERNANCE_AUTHORITY: "${CALIBRATION_GOVERNANCE_AUTHORITY:-node}"
       AI_CONCURRENCY: "2"
       AI_QUEUE_MAX: "8"
       AI_DAILY_PER_CALLER: "20"

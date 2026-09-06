@@ -73,7 +73,39 @@ enable the shared stores, apply `backend/database/postgresql/migrations/` in ord
 `PERSISTENCE_PROVIDER=postgres`, `POSTGRES_URL`, and (for managed TLS) `POSTGRES_SSL=1` in the Node
 environment, then verify `/healthz` reports `persistence=postgres`. Running tasks that are interrupted by
 a process restart are recovered as explicit failed tasks; their event history and terminal reports remain
-available until the configured TTL.
+available until the configured TTL. `npm run postgres:migrate` applies the migrations with the pinned
+`pg` driver (reads `POSTGRES_URL`, no `psql` needed); it is the same script CI uses against its
+PostgreSQL service.
+
+### Stage 8.6a: moving datasources, knowledge and calibration governance to the C# authority
+
+Since Stage 8.1 (`SHARES_AUTHORITY`) every resource leg moves with the same two-step ritual, one
+resource at a time, so the browser contract never changes:
+
+1. Enable the C# storage leg on `forgex-api`: `Shares__Provider`, `Datasources__Provider`,
+   `Knowledge__Provider` or `Calibrations__Provider` = `file` (single-host, under the authority data
+   volume) or `postgres` (same `POSTGRES_URL`, same tables and row-level security as Node). The
+   Compose file exposes them as `CSHARP_*_PROVIDER`; the default `disabled` registers no endpoint.
+   Optional tuning: `Datasources__TtlMs/MaxPerOwner`, `Knowledge__TtlMs/MaxPerOwner`,
+   `Shares__TtlMs/MaxPerOwner`, `Calibrations__MaxSubmissions/TenantId/StateFile`,
+   `Resources__SweepIntervalMs` (default 60000).
+2. Flip the matching Node switch: `SHARES_AUTHORITY`, `DATASOURCES_AUTHORITY`,
+   `KNOWLEDGE_AUTHORITY` or `CALIBRATION_GOVERNANCE_AUTHORITY` = `csharp`. Node keeps validating
+   requests and API keys, then proxies over the trusted `GCODE_AUTHORITY_URL` channel (the internal
+   secret is mandatory; `RESOURCE_AUTHORITY_TIMEOUT_MS`, default 15000, bounds the upstream wait).
+
+Rollback is the reverse: set the switch back to `node` and restart. Data stays in its own store —
+datasources, knowledge and shares are TTL-bound scratch data; calibration governance is the only
+long-lived state, so copy Node's `DATA_DIR/calibrations.json` to `Calibrations__StateFile` (file leg)
+before cutting over, or share one database (postgres leg) and no copy is needed.
+
+Observability: while a resource runs on the C# leg, Node's `/metrics` gauges `forgex_datasources`,
+`forgex_knowledge_docs` and `forgex_shares` read `0`; the authoritative values are the same gauge names
+on the C# `/metrics` (plus `forgex_calibrations_approved` / `forgex_calibrations_pending`). Node's
+`/healthz` keeps probing whichever leg is active and returns `503 persistence_unavailable` if the
+authority is down. Cross-tenant reads return `404` on the C# leg where the Node file leg returned
+`403` (the row-level-security convention already used by shares); this is the only approved
+difference in the CI dual-run report `resource-authority-dualrun.json`.
 
 Production objectives and alert response are defined in [`SLO.md`](./SLO.md),
 [`alerts/forgex.rules.yml`](./alerts/forgex.rules.yml), and [`RUNBOOK.md`](./RUNBOOK.md). Before each

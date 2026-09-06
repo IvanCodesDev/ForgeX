@@ -9,6 +9,39 @@
 
 ## [Unreleased]
 
+### Stage 8.6a：数据源 / 知识库 / 校准治理端点迁 C#（Node 退场第一刀）
+- ForgeX.Api 接管 Node 剩余三条资源腿的存储与语义：`POST/GET /api/v1/datasources`、
+  `POST/GET /api/v1/knowledge` + `/search`、`GET /api/v1/calibrations[/stats]`、
+  `GET/POST /api/v1/calibrations/submissions`、`POST .../revisions/{rev}/review`（沿 8.1 先例
+  不进公开 OpenAPI）。每个资源 `Provider=disabled|file|postgres`（默认 disabled 零变化）：file 腿落
+  `Storage:Root` 单进程零依赖，校准治理直接读写 Node 的 `forgex-calibration-service-state` v1
+  状态文件（可原样接管，决策 A1）；postgres 腿复用 Node 同表同 RLS。分享（8.1 起 postgres-only）
+  补齐 file 腿，file 持久化的单进程部署不再比 Node 少分享能力。
+- JS 语义原语进 `ForgeX.Analytics`：`JsJson`（JSON.stringify 逐字节语义，含孤立代理项与重复键，
+  校准 digest 与 Node 完全一致）、`Bm25Retrieval`（逐字符小写折叠、同分同舍入）、
+  `DatasetProvenanceSanitizer`；`ForgeX.ResourceGate` 224 项以 Node 生成的夹具
+  （`npm run resources:fixtures[:check]`）钉住两端语义，有 `POSTGRES_URL` 时自动多跑 PG 腿。
+- 身份走可信通道：Node 派生 `X-ForgeX-Tenant-Id/Owner-Id`（与自身存储同公式），校准治理追加
+  `X-ForgeX-Actor-Key-Id` + `X-ForgeX-Actor-Role`（submitter/reviewer 成对出现），四眼原则在 C# 侧
+  执行；`ResourceSweeper` 后台清扫（`Resources:SweepIntervalMs`），C# `/metrics` 输出与 Node 同名同
+  HELP 的资源 gauge。
+- Node 侧新增迁移期开关 `DATASOURCES_AUTHORITY` / `KNOWLEDGE_AUTHORITY` /
+  `CALIBRATION_GOVERNANCE_AUTHORITY`（默认 node；csharp 需 `GCODE_AUTHORITY_URL` +
+  `GCODE_AUTHORITY_INTERNAL_SECRET`，`RESOURCE_AUTHORITY_TIMEOUT_MS` 兜底超时），代理客户端抽为
+  `server/lib/authority-client.js`（share.js 同步复用）。顺带修正两处 Node PG 存储的静默怪癖：
+  容量淘汰 `ORDER BY created_at_utc ASC OFFSET` 删的是刚写入的最新记录（A5：两端统一淘汰最旧）；
+  PG 校准存储的错误文案与检查顺序与 file 版漂移（A6：对齐 file 版）。假 sidecar 集成测试
+  `tests/resource-authority.test.js` 30 项与 `tests/postgres-calibration.test.js` 16 项入 `npm test`。
+- 门禁：`tools/verify-resource-authority.js`（`npm run dotnet:resource-authority`）真实起 ForgeX.Api +
+  Node 权威实例 + csharp 权威实例，同一语料 55 例逐条比对规范化响应（54 一致，1 项批准豁免：
+  他人数据源 Node file 态 403 vs C# 租户隔离 404，与 shares 同一取舍），产物
+  `resource-authority-dualrun.json`；CI `dotnet-authority` job 新增 PostgreSQL 16 service，
+  `npm run postgres:migrate -- --require`（`tools/apply-postgres-migrations.js`，用 pg 执行迁移、
+  不依赖 psql）后 ResourceGate / 双跑 / 静态演练三者都覆盖 postgres 腿，
+  `FORGEX_DRILL_REQUIRE_ALL=1` 下静态演练 23/23 无 skip。部署文档与 Compose 增加
+  `CSHARP_*_PROVIDER` / `*_AUTHORITY` 直通变量，csharp 模式下 Node `/metrics` 资源 gauge 为 0、
+  以 C# `/metrics` 为准。
+
 ### 自带 AI 端点（BYO-AI）：InfiniSynapse 集成整体退役
 - 按产品决策移除全部 InfiniSynapse 专属代码：AI provider（`services/infini.js`）、
   Partner SSO 全套（Node `partner-sso.js`/透明代理与 C# `PartnerSsoService`/`PartnerSsoEndpoints`、
@@ -59,10 +92,10 @@
   分析至 succeeded → 杀进程换端口重启 → 作业跨重启可读，15/18 通过 0 失败（分享腿 3 项
   如实 skip：C# shares 自 8.1 起 postgres-only 且本机无 PG，脚本支持 `POSTGRES_URL` 时
   跑全链）。两者均接入 CI `dotnet-authority` job。
-- **遗留决策点（Node 退场前二选一）**：dotnet-authority job 加 PostgreSQL service 容器把
-  分享腿纳入 CI，或为 C# 分享存储补 file 腿——否则 file 持久化的单进程部署比 Node 少
-  分享能力。OPTIONS 全局 204 与 `/api/*` 404 文案属 Node 服务器层语义，留待工作项 6
-  「Node 退场」通盘核对。
+- **遗留决策点（Node 退场前二选一）——已决（Stage 8.6a，用户 2026-09-06）：两者都做**：
+  C# 分享存储补 file 腿（`Shares:Provider=file`），dotnet-authority job 同时加 PostgreSQL service
+  把 postgres 腿纳入 CI，静态演练在 CI 中 23/23 无 skip。OPTIONS 全局 204 与 `/api/*` 404 文案
+  属 Node 服务器层语义，仍留待工作项 6「Node 退场」通盘核对。
 
 ### Stage 7.2 / 7.3：离线单文件验收与 react-parity 全流程扩面
 - **修复离线单文件的真实缺陷**：`frontend/classic/css/style.css` 文件头 UTF-8 BOM 被打包器
