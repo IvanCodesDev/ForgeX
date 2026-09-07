@@ -8,9 +8,10 @@
    把各实例的 key 摘要映射为角色占位符），`hits[].score` 与 `digest` 精确相等。
    分享公开页是 HTML：取全文、把字符实体规范化后整体比对（Node escapeHtml 出 `&#39;`，
    .NET HtmlEncoder 出 `&#x27;` 与非 ASCII 数字实体——语义同、字节不同）。
-   分析任务只读切流（8.6c-1）：C# 只有 postgres provider，所以只有 postgres 腿的 Node B 走
-   ANALYSIS_TASKS_AUTHORITY=csharp（B 也落库到同一张 forgex.node_analysis_tasks）；file 腿 B 保持 node，
-   task-* 用例在 file 腿是 Node 对 Node，产物 `authority.analysisTasks` 如实记录。
+   分析任务只读切流（8.6c-1 结果 / 轮询，8.6c-2a 进度流）：C# 只有 postgres provider，所以只有 postgres 腿的
+   Node B 走 ANALYSIS_TASKS_AUTHORITY=csharp（B 也落库到同一张 forgex.node_analysis_tasks）；file 腿 B 保持 node，
+   task-* 用例在 file 腿是 Node 对 Node，产物 `authority.analysisTasks` 如实记录。进度流用例读完整条 SSE，
+   比对去掉墙钟后的事件序列（B 侧是 C# 命名帧经 Node 重新组帧的结果）。
    差异若命中 waivers 表（用例 + JSON 路径 + 说明）记为 waived，否则 fail → 非零退出。
 
    POSTGRES_URL 存在时再跑第二轮：C# *__Provider=postgres、Node A' PERSISTENCE_PROVIDER=postgres、
@@ -710,7 +711,56 @@ const CASES = [
     method: "GET",
     path: (state) => "/api/analyze/" + state.uploadTaskId + "/result",
   },
+  // ── 分析任务进度流（8.6c-2a）：B 在 postgres 腿消费 C# /events 重新组帧，比对整条事件序列 ──
+  {
+    name: "task-stream",
+    role: "submitter",
+    method: "GET",
+    path: (state) => "/api/analyze/" + state.uploadTaskId + "/stream",
+    sse: true,
+  },
+  {
+    name: "task-stream-sample",
+    role: "submitter",
+    method: "GET",
+    path: (state) => "/api/analyze/" + state.sampleTaskId + "/stream",
+    sse: true,
+  },
+  {
+    name: "task-stream-missing",
+    role: "submitter",
+    method: "GET",
+    path: "/api/analyze/t_0000000000000000/stream",
+    sse: true,
+  },
+  {
+    name: "task-stream-foreign",
+    role: "reviewer",
+    method: "GET",
+    path: (state) => "/api/analyze/" + state.uploadTaskId + "/stream",
+    sse: true,
+  },
 ];
+
+/* SSE 全文 → 无名 data: 帧序列（JSON 解析），注释行与命名帧分别计数；ts 是墙钟，去掉后比对。 */
+function pickSseEvents(text) {
+  const events = [];
+  let comments = 0;
+  let named = 0;
+  for (const line of String(text).split("\n")) {
+    if (line.startsWith(":")) comments += 1;
+    else if (line.startsWith("event:")) named += 1;
+    else if (line.startsWith("data:")) {
+      try {
+        const { ts: _ts, ...event } = JSON.parse(line.slice(5).trim());
+        events.push(event);
+      } catch {
+        events.push({ nonJson: line.slice(5, 120) });
+      }
+    }
+  }
+  return { events, comments: comments > 0, named };
+}
 
 /* 分享创建响应：token / revokeKey 随机（18 hex），publicUrl 由统一的 PUBLIC_BASE + token 拼成。 */
 function pickShareCreated(json) {
@@ -756,9 +806,10 @@ const WAIVERS = [
       "他人持正确 revokeKey 撤销：Node node 态先 shares.get 再 requireOwner，返回 403「无权访问该资源」；csharp 态归属校验由 C# 租户 / owner 隔离承担，" +
       "他人 token 一律 404「分享不存在或已过期」（Stage 8.1 routes/share.js 注明的取舍：不暴露「存在但不属于你」，与 ds-analyze-foreign 同源）。",
   },
-  ...["task-poll-foreign", "task-result-foreign", "task-result-anonymous"].map((caseName) => ({
+  ...["task-poll-foreign", "task-result-foreign", "task-result-anonymous", "task-stream-foreign"].map((caseName) => ({
     caseName,
-    paths: ["status", "body.error"],
+    // 进度流用例的 JSON 错误体包在 body.json 下（与 HTML 用例同一形状）。
+    paths: ["status", "body.error", "body.json.error"],
     reason:
       "他人 / 匿名读取分析任务：Node node 态 requireOwner 返回 403「无权访问该资源」；ANALYSIS_TASKS_AUTHORITY=csharp 时归属由 C# 按租户 + owner 隔离，" +
       "他人任务一律 404「任务不存在或已过期」（与 ds-analyze-foreign / share-revoke-foreign 同源）。仅 postgres 腿分歧——file 腿 C# 无 provider，两侧皆 Node，403/403 一致。",
@@ -865,6 +916,11 @@ async function runCase(instance, testCase) {
     picked = /json/i.test(response.contentType)
       ? { contentType: response.contentType, json: response.json }
       : { contentType: response.contentType, html: canonicalHtml(response.text) };
+  } else if (testCase.sse) {
+    // 进度流：终态任务的流会自行结束；成功时比对整条事件序列，失败时是 Node 的 JSON 错误体。
+    picked = /json/i.test(response.contentType)
+      ? { contentType: response.contentType, json: response.json }
+      : { contentType: response.contentType, ...pickSseEvents(response.text) };
   } else if (testCase.analyze && response.status === 202 && response.json && response.json.taskId) {
     // 规则引擎异步任务：等到终态后比对报告本体（缓存/耗时等易变字段由 normalize 去掉）。
     const deadline = Date.now() + 15_000;

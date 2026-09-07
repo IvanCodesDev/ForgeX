@@ -112,12 +112,15 @@ as a full HTML document, so a `csharp` cut-over renders byte-for-byte the same c
 
 ### Stage 8.6c-1: analysis-task reads on the C# authority
 
-`ANALYSIS_TASKS_AUTHORITY=csharp` moves the two read routes — `GET /api/analyze/:id/result` and the
-`GET /api/analyze/:id` poll — onto the C# snapshot endpoint `GET /api/v1/analysis-tasks/{id}`. It is
-read-only by design: `POST /api/analyze` and the `/stream` SSE stay in Node, because the task runs in
-the Node process (only it has the live events) and the two SSE dialects differ (Node emits unnamed
-`data:` frames consumed by `EventSource.onmessage`, C# emits `id/event` named frames); both move
-together with the creation chain in 8.6c-2. Prerequisites, enforced at Node start-up: the same
+`ANALYSIS_TASKS_AUTHORITY=csharp` moves the read routes — `GET /api/analyze/:id/result`, the
+`GET /api/analyze/:id` poll and (since 8.6c-2a) the `/stream` SSE — onto the C# endpoints
+`GET /api/v1/analysis-tasks/{id}` and `/{id}/events`. It is read-only by design: `POST /api/analyze`
+stays in Node until the creation chain moves in 8.6c-2b. The two SSE dialects differ (Node emits
+unnamed `data:` frames consumed by `EventSource.onmessage`, C# emits `id/event` named frames), so Node
+re-frames the C# stream: progress/message frames are forwarded verbatim (their payload is the very
+event object Node persisted), heartbeats pass through, and C#'s closing `done` snapshot is only turned
+into a Node-shaped terminal event when the persisted events lack one (e.g. a task recovered as
+`failed` after a restart). Prerequisites, enforced at Node start-up: the same
 `GCODE_AUTHORITY_URL` + internal secret as every other leg, **and** `PERSISTENCE_PROVIDER=postgres`
 with `CSHARP_ANALYSIS_TASKS_PROVIDER=postgres` (`AnalysisTasks__Provider`) on `forgex-api` — C# reads
 the very rows Node persists into `forgex.node_analysis_tasks`, so there is no file leg for this switch.

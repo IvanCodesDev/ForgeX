@@ -101,8 +101,8 @@ services:
       DATASOURCES_AUTHORITY: "${DATASOURCES_AUTHORITY:-node}"
       KNOWLEDGE_AUTHORITY: "${KNOWLEDGE_AUTHORITY:-node}"
       CALIBRATION_GOVERNANCE_AUTHORITY: "${CALIBRATION_GOVERNANCE_AUTHORITY:-node}"
-      # Stage 8.6c-1：分析任务只读切流——csharp 时 GET result / 轮询读 forgex-api 的任务快照，
-      # 创建与 SSE 仍在 Node；要求 PERSISTENCE_PROVIDER=postgres 且 CSHARP_ANALYSIS_TASKS_PROVIDER=postgres。
+      # Stage 8.6c-1/2a：分析任务只读切流——csharp 时 GET result / 轮询 / SSE 进度流读 forgex-api 的任务快照与事件，
+      # 创建仍在 Node；要求 PERSISTENCE_PROVIDER=postgres 且 CSHARP_ANALYSIS_TASKS_PROVIDER=postgres。
       ANALYSIS_TASKS_AUTHORITY: "${ANALYSIS_TASKS_AUTHORITY:-node}"
       AI_CONCURRENCY: "2"
       AI_QUEUE_MAX: "8"

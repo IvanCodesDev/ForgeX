@@ -9,6 +9,20 @@
 
 ## [Unreleased]
 
+### Stage 8.6c-2a：分析任务进度流经 C# 重新组帧（ANALYSIS_TASKS_AUTHORITY 覆盖 /stream）
+- 8.6c-1 把结果 / 轮询读到 C# 后，`GET /api/analyze/:id/stream` 是读侧最后一条留在 Node 的路由。本刀在
+  `ANALYSIS_TASKS_AUTHORITY=csharp` 时让它消费 C# `GET /api/v1/analysis-tasks/{id}/events`（`id/event` 命名帧、
+  500 ms 轮询快照、10 s 心跳、`Last-Event-ID` 续传）并**重新组成前端现用的无名 `data:` 帧**（`EventSource.onmessage`
+  只认无名帧，SSE 组帧方案 ①，前端零改动）：`progress` / `message` 帧的 data 就是 Node 落库的事件对象，原样转发；
+  心跳注释透传；C# 的 `done` 快照帧不重复转发——只在事件里没有终态事件时（如重启恢复成 failed 的任务）按
+  Node `_finish` / `_fail` 形状合成一条终态；C# 404 / 5xx 在发头前映射为 404「任务不存在或已过期」/ 502；
+  客户端断开即中止上游。新增 `server/lib/sse.js`（零依赖逐行切帧）与 `authority-client.authorityStream()`
+  （同一条可信通道打开 SSE，超时只管连上并收到响应头）。创建 `POST /api/analyze` 仍在 Node，随 8.6c-2b 迁移。
+- 双跑新增 4 例 task-stream-*（读完整条 SSE，去掉墙钟后比对事件序列）：postgres 腿 Node B 经 C# 组帧的事件序列与
+  Node A 本地流逐帧一致（seq / stage / message / progress / done）；84 例 × 两腿：160 一致 / 8 豁免 / 0 失败。
+  `tests/analysis-tasks-authority.test.js` 增至 30 项（可信头 / 不泄漏 cookie、帧转换、心跳、Last-Event-ID 透传、
+  合成失败终态、404 / 5xx / 不可达映射）。
+
 ### Stage 8.6c-1：分析任务只读切流（ANALYSIS_TASKS_AUTHORITY）
 - 8.6c「`/api/analyze` 创建链迁 C#」按用户决定拆成「先只读后写」：8.1 落地的 C# `/api/v1/analysis-tasks*`
   端点一直只有 C# 侧门禁、没有 Node 切流开关，本刀先把它接进 Node 并双跑验证，创建链留给 8.6c-2。

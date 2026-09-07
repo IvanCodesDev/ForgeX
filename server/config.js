@@ -148,9 +148,9 @@ function getConfig(overrides) {
       knowledgeAuthority: String(env.KNOWLEDGE_AUTHORITY || "node").trim().toLowerCase(),
       calibrationGovernanceAuthority: String(env.CALIBRATION_GOVERNANCE_AUTHORITY || "node").trim().toLowerCase(),
       // ── Stage 8.6c-1：分析任务只读切流 ─────────────
-      // node = 结果 / 轮询读本进程任务表（默认）；csharp = 读 ForgeX.Api 的任务快照
+      // node = 结果 / 轮询 / 进度流读本进程任务表（默认）；csharp = 读 ForgeX.Api 的任务快照与事件流
       //（同一张 forgex.node_analysis_tasks，所以要求 PERSISTENCE_PROVIDER=postgres）。
-      // 创建与 SSE 仍在 Node，随 8.6c-2 创建链迁移。超时复用 RESOURCE_AUTHORITY_TIMEOUT_MS。
+      // 创建仍在 Node，随 8.6c-2b 创建链迁移。超时复用 RESOURCE_AUTHORITY_TIMEOUT_MS。
       analysisTasksAuthority: String(env.ANALYSIS_TASKS_AUTHORITY || "node").trim().toLowerCase(),
       resourceAuthorityTimeoutMs: num(env.RESOURCE_AUTHORITY_TIMEOUT_MS, 15000),
       // ── Stage 8.3：规则计算腿权威切流（迁移期双向开关）─────────────
