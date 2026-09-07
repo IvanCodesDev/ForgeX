@@ -103,6 +103,45 @@ internal static class DatasourceEndpoints
         return Results.Json(response, statusCode: StatusCodes.Status201Created);
     }
 
+    /// <summary>
+    /// Stage 8.6c-2b: the analysis-task host resolves its input dataset the way GetAsync does —
+    /// the built-in sample comes from code, everything else from the owner-scoped repository
+    /// (null when the repository is disabled, the id is unsafe, or the record is missing / foreign).
+    /// </summary>
+    internal static async Task<DatasourceRecord?> ResolveAsync(
+        IDatasourceRepository? datasources,
+        string tenantId,
+        string ownerId,
+        string id,
+        CancellationToken cancellationToken)
+    {
+        if (id == SampleId)
+        {
+            var sample = Sample.Value;
+            return new DatasourceRecord(
+                SampleId,
+                tenantId,
+                ownerId,
+                SampleName,
+                FarmDataset.Csv,
+                sample.Rows,
+                sample.Digest,
+                sample.Digest,
+                Array.Empty<string>(),
+                sample.Provenance,
+                SampleCreatedAt,
+                null,
+                Builtin: true);
+        }
+
+        if (datasources is null || !ResourceIds.IsSafe(id))
+        {
+            return null;
+        }
+
+        return await datasources.GetAsync(tenantId, ownerId, id, cancellationToken);
+    }
+
     public static async Task<IResult> GetAsync(HttpContext context, string id, IDatasourceRepository datasources)
     {
         var caller = CallerContextBoundary.GetRequired(context);

@@ -7,6 +7,7 @@
 //   file-collection —— JsonFileCollection / JsonFileDocument 语义
 //   shares-file     —— IShareRepository 的 file 腿（真 Kestrel + 同一套边界中间件 + 端点）
 //   datasources / knowledge / calibration —— file 腿；有 POSTGRES_URL 时再跑 postgres 腿
+//   analysis-tasks  —— 8.6c-2b 规则引擎腿：创建 → 进程内执行 → 快照 / 事件 / 恢复（仅 postgres，无 file provider）
 //   sweeper         —— ResourceSweeper 与 /metrics gauge
 // 产物：backend/artifacts/resource-authority-gate.json（legs / skipped 记录哪些腿真的跑过）。
 using ForgeX.ResourceGate;
@@ -21,6 +22,7 @@ try
     await DatasourcesSection.RunAsync(gate);
     await KnowledgeSection.RunAsync(gate);
     await CalibrationSection.RunAsync(gate);
+    await AnalysisTasksSection.RunAsync(gate);
     await SweeperSection.RunAsync(gate);
     await gate.WriteArtifactAsync();
 }

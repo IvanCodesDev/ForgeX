@@ -1,5 +1,8 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text.Json;
+using ForgeX.Analytics;
+using ForgeX.Application;
 using ForgeX.Contracts;
 using ForgeX.Infrastructure;
 
@@ -16,7 +19,123 @@ internal static class AnalysisTaskEndpoints
 {
     private const int DefaultLimit = 50;
     private const int MaxLimit = 200;
+    /// <summary>Node routes/analyze.js: readJson(req, 8 * 1024) and MAX_QUESTION = 500.</summary>
+    private const long MaxCreateBodyBytes = 8L * 1024;
+    private const int MaxQuestionLength = 500;
     private static readonly JsonSerializerOptions EventJsonOptions = new(JsonSerializerDefaults.Web);
+
+    /// <summary>Registers the analysis-task routes; shared by Program.cs and the ResourceGate so both wire the same handlers.</summary>
+    public static void Map(IEndpointRouteBuilder app)
+    {
+        app.MapPost("/api/v1/analysis-tasks", CreateAsync)
+            .WithName("CreateAnalysisTask")
+            .Accepts<AnalysisTaskCreateRequestDto>("application/json")
+            .Produces<AnalysisTaskAcceptedDto>(StatusCodes.Status202Accepted)
+            .Produces<ApiProblem>(StatusCodes.Status400BadRequest, "application/problem+json")
+            .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
+            .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json")
+            .ExcludeFromDescription();
+
+        app.MapGet("/api/v1/analysis-tasks", ListAsync)
+            .WithName("ListAnalysisTasks")
+            .Produces<AnalysisTaskListResponseDto>()
+            .Produces<ApiProblem>(StatusCodes.Status400BadRequest, "application/problem+json")
+            .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json");
+
+        app.MapGet("/api/v1/analysis-tasks/{id}", GetAsync)
+            .WithName("GetAnalysisTask")
+            .Produces<AnalysisTaskSnapshotDto>()
+            .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
+            .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
+
+        app.MapGet("/api/v1/analysis-tasks/{id}/events", EventsAsync)
+            .WithName("StreamAnalysisTaskEvents")
+            .Produces(StatusCodes.Status200OK, contentType: "text/event-stream")
+            .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
+            .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
+    }
+
+    /// <summary>
+    /// Stage 8.6c-2b (rules-engine leg): create and start a task. Validation repeats Node's POST
+    /// /api/analyze checks with the same messages; the dataset is resolved under the caller's
+    /// tenant / owner (foreign or missing → 404, the C# convention); stale "running" rows of this
+    /// owner are recovered first (Node's ready()); then the task is persisted as running and queued.
+    /// </summary>
+    public static async Task<IResult> CreateAsync(
+        HttpContext context,
+        PostgresAnalysisTaskRepository tasks,
+        AnalysisTaskQueue queue,
+        AnalysisTaskRuntime runtime,
+        AnalysisTaskOptions options)
+    {
+        var caller = CallerContextBoundary.GetRequired(context);
+        var body = await EndpointBodies.ReadJsonAsync<AnalysisTaskCreateRequestDto>(context, MaxCreateBodyBytes, "请求体过大");
+        if (body.Problem is not null)
+        {
+            return body.Problem;
+        }
+
+        var question = JsValue.Trim(body.Value?.Question ?? string.Empty);
+        if (question.Length == 0)
+        {
+            return ApiProblemResults.Create(context, 400, "question_required", "question 不能为空");
+        }
+        if (question.Length > MaxQuestionLength)
+        {
+            return ApiProblemResults.Create(context, 400, "question_too_long", "question 超过 " + MaxQuestionLength + " 字");
+        }
+
+        var datasourceId = string.IsNullOrEmpty(body.Value?.DatasourceId) ? "sample" : body.Value!.DatasourceId!;
+        var datasources = context.RequestServices.GetService<IDatasourceRepository>();
+        var datasource = await DatasourceEndpoints.ResolveAsync(datasources, caller.TenantId, caller.OwnerId, datasourceId, context.RequestAborted);
+        if (datasource is null)
+        {
+            return ApiProblemResults.Create(context, 404, "datasource_not_found", "数据源不存在或已过期，请重新上传");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        await tasks.RecoverStaleAsync(
+            caller.TenantId,
+            caller.OwnerId,
+            now - TimeSpan.FromMilliseconds(options.StaleRunningMs),
+            runtime.LiveIds,
+            context.RequestAborted);
+
+        var id = "t_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(8));
+        var record = new AnalysisTaskRecord(
+            id,
+            caller.TenantId,
+            caller.OwnerId,
+            question,
+            datasource.Id,
+            AnalysisTaskExecutor.Engine,
+            AnalysisTaskExecutor.Engine,
+            caller.TenantId,
+            "running",
+            0,
+            "running",
+            string.Empty,
+            null,
+            null,
+            null,
+            "[]",
+            now,
+            null,
+            now + TimeSpan.FromMilliseconds(options.TtlMs),
+            now);
+        await tasks.UpsertAsync(record, context.RequestAborted);
+        await queue.EnqueueAsync(
+            new AnalysisTaskWorkItem(record, datasource.Rows.Clone(), datasource.Provenance.Clone()),
+            context.RequestAborted);
+
+        var accepted = new AnalysisTaskAcceptedDto(
+            id,
+            AnalysisTaskExecutor.Engine,
+            WillUseAi: false,
+            Quota: null,
+            new AnalysisTaskLinksDto($"/api/v1/analysis-tasks/{id}", $"/api/v1/analysis-tasks/{id}/events"));
+        return Results.Json(accepted, statusCode: StatusCodes.Status202Accepted);
+    }
 
     public static async Task<IResult> ListAsync(HttpContext context, PostgresAnalysisTaskRepository tasks)
     {

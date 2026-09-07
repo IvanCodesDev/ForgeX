@@ -26,14 +26,17 @@ public sealed record AnalysisTaskRecord(
     DateTimeOffset UpdatedAt);
 
 /// <summary>
-/// Read-side access to forgex.node_analysis_tasks. Stage 8.1 boundary: the Node
-/// runtime still owns the computation and writes every snapshot (one upsert per
-/// progress event), so serving reads and event replay from this table gives C#
-/// live visibility without duplicating the write path. Same RLS contract as the
-/// Node store: per-transaction app.tenant_id / app.owner_id GUCs.
+/// Access to forgex.node_analysis_tasks. Stage 8.1 gave C# the read side (history, snapshot,
+/// event replay) of the snapshots Node upserts once per progress event. Stage 8.6c-2b adds the
+/// write side with the very same upsert shape, so a task created by C# and a task created by
+/// Node are indistinguishable rows: Node's PostgresAnalysisStore.ready() can still load them and
+/// the read endpoints serve both. Same RLS contract: per-transaction app.tenant_id / app.owner_id.
 /// </summary>
 public sealed class PostgresAnalysisTaskRepository : IAsyncDisposable
 {
+    /// <summary>Node PostgresAnalysisStore.ready() marks interrupted work with this exact message.</summary>
+    public const string InterruptedMessage = "服务重启时任务中断";
+
     private readonly PostgresSession _session;
 
     public PostgresAnalysisTaskRepository(string connectionString)
@@ -105,7 +108,93 @@ public sealed class PostgresAnalysisTaskRepository : IAsyncDisposable
             return await reader.ReadAsync(cancellationToken) ? Map(reader) : null;
         }, cancellationToken);
 
+    /// <summary>
+    /// Full-snapshot upsert — the same statement Node's PostgresAnalysisStore._save issues, so a
+    /// C#-owned task row is byte-compatible with a Node-owned one (Stage 8.6c-2b).
+    /// </summary>
+    public Task UpsertAsync(AnalysisTaskRecord record, CancellationToken cancellationToken) =>
+        _session.WithOwnerTransactionAsync(record.TenantId, record.OwnerId, async (connection, transaction) =>
+        {
+            await using var upsert = new NpgsqlCommand(
+                """
+                INSERT INTO forgex.node_analysis_tasks
+                  (id, tenant_id, owner_id, question, datasource_id, engine, provider, credential_scope,
+                   status, progress, phase, message, report_json, error_message, upstream_task_id,
+                   events_json, created_at_utc, finished_at_utc, expires_at_utc, updated_at_utc)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+                ON CONFLICT (id) DO UPDATE SET
+                  status=EXCLUDED.status, progress=EXCLUDED.progress, phase=EXCLUDED.phase,
+                  message=EXCLUDED.message, report_json=EXCLUDED.report_json,
+                  error_message=EXCLUDED.error_message, upstream_task_id=EXCLUDED.upstream_task_id,
+                  events_json=EXCLUDED.events_json, finished_at_utc=EXCLUDED.finished_at_utc,
+                  expires_at_utc=EXCLUDED.expires_at_utc, updated_at_utc=EXCLUDED.updated_at_utc
+                """,
+                connection,
+                transaction);
+            upsert.Parameters.Add(Text(record.Id));
+            upsert.Parameters.Add(Text(record.TenantId));
+            upsert.Parameters.Add(Text(record.OwnerId));
+            upsert.Parameters.Add(Text(record.Question));
+            upsert.Parameters.Add(Text(record.DatasourceId));
+            upsert.Parameters.Add(Text(record.Engine));
+            upsert.Parameters.Add(Text(record.Provider));
+            upsert.Parameters.Add(Text(record.CredentialScope));
+            upsert.Parameters.Add(Text(record.Status));
+            upsert.Parameters.Add(new NpgsqlParameter { Value = record.Progress, NpgsqlDbType = NpgsqlDbType.Double });
+            upsert.Parameters.Add(Text(record.Phase));
+            upsert.Parameters.Add(Text(record.Message));
+            upsert.Parameters.Add(NullableJsonb(record.ReportJson));
+            upsert.Parameters.Add(PostgresSession.NullableText(record.ErrorMessage));
+            upsert.Parameters.Add(PostgresSession.NullableText(record.UpstreamTaskId));
+            upsert.Parameters.Add(PostgresSession.Jsonb(record.EventsJson));
+            upsert.Parameters.Add(Timestamp(record.CreatedAt));
+            upsert.Parameters.Add(PostgresSession.NullableTimestamp(record.FinishedAt));
+            upsert.Parameters.Add(Timestamp(record.ExpiresAt));
+            upsert.Parameters.Add(Timestamp(record.UpdatedAt));
+            await upsert.ExecuteNonQueryAsync(cancellationToken);
+            return true;
+        }, cancellationToken);
+
+    /// <summary>
+    /// Node's ready() recovery, made RLS-friendly: for one (tenant, owner) mark running rows that
+    /// nobody has touched since <paramref name="staleBefore"/> as failed with Node's exact message.
+    /// The staleness guard is what keeps a concurrent live worker's task alive; the caller passes
+    /// the ids it is executing itself so they are never recovered from under it.
+    /// </summary>
+    public Task<int> RecoverStaleAsync(
+        string tenantId,
+        string ownerId,
+        DateTimeOffset staleBefore,
+        IReadOnlyCollection<string> liveIds,
+        CancellationToken cancellationToken) =>
+        _session.WithOwnerTransactionAsync(tenantId, ownerId, async (connection, transaction) =>
+        {
+            await using var update = new NpgsqlCommand(
+                """
+                UPDATE forgex.node_analysis_tasks
+                SET status='failed', error_message=$4, finished_at_utc=$5, progress=1, phase='recovered', updated_at_utc=$5
+                WHERE tenant_id=$1 AND owner_id=$2 AND status='running' AND updated_at_utc < $3 AND NOT (id = ANY($6))
+                """,
+                connection,
+                transaction);
+            var now = DateTimeOffset.UtcNow;
+            update.Parameters.Add(Text(tenantId));
+            update.Parameters.Add(Text(ownerId));
+            update.Parameters.Add(Timestamp(staleBefore));
+            update.Parameters.Add(Text(InterruptedMessage));
+            update.Parameters.Add(Timestamp(now));
+            update.Parameters.Add(new NpgsqlParameter
+            {
+                Value = liveIds.ToArray(),
+                NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text,
+            });
+            return await update.ExecuteNonQueryAsync(cancellationToken);
+        }, cancellationToken);
+
     public ValueTask DisposeAsync() => _session.DisposeAsync();
+
+    private static NpgsqlParameter NullableJsonb(string? json) =>
+        new() { Value = (object?)json ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Jsonb };
 
     private static AnalysisTaskRecord Map(NpgsqlDataReader reader)
     {

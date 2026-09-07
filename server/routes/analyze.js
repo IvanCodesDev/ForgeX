@@ -11,18 +11,18 @@
 const { HttpError, readJson, sendJson, sseStart, sseSend } = require("../lib/http");
 const { resolveIdentity, requireOwner } = require("../lib/identity");
 const { parseAiOverride } = require("../lib/ai-endpoint");
-const { authorityRequest, authorityStream } = require("../lib/authority-client");
+const { authorityRequest, authorityStream, authorityProblem } = require("../lib/authority-client");
 const { createSseParser } = require("../lib/sse");
+const { readSnapshot, AUTHORITY_UNAVAILABLE } = require("../lib/analysis-tasks-client");
 
 const MAX_QUESTION = 500;
-const AUTHORITY_UNAVAILABLE = "分析任务服务暂不可用，请稍后再试";
 
 /* C# 的 done 帧是快照 DTO；事件数组里没有终态事件（例如重启恢复成 failed 的任务）时，
    按 Node _finish / _fail 的形状补一条，前端才会收口。 */
 function terminalEventFromSnapshot(snapshot, lastSeq) {
   const base = { seq: lastSeq + 1, ts: Date.now(), done: true };
   if (snapshot && snapshot.status === "failed") {
-    const error = snapshot.errorMessage || "分析失败";
+    const error = snapshot.error || "分析失败";
     return Object.assign(base, { error, message: "分析失败：" + error });
   }
   return Object.assign(base, { progress: 1, message: "分析完成" });
@@ -103,24 +103,26 @@ async function proxyEventStream(req, res, cfg, log, identity, taskId, rc) {
   });
 }
 
-/* csharp 模式：经可信通道读一份任务快照。归属由 C# 按租户 + owner 隔离，他人任务一律 404。 */
-async function readSnapshot(cfg, log, identity, taskId, rc) {
+/* csharp 模式（8.6c-2b 规则引擎腿）：把创建交给 C#。身份 / 限流 / question 校验仍在 Node，
+   数据源归属由 C# 按租户 + owner 判定（他人数据源 → 404，与 8.6a A7 同一取舍）。 */
+async function createOnAuthority(cfg, log, identity, question, datasourceId, rc) {
   let response;
   try {
-    response = await authorityRequest(cfg, identity, "GET", "/api/v1/analysis-tasks/" + taskId, null, {
+    response = await authorityRequest(cfg, identity, "POST", "/api/v1/analysis-tasks", { question, datasourceId }, {
       timeoutMs: cfg.resourceAuthorityTimeoutMs,
     });
   } catch (error) {
-    log.warn("analysis tasks authority read failed", { reqId: rc.reqId, error: error.message });
+    log.warn("analysis tasks authority create failed", { reqId: rc.reqId, error: error.message });
     throw new HttpError(502, AUTHORITY_UNAVAILABLE);
   }
-  if (response.status === 404) throw new HttpError(404, "任务不存在或已过期");
-  const snapshot = response.status === 200 ? response.json() : null;
-  if (!snapshot || typeof snapshot !== "object") {
-    log.warn("analysis tasks authority read rejected", { reqId: rc.reqId, status: response.status });
-    throw new HttpError(502, AUTHORITY_UNAVAILABLE);
+  const accepted = response.status === 202 ? response.json() : null;
+  if (accepted && typeof accepted === "object" && typeof accepted.id === "string") return accepted;
+  const problem = authorityProblem(response);
+  if (problem && problem.status >= 400 && problem.status < 500 && problem.title) {
+    throw new HttpError(problem.status, problem.title);
   }
-  return snapshot;
+  log.warn("analysis tasks authority create rejected", { reqId: rc.reqId, status: response.status });
+  throw new HttpError(502, AUTHORITY_UNAVAILABLE);
 }
 
 function register(router, ctx) {
@@ -140,6 +142,23 @@ function register(router, ctx) {
     // 用户自带 OpenAI 兼容端点：校验合法后本次请求覆盖进程级 AI 配置；
     // 密钥只进 provider 闭包，不进任务快照、日志或任何响应。
     const aiOverride = parseAiOverride(body);
+
+    // 8.6c-2b 规则引擎腿：不走 AI 的任务由 C# 创建并执行。AI 任务（进程级 provider 或自带端点）
+    // 仍在 Node 创建——C# 侧的 AI provider / 成本闸门 / 缓存随 8.6c-2b-ii 迁移；它们照样落库到同一张表，
+    // 结果 / 轮询 / 进度流依旧从 C# 读。
+    if (csharp && !aiOverride && !tasks.usesAi) {
+      const accepted = await createOnAuthority(cfg, log, identity, question, body.datasourceId || "sample", rc);
+      metrics.tasks++;
+      sendJson(res, 202, {
+        taskId: accepted.id,
+        engine: accepted.engine,
+        authenticated: identity.authenticated,
+        willUseAi: false,
+        quota: null,
+      });
+      return;
+    }
+
     const ds = await datasources.get(body.datasourceId || "sample", identity.tenantId);
     if (!ds) throw new HttpError(404, "数据源不存在或已过期，请重新上传");
     if (!ds.builtin) requireOwner(ds, identity, ctx, "datasource", ds.id);
@@ -186,7 +205,8 @@ function register(router, ctx) {
       // 落库按任务串行异步进行：Node 内存已 done 而快照可能滞后一个 DB 往返，此时如实返回 202，调用方按既有轮询语义重试。
       const snapshot = await readSnapshot(cfg, log, identity, m[1], rc);
       if (snapshot.status === "running") return sendJson(res, 202, { status: "running" });
-      if (snapshot.status === "failed") return sendJson(res, 502, { error: snapshot.errorMessage || "分析失败" });
+      // C# 快照 DTO 的失败文案字段叫 error（AnalysisTaskSnapshotDto），不是仓储记录里的 errorMessage。
+      if (snapshot.status === "failed") return sendJson(res, 502, { error: snapshot.error || "分析失败" });
       if (snapshot.status === "done") return sendJson(res, 200, snapshot.report);
       log.warn("analysis tasks authority snapshot has unknown status", { reqId: rc.reqId, status: snapshot.status });
       throw new HttpError(502, AUTHORITY_UNAVAILABLE);
@@ -211,7 +231,7 @@ function register(router, ctx) {
         engine: snapshot.engine,
         progress: snapshot.progress || 0,
         message: snapshot.message || "",
-        error: snapshot.errorMessage || undefined,
+        error: snapshot.error || undefined,
       });
     }
     if (typeof tasks.ready === "function") await tasks.ready(identity.tenantId);

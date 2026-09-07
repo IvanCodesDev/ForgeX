@@ -9,6 +9,31 @@
 
 ## [Unreleased]
 
+### Stage 8.6c-2b-i：`/api/analyze` 创建链迁 C#（规则引擎腿）
+- 创建链按用户拍板「先规则引擎腿，再 AI provider / 成本闸门 / 缓存（2b-ii）」分两步。本刀：`ANALYSIS_TASKS_AUTHORITY=csharp`
+  时不走 AI 的 `POST /api/analyze`（进程级 provider 为规则引擎且请求未自带 AI 端点）由 Node 校验身份 / 限流 / question 后
+  转发 C# `POST /api/v1/analysis-tasks`，202 改写为既有形状 `{taskId, engine, authenticated, willUseAi:false, quota:null}`；
+  C# 4xx problem 原样映射、网络错误 502。AI 任务仍在 Node 创建（同样落到同一张表，读侧照旧走 C#）。
+- C# 侧新增任务宿主 `AnalysisTaskQueue`（有界 Channel，满则背压而非 503——规则引擎任务不花钱，Node 从不拒绝）+
+  `AnalysisTaskWorker`（`AnalysisTasks__Concurrency`，默认 2）+ `AnalysisTaskExecutor`：逐字复刻 Node `localProvider` 的三段进度
+  （intent 0.2 / aggregate 0.6 / generate 0.9）与 `_finish` / `_fail` 终态事件，每事件一次全快照 UPSERT（与 Node
+  `PostgresAnalysisStore._save` 同一条 SQL，连 failed 行 phase 仍为 running 的 Node 怪癖都保留）；报告 = C# `AnalyticsReportEngine`
+  输出按 analytics 线上形状序列化后 `engine=server-rules`、数据源 provenance **原样**挂回（JS 引擎就是原样拷贝，
+  含 `badge:null` 这类 C# 强类型装不下的形状）、`taskId` / `cached:false` 盖章、`material_cmp / corr_layer / cost_trend`
+  三个 JS 从不写 `highlight` 键的意图去掉空 `highlight`。`PostgresAnalysisTaskRepository` 增 `UpsertAsync` 与
+  `RecoverStaleAsync`（Node `ready()` 的 RLS 友好版：本 owner 超过 `AnalysisTasks__StaleRunningMs`（默认 60 s）未更新的
+  running 行在下次创建时标为 failed「服务重启时任务中断」，本进程正在执行的 id 永不被误杀）。表沿用 `node_analysis_tasks`。
+- 8.6c-1 契约修正：C# 快照 DTO 的失败文案字段是 `error`（不是仓储记录的 `errorMessage`），Node 门面与假 sidecar 测试一并改正——
+  之前的双跑没有失败任务所以没暴露，本刀的假 sidecar 改为按真实 DTO 字段名造数据。
+- 分享路由在 `ANALYSIS_TASKS_AUTHORITY=csharp` 时改问 C# 快照判定「任务存在 / 归属 / 已完成」（C# 创建的任务不在 Node
+  TaskStore 内存里），他人任务 403 → 404 加入 A7 同源豁免（`share-create-foreign-task` / `share-create-anonymous`，仅 postgres 腿分歧）。
+- 证据：ResourceGate 新增 `analysis-tasks-postgres` 段 19 项（校验文案、202 形状、执行到 done 的快照 / 报告 JS 形状 / provenance /
+  事件重放 5 帧、上传数据源与他人 404、过期 running 恢复且新鲜 running 不被误杀），245（file）/ **358（file+postgres）**；
+  双跑 postgres 腿 Node B 的任务全部由 C# 创建并用 C# 规则引擎执行，与 Node A（Node 创建 + JS 引擎）比对报告 / 事件 / 快照：
+  84 例 × 两腿 **158 一致 / 10 豁免 / 0 失败**。比对新增相对误差 1e-9 的浮点判等——JS 与 .NET 的 exp/pow 在 p 值最后两位
+  有效数字上不同（5.530939016401898e-6 vs …812），是两套统计核的浮点实现差异而非语义差异。
+  `tests/analysis-tasks-authority.test.js` 30 → 37 项（创建转发体 / 头 / 202 改写 / 缺省 sample / C# 404 与 5xx 映射 / 不可达）。
+
 ### Stage 8.6c-2a：分析任务进度流经 C# 重新组帧（ANALYSIS_TASKS_AUTHORITY 覆盖 /stream）
 - 8.6c-1 把结果 / 轮询读到 C# 后，`GET /api/analyze/:id/stream` 是读侧最后一条留在 Node 的路由。本刀在
   `ANALYSIS_TASKS_AUTHORITY=csharp` 时让它消费 C# `GET /api/v1/analysis-tasks/{id}/events`（`id/event` 命名帧、

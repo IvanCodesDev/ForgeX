@@ -114,8 +114,16 @@ as a full HTML document, so a `csharp` cut-over renders byte-for-byte the same c
 
 `ANALYSIS_TASKS_AUTHORITY=csharp` moves the read routes — `GET /api/analyze/:id/result`, the
 `GET /api/analyze/:id` poll and (since 8.6c-2a) the `/stream` SSE — onto the C# endpoints
-`GET /api/v1/analysis-tasks/{id}` and `/{id}/events`. It is read-only by design: `POST /api/analyze`
-stays in Node until the creation chain moves in 8.6c-2b. The two SSE dialects differ (Node emits
+`GET /api/v1/analysis-tasks/{id}` and `/{id}/events`. Since 8.6c-2b-i the switch also moves creation
+for the rules-engine leg: a `POST /api/analyze` that will not use AI (process provider is the rules
+engine and the request brings no BYO endpoint) is validated by Node and created through C#
+`POST /api/v1/analysis-tasks`, where an in-process host executes it with the C# analytics engine and
+persists the same per-event snapshots Node wrote; AI tasks stay in Node until 8.6c-2b-ii brings the
+provider, cost gate and cache over. Host tuning on `forgex-api`: `AnalysisTasks__Concurrency` (2),
+`AnalysisTasks__QueueCapacity` (256, a full queue back-pressures instead of answering 503),
+`AnalysisTasks__TtlMs` (3600000, Node's `TASK_TTL_MS`), `AnalysisTasks__StaleRunningMs` (60000 — a
+running row nobody updated for that long is recovered as failed「服务重启时任务中断」on the owner's
+next create, Node's `ready()` semantics without cross-tenant access). The two SSE dialects differ (Node emits
 unnamed `data:` frames consumed by `EventSource.onmessage`, C# emits `id/event` named frames), so Node
 re-frames the C# stream: progress/message frames are forwarded verbatim (their payload is the very
 event object Node persisted), heartbeats pass through, and C#'s closing `done` snapshot is only turned

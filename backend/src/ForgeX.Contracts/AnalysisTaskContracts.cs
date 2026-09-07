@@ -34,3 +34,23 @@ public sealed record AnalysisTaskLinksDto(
 
 public sealed record AnalysisTaskListResponseDto(
     [property: JsonPropertyName("items")] IReadOnlyList<AnalysisTaskSnapshotDto> Items);
+
+/// <summary>
+/// Stage 8.6c-2b: create an analysis task on the C# authority (rules-engine leg). The Node
+/// facade has already validated identity and question; C# validates again because it is the
+/// authority, then executes the task in-process and persists the same snapshots Node did.
+/// </summary>
+public sealed record AnalysisTaskCreateRequestDto(
+    [property: JsonPropertyName("question")] string? Question,
+    [property: JsonPropertyName("datasourceId")] string? DatasourceId);
+
+/// <summary>
+/// 202 body for a created task. Field names follow Node's POST /api/analyze response so the
+/// facade only renames <c>id</c> → <c>taskId</c> and adds its own <c>authenticated</c> flag.
+/// </summary>
+public sealed record AnalysisTaskAcceptedDto(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("engine")] string Engine,
+    [property: JsonPropertyName("willUseAi")] bool WillUseAi,
+    [property: JsonPropertyName("quota")] JsonElement? Quota,
+    [property: JsonPropertyName("links")] AnalysisTaskLinksDto Links);

@@ -9,6 +9,7 @@
 const { HttpError, readJson, sendJson, escapeHtml } = require("../lib/http");
 const { resolveIdentity, requireOwner } = require("../lib/identity");
 const { authorityRequest: authorityCall } = require("../lib/authority-client");
+const { readSnapshot } = require("../lib/analysis-tasks-client");
 
 /* 小体量 JSON 调用（分享创建/撤销都在 KB 级），不做流式；共用 Stage 8.6a 抽出的客户端。 */
 function authorityRequest(cfg, identity, method, pathname, payload) {
@@ -19,17 +20,37 @@ function parseAuthorityJson(response) {
   return response.json();
 }
 
+/* 8.6c-2b：ANALYSIS_TASKS_AUTHORITY=csharp 时任务由 C# 创建、不在 Node TaskStore 内存里，
+   「任务存在 / 归属 / 已完成」的判定改问 C# 快照（他人任务由 C# 隔离成 404）。 */
+async function resolveTask(ctx, identity, taskId, rc) {
+  const { tasks, cfg, log } = ctx;
+  if (cfg.analysisTasksAuthority === "csharp") {
+    const snapshot = await readSnapshot(cfg, log, identity, taskId, rc);
+    if (snapshot.status !== "done") throw new HttpError(409, "任务尚未完成，无法分享");
+    return {
+      id: snapshot.id,
+      report: snapshot.report,
+      question: snapshot.question,
+      engine: snapshot.engine,
+      upstreamTaskId: snapshot.upstreamTaskId || null,
+      caller: identity.caller,
+    };
+  }
+  if (typeof tasks.ready === "function") await tasks.ready(identity.tenantId);
+  const task = tasks.get(taskId);
+  if (!task) throw new HttpError(404, "任务不存在或已过期");
+  requireOwner({ owner: task.caller, ownerId: task.ownerId }, identity, ctx, "analysis-task", task.id);
+  if (task.status !== "done") throw new HttpError(409, "任务尚未完成，无法分享");
+  return task;
+}
+
 function register(router, ctx) {
-  const { tasks, shares, cfg, log } = ctx;
+  const { shares, cfg, log } = ctx;
   const csharp = cfg.sharesAuthority === "csharp";
 
   router.add("POST", /^\/api\/share\/([A-Za-z0-9_]+)$/, async (req, res, m, rc) => {
     const identity = await resolveIdentity(req, rc, ctx);
-    if (typeof tasks.ready === "function") await tasks.ready(identity.tenantId);
-    const task = tasks.get(m[1]);
-    if (!task) throw new HttpError(404, "任务不存在或已过期");
-    requireOwner({ owner: task.caller, ownerId: task.ownerId }, identity, ctx, "analysis-task", task.id);
-    if (task.status !== "done") throw new HttpError(409, "任务尚未完成，无法分享");
+    const task = await resolveTask(ctx, identity, m[1], rc);
 
     let out;
     if (csharp) {

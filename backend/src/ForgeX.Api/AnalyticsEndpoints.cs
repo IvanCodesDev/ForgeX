@@ -14,7 +14,8 @@ internal static class AnalyticsEndpoints
     private const int MaxQuestionLength = 500;
     private const int MaxTextLength = 512;
 
-    private static readonly JsonSerializerOptions ResponseJsonOptions = new(JsonSerializerDefaults.Web)
+    /// <summary>Report wire shape shared with the in-process analysis-task host (Stage 8.6c-2b).</summary>
+    internal static readonly JsonSerializerOptions ResponseJsonOptions = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.Never,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },

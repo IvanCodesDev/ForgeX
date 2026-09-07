@@ -6,13 +6,14 @@
  *   [3] csharp 模式：
  *       - 结果与轮询经可信通道读 GET /api/v1/analysis-tasks/{id}（tenant/owner 匿名化哈希、不泄漏 cookie / authorization），
  *         key 身份与匿名 ip 身份的头派生都与 §7.3 一致；
- *       - 快照 → Node 形状映射：done → 200 报告原样；running → 202；failed → 502 + errorMessage（缺省「分析失败」）；
+ *       - 快照 → Node 形状映射：done → 200 报告原样；running → 202；failed → 502 + error 文案（缺省「分析失败」）；
  *         C# 404 → 404「任务不存在或已过期」；C# 5xx → 502「分析任务服务暂不可用，请稍后再试」；
  *       - 轮询形状 { taskId, status, engine, progress, message, error? }；
  *       - 8.6c-2a：/stream 消费 C# /events 命名帧并重新组成无名 data: 帧——progress/message 帧原样转发、心跳转发、
  *         C# done 快照帧不转发（事件里已有终态）或合成 Node 形状终态（重启恢复的 failed 任务）、Last-Event-ID 透传、
  *         C# 404 / 5xx 在发头前映射为 404 / 502；
- *       - POST 创建仍在 Node 本地（随 8.6c-2b 迁移）；
+ *       - 8.6c-2b 规则引擎腿：POST /api/analyze 由 Node 校验（空 / 超长 400 不转发）后转发 POST /api/v1/analysis-tasks
+ *         （question 已 trim、datasourceId 缺省 sample），202 改写为 Node 形状，C# 404 / 5xx 映射；AI 任务仍在 Node 本地；
  *   [4] 超时（复用 RESOURCE_AUTHORITY_TIMEOUT_MS）与 sidecar 不可达 → 502。
  */
 "use strict";
@@ -81,6 +82,8 @@ const MISSING_ID = "t_missing00000000000";
 const BROKEN_ID = "t_broken000000000000";
 const SLOW_ID = "t_slow00000000000000";
 const RECOVERED_ID = "t_recovered000000000";
+const CREATED_ID = "t_created00000000000";
+const DS_MISSING = "ds_" + "0".repeat(24);
 // C# /events 重放的就是 Node 落库的事件对象：前两条是 progress 帧（有 stage），第三条是 Node 的终态事件（无 stage → message 帧）。
 const STREAM_EVENTS = [
   { seq: 1, ts: 1788782400000, stage: "queued", message: "已排队", progress: 0.03 },
@@ -97,6 +100,8 @@ const REPORT = {
 };
 const CSV = "machine,material,status,duration_min\nM1,PLA,success,42\nM2,ABS,fail,55\nM1,PLA,fail,50\n";
 
+/* 字段名对齐 C# AnalysisTaskSnapshotDto（backend/src/ForgeX.Contracts/AnalysisTaskContracts.cs）：
+   失败文案叫 error（不是仓储记录的 errorMessage），序号叫 lastEventSeq，时间戳带 Utc 后缀。 */
 function snapshot(id, status, extra) {
   return {
     id,
@@ -108,13 +113,13 @@ function snapshot(id, status, extra) {
     progress: status === "running" ? 0.4 : 1,
     phase: status === "running" ? "engine" : status,
     message: status === "running" ? "规则引擎计算中" : status === "done" ? "分析完成" : "分析失败",
-    lastSequence: 4,
+    lastEventSeq: 4,
     report: status === "done" ? REPORT : null,
-    errorMessage: null,
+    error: null,
     upstreamTaskId: null,
-    createdAt: "2026-09-06T12:00:00Z",
-    finishedAt: status === "running" ? null : "2026-09-06T12:00:01Z",
-    expiresAt: "2026-09-06T13:00:00Z",
+    createdAtUtc: "2026-09-06T12:00:00Z",
+    finishedAtUtc: status === "running" ? null : "2026-09-06T12:00:01Z",
+    expiresAtUtc: "2026-09-06T13:00:00Z",
     links: { self: "/api/v1/analysis-tasks/" + id, events: "/api/v1/analysis-tasks/" + id + "/events" },
     ...(extra || {}),
   };
@@ -142,8 +147,29 @@ function createFakeSidecar() {
     const chunks = [];
     req.on("data", (chunk) => chunks.push(chunk));
     req.on("end", () => {
-      observed.push({ method: req.method, url: req.url, headers: req.headers, body: Buffer.concat(chunks).toString("utf8") });
+      const raw = Buffer.concat(chunks).toString("utf8");
+      let parsedBody;
+      try {
+        parsedBody = raw ? JSON.parse(raw) : null;
+      } catch {
+        parsedBody = raw;
+      }
+      observed.push({ method: req.method, url: req.url, headers: req.headers, body: parsedBody });
       const route = req.method + " " + req.url.split("?")[0];
+      if (route === "POST /api/v1/analysis-tasks") {
+        // 8.6c-2b 规则引擎腿：C# 校验数据源归属并创建任务。
+        if (parsedBody && parsedBody.datasourceId === DS_MISSING) {
+          return problem(res, 404, "datasource_not_found", "数据源不存在或已过期，请重新上传");
+        }
+        if (parsedBody && parsedBody.question === "boom") return problem(res, 500, "internal", "boom");
+        return json(res, 202, {
+          id: CREATED_ID,
+          engine: "server-rules",
+          willUseAi: false,
+          quota: null,
+          links: { self: "/api/v1/analysis-tasks/" + CREATED_ID, events: "/api/v1/analysis-tasks/" + CREATED_ID + "/events" },
+        });
+      }
       const prefix = "GET /api/v1/analysis-tasks/";
       if (!route.startsWith(prefix)) return json(res, 501, { error: "unexpected sidecar request: " + route });
       let id = route.slice(prefix.length);
@@ -155,7 +181,7 @@ function createFakeSidecar() {
         if (id === RECOVERED_ID) {
           // 重启恢复成 failed 的任务：事件里没有终态事件，只有 C# 自己的 done 快照帧。
           sseFrame(res, 1, "progress", STREAM_EVENTS[0]);
-          sseFrame(res, 2, "done", snapshot(id, "failed", { errorMessage: "服务重启时任务中断", report: null }));
+          sseFrame(res, 2, "done", snapshot(id, "failed", { error: "服务重启时任务中断", report: null }));
           return res.end();
         }
         // Last-Event-ID 续传：只重放 seq 更大的事件（与 C# 一致）；心跳注释夹在中间。
@@ -170,7 +196,7 @@ function createFakeSidecar() {
       }
       if (id === DONE_ID) return json(res, 200, snapshot(id, "done"));
       if (id === RUNNING_ID) return json(res, 200, snapshot(id, "running"));
-      if (id === FAILED_ID) return json(res, 200, snapshot(id, "failed", { errorMessage: "上游超时" }));
+      if (id === FAILED_ID) return json(res, 200, snapshot(id, "failed", { error: "上游超时" }));
       if (id === FAILED_NOMSG_ID) return json(res, 200, snapshot(id, "failed"));
       if (id === MISSING_ID) return problem(res, 404, "analysis_task_not_found", "Analysis task not found");
       if (id === BROKEN_ID) return problem(res, 500, "internal", "boom");
@@ -417,7 +443,7 @@ async function main() {
     const running = await getJson(base, "/api/analyze/" + RUNNING_ID + "/result", alphaAuth);
     check("running → 202 {status: running}", running.status === 202 && deepEqual(running.json, { status: "running" }), JSON.stringify(running.json));
     const failedTask = await getJson(base, "/api/analyze/" + FAILED_ID + "/result", alphaAuth);
-    check("failed → 502 + errorMessage", failedTask.status === 502 && failedTask.json.error === "上游超时", JSON.stringify(failedTask.json));
+    check("failed → 502 + error 文案", failedTask.status === 502 && failedTask.json.error === "上游超时", JSON.stringify(failedTask.json));
     const failedNoMsg = await getJson(base, "/api/analyze/" + FAILED_NOMSG_ID + "/result", alphaAuth);
     check("failed 无文案 → 502「分析失败」", failedNoMsg.status === 502 && failedNoMsg.json.error === "分析失败", JSON.stringify(failedNoMsg.json));
     const missing = await getJson(base, "/api/analyze/" + MISSING_ID + "/result", alphaAuth);
@@ -501,14 +527,50 @@ async function main() {
       JSON.stringify([streamBroken.status, streamBroken.json])
     );
 
-    // 创建仍在 Node
+    // 创建（8.6c-2b 规则引擎腿）：Node 先校验，再交给 C# 创建并执行
     const before = sidecar.observed.length;
-    const create = await postJson(base, "/api/analyze", { question: "" }, alphaAuth);
+    const emptyQuestion = await postJson(base, "/api/analyze", { question: "  " }, alphaAuth);
     check(
-      "POST /api/analyze 仍由 Node 本地校验（question 为空 400，不转发）",
-      create.status === 400 && create.json.error === "question 不能为空" && sidecar.observed.length === before,
-      JSON.stringify(create.json)
+      "question 为空由 Node 本地 400，不转发",
+      emptyQuestion.status === 400 && emptyQuestion.json.error === "question 不能为空" && sidecar.observed.length === before,
+      JSON.stringify(emptyQuestion.json)
     );
+    const longQuestion = await postJson(base, "/api/analyze", { question: "问".repeat(501) }, alphaAuth);
+    check(
+      "question 超长由 Node 本地 400，不转发",
+      longQuestion.status === 400 && longQuestion.json.error === "question 超过 500 字" && sidecar.observed.length === before,
+      JSON.stringify(longQuestion.json)
+    );
+    const created = await postJson(base, "/api/analyze", { question: "  哪台机器失败率最高？ ", datasourceId: "sample" }, { ...alphaAuth, Cookie: "session-probe=1" });
+    const createdSeen = last();
+    check(
+      "创建转发到 POST /api/v1/analysis-tasks（question 已 trim），携带匿名化 tenant/owner，不泄漏 cookie / authorization",
+      created.status === 202 && createdSeen && createdSeen.method === "POST" && createdSeen.url === "/api/v1/analysis-tasks" &&
+        createdSeen.body && createdSeen.body.question === "哪台机器失败率最高？" && createdSeen.body.datasourceId === "sample" &&
+        createdSeen.headers["x-forgex-internal-token"] === INTERNAL_SECRET &&
+        createdSeen.headers["x-forgex-owner-id"] === opaque("ow_", "key:" + alphaId) &&
+        !createdSeen.headers.cookie && !createdSeen.headers.authorization,
+      JSON.stringify([created.status, createdSeen && createdSeen.body, createdSeen && createdSeen.headers])
+    );
+    check(
+      "202 改写为 Node 形状：taskId / engine / authenticated / willUseAi=false / quota=null",
+      deepEqual(created.json, { taskId: CREATED_ID, engine: "server-rules", authenticated: true, willUseAi: false, quota: null }),
+      JSON.stringify(created.json)
+    );
+    const defaultDatasource = await postJson(base, "/api/analyze", { question: "x" }, alphaAuth);
+    check(
+      "未指定 datasourceId 时转发 sample",
+      defaultDatasource.status === 202 && last().body.datasourceId === "sample",
+      JSON.stringify(last().body)
+    );
+    const missingDatasource = await postJson(base, "/api/analyze", { question: "x", datasourceId: DS_MISSING }, alphaAuth);
+    check(
+      "C# 404 problem → 404 数据源不存在或已过期，请重新上传",
+      missingDatasource.status === 404 && missingDatasource.json.error === "数据源不存在或已过期，请重新上传",
+      JSON.stringify(missingDatasource.json)
+    );
+    const boom = await postJson(base, "/api/analyze", { question: "boom" }, alphaAuth);
+    check("C# 500 → 创建 502 分析任务服务暂不可用", boom.status === 502 && boom.json.error === "分析任务服务暂不可用，请稍后再试", JSON.stringify(boom.json));
   } finally {
     await csharpApp.close();
   }
@@ -557,6 +619,8 @@ async function main() {
       stream.status === 502 && stream.json && stream.json.error === "分析任务服务暂不可用，请稍后再试",
       JSON.stringify([stream.status, stream.json])
     );
+    const create = await postJson(downBase, "/api/analyze", { question: "x" }, alphaAuth);
+    check("不可达：创建 502", create.status === 502 && create.json.error === "分析任务服务暂不可用，请稍后再试", JSON.stringify(create.json));
   } finally {
     await downApp.close();
   }

@@ -81,6 +81,22 @@ var analysisTasksEnabled = analysisTasksProvider == "postgres";
 if (analysisTasksEnabled)
 {
     builder.Services.AddSingleton(_ => new PostgresAnalysisTaskRepository(analysisTasksPostgresUrl));
+    // Stage 8.6c-2b：创建链的规则引擎腿——C# 进程内执行、逐事件 UPSERT 同一张表。
+    // TtlMs 对齐 Node TASK_TTL_MS（默认 1 小时）；Concurrency / QueueCapacity 对齐 G-code 作业宿主的取值范围；
+    // StaleRunningMs 是「多久没更新的 running 行视为被中断」的恢复阈值（Node ready() 的 RLS 友好版）。
+    var analysisTtlMs = ReadLong(builder.Configuration, "AnalysisTasks:TtlMs", AnalysisTaskOptions.DefaultTtlMs);
+    var analysisConcurrency = ReadInt(builder.Configuration, "AnalysisTasks:Concurrency", AnalysisTaskOptions.DefaultConcurrency);
+    var analysisQueueCapacity = ReadInt(builder.Configuration, "AnalysisTasks:QueueCapacity", AnalysisTaskOptions.DefaultQueueCapacity);
+    var analysisStaleMs = ReadLong(builder.Configuration, "AnalysisTasks:StaleRunningMs", AnalysisTaskOptions.DefaultStaleRunningMs);
+    if (analysisTtlMs < 1 || analysisConcurrency is < 1 or > 64 || analysisQueueCapacity is < 1 or > 4096 || analysisStaleMs < 1000)
+    {
+        throw new InvalidOperationException(
+            "AnalysisTasks:TtlMs must be positive, AnalysisTasks:Concurrency 1..64, AnalysisTasks:QueueCapacity 1..4096 and AnalysisTasks:StaleRunningMs >= 1000.");
+    }
+    builder.Services.AddSingleton(new AnalysisTaskOptions(analysisTtlMs, analysisConcurrency, analysisQueueCapacity, analysisStaleMs));
+    builder.Services.AddSingleton(new AnalysisTaskQueue(analysisQueueCapacity));
+    builder.Services.AddSingleton<AnalysisTaskRuntime>();
+    builder.Services.AddHostedService<AnalysisTaskWorker>();
 }
 
 // ── Stage 8.6a：数据源 / 知识库迁 C#（V2.0 手册 §4.2 第 6 项 a/b）─────────────
@@ -483,23 +499,7 @@ if (calibrationsProvider.Enabled)
 
 if (analysisTasksEnabled)
 {
-    app.MapGet("/api/v1/analysis-tasks", AnalysisTaskEndpoints.ListAsync)
-        .WithName("ListAnalysisTasks")
-        .Produces<AnalysisTaskListResponseDto>()
-        .Produces<ApiProblem>(StatusCodes.Status400BadRequest, "application/problem+json")
-        .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json");
-
-    app.MapGet("/api/v1/analysis-tasks/{id}", AnalysisTaskEndpoints.GetAsync)
-        .WithName("GetAnalysisTask")
-        .Produces<AnalysisTaskSnapshotDto>()
-        .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
-        .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
-
-    app.MapGet("/api/v1/analysis-tasks/{id}/events", AnalysisTaskEndpoints.EventsAsync)
-        .WithName("StreamAnalysisTaskEvents")
-        .Produces(StatusCodes.Status200OK, contentType: "text/event-stream")
-        .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
-        .Produces<ApiProblem>(StatusCodes.Status404NotFound, "application/problem+json");
+    AnalysisTaskEndpoints.Map(app);
 }
 
 app.Run();

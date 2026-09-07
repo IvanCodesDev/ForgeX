@@ -8,10 +8,11 @@
    把各实例的 key 摘要映射为角色占位符），`hits[].score` 与 `digest` 精确相等。
    分享公开页是 HTML：取全文、把字符实体规范化后整体比对（Node escapeHtml 出 `&#39;`，
    .NET HtmlEncoder 出 `&#x27;` 与非 ASCII 数字实体——语义同、字节不同）。
-   分析任务只读切流（8.6c-1 结果 / 轮询，8.6c-2a 进度流）：C# 只有 postgres provider，所以只有 postgres 腿的
-   Node B 走 ANALYSIS_TASKS_AUTHORITY=csharp（B 也落库到同一张 forgex.node_analysis_tasks）；file 腿 B 保持 node，
-   task-* 用例在 file 腿是 Node 对 Node，产物 `authority.analysisTasks` 如实记录。进度流用例读完整条 SSE，
-   比对去掉墙钟后的事件序列（B 侧是 C# 命名帧经 Node 重新组帧的结果）。
+   分析任务切流（8.6c-1 结果 / 轮询，8.6c-2a 进度流，8.6c-2b 规则引擎腿的创建）：C# 只有 postgres provider，
+   所以只有 postgres 腿的 Node B 走 ANALYSIS_TASKS_AUTHORITY=csharp——ds-analyze-* 的任务由 C# 创建并在 C# 进程内
+   用 C# 规则引擎执行、逐事件落到同一张 forgex.node_analysis_tasks，A 侧仍是 Node 创建 + JS 规则引擎：
+   报告 / 事件序列 / 快照逐字段比对就是「创建链迁 C#」的证据。file 腿 B 保持 node，task-* 用例在 file 腿是
+   Node 对 Node，产物 `authority.analysisTasks` 如实记录。进度流用例读完整条 SSE，比对去掉墙钟后的事件序列。
    差异若命中 waivers 表（用例 + JSON 路径 + 说明）记为 waived，否则 fail → 非零退出。
 
    POSTGRES_URL 存在时再跑第二轮：C# *__Provider=postgres、Node A' PERSISTENCE_PROVIDER=postgres、
@@ -806,7 +807,15 @@ const WAIVERS = [
       "他人持正确 revokeKey 撤销：Node node 态先 shares.get 再 requireOwner，返回 403「无权访问该资源」；csharp 态归属校验由 C# 租户 / owner 隔离承担，" +
       "他人 token 一律 404「分享不存在或已过期」（Stage 8.1 routes/share.js 注明的取舍：不暴露「存在但不属于你」，与 ds-analyze-foreign 同源）。",
   },
-  ...["task-poll-foreign", "task-result-foreign", "task-result-anonymous", "task-stream-foreign"].map((caseName) => ({
+  ...[
+    "task-poll-foreign",
+    "task-result-foreign",
+    "task-result-anonymous",
+    "task-stream-foreign",
+    // 8.6c-2b：分享前的「任务存在 / 归属 / 已完成」判定在 csharp 态也改问 C# 快照，同一取舍。
+    "share-create-foreign-task",
+    "share-create-anonymous",
+  ].map((caseName) => ({
     caseName,
     // 进度流用例的 JSON 错误体包在 body.json 下（与 HTML 用例同一形状）。
     paths: ["status", "body.error", "body.json.error"],
@@ -856,6 +865,8 @@ function normalize(value, instance) {
   return value;
 }
 
+const FLOAT_TOLERANCE = 1e-9;
+
 function diffPaths(a, b, prefix, out) {
   if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) {
@@ -868,6 +879,14 @@ function diffPaths(a, b, prefix, out) {
   if (a && b && typeof a === "object" && typeof b === "object" && !Array.isArray(a) && !Array.isArray(b)) {
     for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
       diffPaths(a[key], b[key], prefix ? `${prefix}.${key}` : key, out);
+    }
+    return out;
+  }
+  if (typeof a === "number" && typeof b === "number" && Number.isFinite(a) && Number.isFinite(b)) {
+    // 8.6c-2b：JS 与 .NET 的 exp/pow 在最后一两位有效数字上可以不同（p 值 5.53093901640190e-6 vs …812），
+    // 这是两套统计核的浮点实现差异，不是创建链语义差异；按相对误差 1e-9 判等，超出仍算差异。
+    if (a !== b && Math.abs(a - b) > FLOAT_TOLERANCE * Math.max(1, Math.abs(a), Math.abs(b))) {
+      out.push({ path: prefix, a, b });
     }
     return out;
   }
