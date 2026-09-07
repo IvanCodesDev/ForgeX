@@ -253,8 +253,14 @@ every normalized response must match (artifact `backend/artifacts/resource-autho
 Since Stage 8.6b the corpus also covers shares end to end (`SHARES_AUTHORITY`): creation, the public
 page as a full HTML comparison after entity canonicalization (Node's `escapeHtml` writes `&#39;`,
 .NET's `HtmlEncoder` writes `&#x27;` and numeric entities for non-ASCII text), wrong-key and foreign
-revocation, revoke / re-revoke / revoked-page semantics. The fake-sidecar contract tests live in
-`tests/resource-authority.test.js` and `tests/shares-authority.test.js`.
+revocation, revoke / re-revoke / revoked-page semantics. Since Stage 8.6c-1 the postgres leg also
+runs the analysis-task read switch (`ANALYSIS_TASKS_AUTHORITY=csharp`): the csharp-authority Node
+instance persists its tasks into `forgex.node_analysis_tasks` and reads result / poll through
+`GET /api/v1/analysis-tasks/{id}`, so the persisted snapshot is proven equal to Node's in-memory
+report; on the file leg C# has no analysis-task provider and both instances stay on Node (recorded in
+the artifact's `authority.analysisTasks`). The fake-sidecar contract tests live in
+`tests/resource-authority.test.js`, `tests/shares-authority.test.js` and
+`tests/analysis-tasks-authority.test.js`.
 CI provides a PostgreSQL service and applies the migrations with `npm run postgres:migrate -- --require`
 so both legs are covered on every push.
 

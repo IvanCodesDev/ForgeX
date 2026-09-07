@@ -147,6 +147,11 @@ function getConfig(overrides) {
       datasourcesAuthority: String(env.DATASOURCES_AUTHORITY || "node").trim().toLowerCase(),
       knowledgeAuthority: String(env.KNOWLEDGE_AUTHORITY || "node").trim().toLowerCase(),
       calibrationGovernanceAuthority: String(env.CALIBRATION_GOVERNANCE_AUTHORITY || "node").trim().toLowerCase(),
+      // ── Stage 8.6c-1：分析任务只读切流 ─────────────
+      // node = 结果 / 轮询读本进程任务表（默认）；csharp = 读 ForgeX.Api 的任务快照
+      //（同一张 forgex.node_analysis_tasks，所以要求 PERSISTENCE_PROVIDER=postgres）。
+      // 创建与 SSE 仍在 Node，随 8.6c-2 创建链迁移。超时复用 RESOURCE_AUTHORITY_TIMEOUT_MS。
+      analysisTasksAuthority: String(env.ANALYSIS_TASKS_AUTHORITY || "node").trim().toLowerCase(),
       resourceAuthorityTimeoutMs: num(env.RESOURCE_AUTHORITY_TIMEOUT_MS, 15000),
       // ── Stage 8.3：规则计算腿权威切流（迁移期双向开关）─────────────
       // node = 本进程 classic 规则腿（默认，行为不变）；csharp = 调 ForgeX.Api
@@ -204,6 +209,7 @@ function getConfig(overrides) {
     ["DATASOURCES_AUTHORITY", "datasourcesAuthority"],
     ["KNOWLEDGE_AUTHORITY", "knowledgeAuthority"],
     ["CALIBRATION_GOVERNANCE_AUTHORITY", "calibrationGovernanceAuthority"],
+    ["ANALYSIS_TASKS_AUTHORITY", "analysisTasksAuthority"],
   ];
   for (const [envName, key] of resourceSwitches) {
     cfg[key] = String(cfg[key] || "node").trim().toLowerCase();
@@ -233,6 +239,10 @@ function getConfig(overrides) {
   }
   if (cfg.persistenceProvider !== "file" && !String(cfg.postgresUrl || "").trim()) {
     throw new Error("POSTGRES_URL is required when PERSISTENCE_PROVIDER=postgres");
+  }
+  // C# 只读 Node 写入的同一张 forgex.node_analysis_tasks：file 态没有表可读，切过去等于所有任务都 404。
+  if (cfg.analysisTasksAuthority === "csharp" && cfg.persistenceProvider === "file") {
+    throw new Error("ANALYSIS_TASKS_AUTHORITY=csharp 需要 PERSISTENCE_PROVIDER=postgres（C# 读取 Node 落库的任务快照）");
   }
   cfg.postgresPoolMax = Math.min(50, Math.max(1, num(cfg.postgresPoolMax, 10)));
   cfg.postgresSsl = cfg.postgresSsl === true || cfg.postgresSsl === "1";

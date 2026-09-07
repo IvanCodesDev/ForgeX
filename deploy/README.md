@@ -110,6 +110,21 @@ replays the shares flow (`SHARES_AUTHORITY`) on both storage legs — the public
 as a full HTML document, so a `csharp` cut-over renders byte-for-byte the same content Node did.
 `SHARES_AUTHORITY_TIMEOUT_MS` (default 15000) bounds the share proxy's upstream wait.
 
+### Stage 8.6c-1: analysis-task reads on the C# authority
+
+`ANALYSIS_TASKS_AUTHORITY=csharp` moves the two read routes — `GET /api/analyze/:id/result` and the
+`GET /api/analyze/:id` poll — onto the C# snapshot endpoint `GET /api/v1/analysis-tasks/{id}`. It is
+read-only by design: `POST /api/analyze` and the `/stream` SSE stay in Node, because the task runs in
+the Node process (only it has the live events) and the two SSE dialects differ (Node emits unnamed
+`data:` frames consumed by `EventSource.onmessage`, C# emits `id/event` named frames); both move
+together with the creation chain in 8.6c-2. Prerequisites, enforced at Node start-up: the same
+`GCODE_AUTHORITY_URL` + internal secret as every other leg, **and** `PERSISTENCE_PROVIDER=postgres`
+with `CSHARP_ANALYSIS_TASKS_PROVIDER=postgres` (`AnalysisTasks__Provider`) on `forgex-api` — C# reads
+the very rows Node persists into `forgex.node_analysis_tasks`, so there is no file leg for this switch.
+Node persists snapshots asynchronously per task, so right after a task finishes the C# leg may answer
+`202 running` once before `200`; clients already poll. Foreign tasks return `404` on the C# leg where
+Node answered `403` (same convention as above). Rollback: set the switch back to `node` and restart.
+
 Production objectives and alert response are defined in [`SLO.md`](./SLO.md),
 [`alerts/forgex.rules.yml`](./alerts/forgex.rules.yml), and [`RUNBOOK.md`](./RUNBOOK.md). Before each
 release run `npm run dotnet:capacity`, `npm run dotnet:recovery-drill`, `npm run security:audit`,

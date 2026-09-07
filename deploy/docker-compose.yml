@@ -28,6 +28,9 @@ services:
       Datasources__Provider: "${CSHARP_DATASOURCES_PROVIDER:-disabled}"
       Knowledge__Provider: "${CSHARP_KNOWLEDGE_PROVIDER:-disabled}"
       Calibrations__Provider: "${CSHARP_CALIBRATIONS_PROVIDER:-disabled}"
+      # Stage 8.6c-1：分析任务历史只读腿只有 postgres（读 Node 落库的 forgex.node_analysis_tasks），
+      # 与 Node 的 ANALYSIS_TASKS_AUTHORITY=csharp 配套；PERSISTENCE_PROVIDER 必须同时是 postgres。
+      AnalysisTasks__Provider: "${CSHARP_ANALYSIS_TASKS_PROVIDER:-disabled}"
       POSTGRES_URL: "${POSTGRES_URL:-}"
       InternalAuth__SharedSecret: "${GCODE_AUTHORITY_INTERNAL_SECRET:?Set a random secret of at least 32 bytes}"
       InternalAuth__PreviousSharedSecret: "${GCODE_AUTHORITY_INTERNAL_SECRET_PREVIOUS:-}"
@@ -98,6 +101,9 @@ services:
       DATASOURCES_AUTHORITY: "${DATASOURCES_AUTHORITY:-node}"
       KNOWLEDGE_AUTHORITY: "${KNOWLEDGE_AUTHORITY:-node}"
       CALIBRATION_GOVERNANCE_AUTHORITY: "${CALIBRATION_GOVERNANCE_AUTHORITY:-node}"
+      # Stage 8.6c-1：分析任务只读切流——csharp 时 GET result / 轮询读 forgex-api 的任务快照，
+      # 创建与 SSE 仍在 Node；要求 PERSISTENCE_PROVIDER=postgres 且 CSHARP_ANALYSIS_TASKS_PROVIDER=postgres。
+      ANALYSIS_TASKS_AUTHORITY: "${ANALYSIS_TASKS_AUTHORITY:-node}"
       AI_CONCURRENCY: "2"
       AI_QUEUE_MAX: "8"
       AI_DAILY_PER_CALLER: "20"

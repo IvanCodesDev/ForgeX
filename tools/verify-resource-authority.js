@@ -8,6 +8,9 @@
    把各实例的 key 摘要映射为角色占位符），`hits[].score` 与 `digest` 精确相等。
    分享公开页是 HTML：取全文、把字符实体规范化后整体比对（Node escapeHtml 出 `&#39;`，
    .NET HtmlEncoder 出 `&#x27;` 与非 ASCII 数字实体——语义同、字节不同）。
+   分析任务只读切流（8.6c-1）：C# 只有 postgres provider，所以只有 postgres 腿的 Node B 走
+   ANALYSIS_TASKS_AUTHORITY=csharp（B 也落库到同一张 forgex.node_analysis_tasks）；file 腿 B 保持 node，
+   task-* 用例在 file 腿是 Node 对 Node，产物 `authority.analysisTasks` 如实记录。
    差异若命中 waivers 表（用例 + JSON 路径 + 说明）记为 waived，否则 fail → 非零退出。
 
    POSTGRES_URL 存在时再跑第二轮：C# *__Provider=postgres、Node A' PERSISTENCE_PROVIDER=postgres、
@@ -30,6 +33,8 @@ const artifactPath = path.join(root, "backend", "artifacts", "resource-authority
 const INTERNAL_SECRET = "stage86a-resource-dualrun-internal-secret-" + crypto.randomBytes(8).toString("hex");
 // 两个 Node 实例监听不同端口，publicUrl 必须由同一个 PUBLIC_BASE 拼出来才可比。
 const PUBLIC_BASE = "https://forgex.example";
+// 8.6c-1：分析任务只读切流按腿选权威——C# 无 file provider，file 腿的 Node B 只能留在 node。
+const ANALYSIS_TASKS_AUTHORITY_BY_LEG = { file: "node", postgres: "csharp" };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const keyId = (key) => crypto.createHash("sha256").update(key).digest("hex").slice(0, 8);
@@ -93,6 +98,11 @@ async function spawnApi(leg, storageRoot, postgresUrl, calibrationTenant) {
   for (const section of ["Datasources", "Knowledge", "Calibrations", "Shares"]) {
     providerEnv[`${section}__Provider`] = leg;
     if (leg === "postgres") providerEnv[`${section}__PostgresUrl`] = postgresUrl;
+  }
+  // 分析任务历史只有 postgres provider（读 Node 落库的快照）；file 腿保持 disabled。
+  if (leg === "postgres") {
+    providerEnv.AnalysisTasks__Provider = "postgres";
+    providerEnv.AnalysisTasks__PostgresUrl = postgresUrl;
   }
   const child = spawn(dotnetExecutable(), [apiDll], {
     cwd: root,
@@ -668,6 +678,38 @@ const CASES = [
     path: (state) => "/api/share/" + state.sampleShareToken + "/revoke",
     body: (state) => ({ revokeKey: state.sampleShareRevokeKey }),
   },
+  // ── 分析任务只读（8.6c-1）：postgres 腿 B 读 C# 快照，file 腿 B 仍读本地（C# 无 file provider）──
+  { name: "task-poll", role: "submitter", method: "GET", path: (state) => "/api/analyze/" + state.uploadTaskId },
+  {
+    name: "task-result",
+    role: "submitter",
+    method: "GET",
+    path: (state) => "/api/analyze/" + state.uploadTaskId + "/result",
+    settle: true,
+  },
+  { name: "task-poll-sample", role: "submitter", method: "GET", path: (state) => "/api/analyze/" + state.sampleTaskId },
+  {
+    name: "task-result-sample",
+    role: "submitter",
+    method: "GET",
+    path: (state) => "/api/analyze/" + state.sampleTaskId + "/result",
+    settle: true,
+  },
+  { name: "task-poll-missing", role: "submitter", method: "GET", path: "/api/analyze/t_0000000000000000" },
+  { name: "task-result-missing", role: "submitter", method: "GET", path: "/api/analyze/t_0000000000000000/result" },
+  { name: "task-poll-foreign", role: "reviewer", method: "GET", path: (state) => "/api/analyze/" + state.uploadTaskId },
+  {
+    name: "task-result-foreign",
+    role: "reviewer",
+    method: "GET",
+    path: (state) => "/api/analyze/" + state.uploadTaskId + "/result",
+  },
+  {
+    name: "task-result-anonymous",
+    role: null,
+    method: "GET",
+    path: (state) => "/api/analyze/" + state.uploadTaskId + "/result",
+  },
 ];
 
 /* 分享创建响应：token / revokeKey 随机（18 hex），publicUrl 由统一的 PUBLIC_BASE + token 拼成。 */
@@ -714,6 +756,13 @@ const WAIVERS = [
       "他人持正确 revokeKey 撤销：Node node 态先 shares.get 再 requireOwner，返回 403「无权访问该资源」；csharp 态归属校验由 C# 租户 / owner 隔离承担，" +
       "他人 token 一律 404「分享不存在或已过期」（Stage 8.1 routes/share.js 注明的取舍：不暴露「存在但不属于你」，与 ds-analyze-foreign 同源）。",
   },
+  ...["task-poll-foreign", "task-result-foreign", "task-result-anonymous"].map((caseName) => ({
+    caseName,
+    paths: ["status", "body.error"],
+    reason:
+      "他人 / 匿名读取分析任务：Node node 态 requireOwner 返回 403「无权访问该资源」；ANALYSIS_TASKS_AUTHORITY=csharp 时归属由 C# 按租户 + owner 隔离，" +
+      "他人任务一律 404「任务不存在或已过期」（与 ds-analyze-foreign / share-revoke-foreign 同源）。仅 postgres 腿分歧——file 腿 C# 无 provider，两侧皆 Node，403/403 一致。",
+  })),
 ];
 
 /* ── 规范化与比对 ─────────────────────────────────────────────────────────── */
@@ -799,11 +848,16 @@ async function runCase(instance, testCase) {
   if (testCase.role) headers.Authorization = "Bearer " + instance.keys[testCase.role];
   const body = typeof testCase.body === "function" ? testCase.body(instance.state) : testCase.body;
   const pathname = typeof testCase.path === "function" ? testCase.path(instance.state) : testCase.path;
-  const response = await jfetch(instance.baseUrl, pathname, {
-    method: testCase.method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const init = { method: testCase.method, headers, body: body === undefined ? undefined : JSON.stringify(body) };
+  let response = await jfetch(instance.baseUrl, pathname, init);
+  if (testCase.settle) {
+    // 只读切流：Node 内存已 done、快照落库可能滞后一个 DB 往返，csharp 侧会先回 202——等到非 202 再比对。
+    const deadline = Date.now() + 15_000;
+    while (response.status === 202 && Date.now() < deadline) {
+      await sleep(50);
+      response = await jfetch(instance.baseUrl, pathname, init);
+    }
+  }
   if (testCase.after) testCase.after(response.json, instance.state);
   let picked = response.json;
   if (testCase.html) {
@@ -849,6 +903,7 @@ async function runLeg(leg, options) {
       knowledgeAuthority: "node",
       calibrationGovernanceAuthority: "node",
       sharesAuthority: "node",
+      analysisTasksAuthority: "node",
       ...(leg === "postgres"
         ? { persistenceProvider: "postgres", postgresUrl: options.postgresUrl, postgresTenantId: randomTenant() }
         : {}),
@@ -859,6 +914,11 @@ async function runLeg(leg, options) {
       knowledgeAuthority: "csharp",
       calibrationGovernanceAuthority: "csharp",
       sharesAuthority: "csharp",
+      // 只读切流要求 B 自己也把任务落到 C# 读的那张表：postgres 腿 B 开 PG 持久化并切 csharp，file 腿只能留 node。
+      analysisTasksAuthority: ANALYSIS_TASKS_AUTHORITY_BY_LEG[leg],
+      ...(leg === "postgres"
+        ? { persistenceProvider: "postgres", postgresUrl: options.postgresUrl, postgresTenantId: randomTenant() }
+        : {}),
       gcodeAuthorityUrl: api.baseUrl,
       gcodeAuthorityInternalSecret: INTERNAL_SECRET,
     });
@@ -928,10 +988,14 @@ async function main() {
   const waived = cases.filter((item) => item.result === "waived").length;
   const fail = cases.filter((item) => item.result === "fail").length;
   const report = {
-    schemaVersion: "1.0",
+    schemaVersion: "1.1",
     generatedAtUtc: new Date().toISOString(),
     legs,
     skipped,
+    // 1.1：分析任务只读切流按腿记录 Node B 的权威——file 腿的 task-* 用例是 Node 对 Node。
+    authority: {
+      analysisTasks: Object.fromEntries(legs.map((leg) => [leg, ANALYSIS_TASKS_AUTHORITY_BY_LEG[leg]])),
+    },
     cases: cases.length,
     pass,
     waived,

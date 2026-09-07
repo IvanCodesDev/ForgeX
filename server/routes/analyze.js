@@ -1,13 +1,42 @@
-/* 分析任务路由：建任务（限流）/ SSE 进度流 / 结果获取。 */
+/* 分析任务路由：建任务（限流）/ SSE 进度流 / 结果获取。
+
+   Stage 8.6c-1（V2.0 手册 §4.2）：ANALYSIS_TASKS_AUTHORITY=csharp 时结果与轮询两条 GET 改读
+   ForgeX.Api 的任务快照（GET /api/v1/analysis-tasks/{id}，同一张 forgex.node_analysis_tasks）；
+   创建与 SSE 仍在 Node——任务在本进程执行，实时事件只有这里有，而且 Node SSE 是无名 data: 帧、
+   前端 EventSource.onmessage 消费，C# /events 是 id/event 命名帧，帧格式不兼容，随 8.6c-2 创建链一并迁移。
+   ANALYSIS_TASKS_AUTHORITY=node（默认）保持既有行为，作为回滚开关。 */
 "use strict";
 const { HttpError, readJson, sendJson, sseStart } = require("../lib/http");
 const { resolveIdentity, requireOwner } = require("../lib/identity");
 const { parseAiOverride } = require("../lib/ai-endpoint");
+const { authorityRequest } = require("../lib/authority-client");
 
 const MAX_QUESTION = 500;
+const AUTHORITY_UNAVAILABLE = "分析任务服务暂不可用，请稍后再试";
+
+/* csharp 模式：经可信通道读一份任务快照。归属由 C# 按租户 + owner 隔离，他人任务一律 404。 */
+async function readSnapshot(cfg, log, identity, taskId, rc) {
+  let response;
+  try {
+    response = await authorityRequest(cfg, identity, "GET", "/api/v1/analysis-tasks/" + taskId, null, {
+      timeoutMs: cfg.resourceAuthorityTimeoutMs,
+    });
+  } catch (error) {
+    log.warn("analysis tasks authority read failed", { reqId: rc.reqId, error: error.message });
+    throw new HttpError(502, AUTHORITY_UNAVAILABLE);
+  }
+  if (response.status === 404) throw new HttpError(404, "任务不存在或已过期");
+  const snapshot = response.status === 200 ? response.json() : null;
+  if (!snapshot || typeof snapshot !== "object") {
+    log.warn("analysis tasks authority read rejected", { reqId: rc.reqId, status: response.status });
+    throw new HttpError(502, AUTHORITY_UNAVAILABLE);
+  }
+  return snapshot;
+}
 
 function register(router, ctx) {
-  const { tasks, datasources, knowledge, log, gate, metrics } = ctx;
+  const { tasks, datasources, knowledge, log, gate, metrics, cfg } = ctx;
+  const csharp = cfg.analysisTasksAuthority === "csharp";
 
   router.add("POST", /^\/api\/analyze$/, async (req, res, m, rc) => {
     // 先统一身份，再做限流和资源授权。
@@ -63,6 +92,15 @@ function register(router, ctx) {
 
   router.add("GET", /^\/api\/analyze\/([A-Za-z0-9_]+)\/result$/, async (req, res, m, rc) => {
     const identity = await resolveIdentity(req, rc, ctx);
+    if (csharp) {
+      // 落库按任务串行异步进行：Node 内存已 done 而快照可能滞后一个 DB 往返，此时如实返回 202，调用方按既有轮询语义重试。
+      const snapshot = await readSnapshot(cfg, log, identity, m[1], rc);
+      if (snapshot.status === "running") return sendJson(res, 202, { status: "running" });
+      if (snapshot.status === "failed") return sendJson(res, 502, { error: snapshot.errorMessage || "分析失败" });
+      if (snapshot.status === "done") return sendJson(res, 200, snapshot.report);
+      log.warn("analysis tasks authority snapshot has unknown status", { reqId: rc.reqId, status: snapshot.status });
+      throw new HttpError(502, AUTHORITY_UNAVAILABLE);
+    }
     if (typeof tasks.ready === "function") await tasks.ready(identity.tenantId);
     const task = tasks.get(m[1]);
     if (!task) throw new HttpError(404, "任务不存在或已过期");
@@ -75,6 +113,17 @@ function register(router, ctx) {
   // 轮询兜底（SSE 不可用的网络环境，doc §4.2「优雅降级」）
   router.add("GET", /^\/api\/analyze\/([A-Za-z0-9_]+)$/, async (req, res, m, rc) => {
     const identity = await resolveIdentity(req, rc, ctx);
+    if (csharp) {
+      const snapshot = await readSnapshot(cfg, log, identity, m[1], rc);
+      return sendJson(res, 200, {
+        taskId: m[1],
+        status: snapshot.status,
+        engine: snapshot.engine,
+        progress: snapshot.progress || 0,
+        message: snapshot.message || "",
+        error: snapshot.errorMessage || undefined,
+      });
+    }
     if (typeof tasks.ready === "function") await tasks.ready(identity.tenantId);
     const task = tasks.get(m[1]);
     if (!task) throw new HttpError(404, "任务不存在或已过期");

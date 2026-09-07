@@ -9,6 +9,27 @@
 
 ## [Unreleased]
 
+### Stage 8.6c-1：分析任务只读切流（ANALYSIS_TASKS_AUTHORITY）
+- 8.6c「`/api/analyze` 创建链迁 C#」按用户决定拆成「先只读后写」：8.1 落地的 C# `/api/v1/analysis-tasks*`
+  端点一直只有 C# 侧门禁、没有 Node 切流开关，本刀先把它接进 Node 并双跑验证，创建链留给 8.6c-2。
+- Node 新开关 `ANALYSIS_TASKS_AUTHORITY=node|csharp`（默认 node，超时复用 `RESOURCE_AUTHORITY_TIMEOUT_MS`）。
+  csharp 时 `GET /api/analyze/:id/result` 与 `GET /api/analyze/:id`（轮询）经可信通道读 C# 任务快照并映射回
+  既有形状：running → 202、failed → 502 + errorMessage（缺省「分析失败」）、done → 200 报告原样；C# 404 →
+  404「任务不存在或已过期」；网络错误 / 其它状态 → 502「分析任务服务暂不可用，请稍后再试」。归属由 C# 按租户 +
+  owner 隔离（他人任务 404，与 8.6a A7 同源）。fail-fast：csharp 需 `GCODE_AUTHORITY_URL`、内部密钥，**且**
+  `PERSISTENCE_PROVIDER=postgres`——C# 只读 Node 落库的同一张 `forgex.node_analysis_tasks`，file 态无表可读。
+- `POST /api/analyze` 与 `/stream` 有意留在 Node：任务在 Node 进程执行、实时事件只有它有；Node SSE 是无名
+  `data:` 帧（前端 `EventSource.onmessage`），C# `/events` 是 `id/event` 命名帧，帧格式不兼容，随 8.6c-2 一并迁。
+- 双跑 `tools/verify-resource-authority.js` 新增 9 例 task-* 用例（轮询 / 结果 × 上传数据集与内置样例、缺失 404、
+  他人 / 匿名读取），`settle` 选项在 csharp 侧快照落库滞后时轮询到非 202 再比对；C# 无 file provider，所以只有
+  postgres 腿的 Node B 走 csharp（B 自己也落库到同一张表），file 腿两侧皆 Node，产物 `schemaVersion 1.1` 新增
+  `authority.analysisTasks` 如实记录。80 例 × 两腿：153 一致 / 7 豁免（3 例 A7 同源差异仅 postgres 腿分歧）/ 0 失败——
+  C# 按可信头找到 Node 写的行，快照与 Node 内存报告逐字段一致。
+- 新增 `tests/analysis-tasks-authority.test.js`（24 项，入 `npm test`）：四条配置校验、node 模式 sidecar 零调用、
+  csharp 模式可信头（key 与匿名 ip 两种派生）/ 不泄漏 cookie-authorization / 假池零查询、快照五种状态映射、轮询形状、
+  `/stream` 与 `POST` 仍本地、超时与不可达 → 502。compose 新增 `ANALYSIS_TASKS_AUTHORITY` 与
+  `CSHARP_ANALYSIS_TASKS_PROVIDER` 透传。
+
 ### Stage 8.6b：分享腿（SHARES_AUTHORITY）双跑证据补齐到 8.6a 口径
 - 分享（Stage 8.1 迁 C#，8.6a 补 file 腿）此前只有静态演练直打 C# 的 5 步证据，没有 Node 权威 vs C#
   权威的语料级比对，也没有假 sidecar 集成测试。本刀不改产品行为，只补证据：
