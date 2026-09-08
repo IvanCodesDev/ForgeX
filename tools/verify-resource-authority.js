@@ -41,7 +41,8 @@ const ANALYSIS_TASKS_AUTHORITY_BY_LEG = { file: "node", postgres: "csharp" };
 // 8.6c-2b-ii：两侧同样的 AI 日额度（每调用方 2 次），语料里第三个 AI 任务必须两侧同步降级。
 const AI_DAILY_PER_CALLER = 2;
 const FAKE_AI_MODEL = "dual-run-fake-model";
-const FAKE_AI_KEY = "sk-dual-run-fake-key-000000";
+// 故意不用 sk- 前缀：security-audit 的 secret-pattern-scan 会把任何 sk-… 当成真密钥拦下。
+const FAKE_AI_KEY = "dual-run-fake-key-000000";
 
 /* 假 OpenAI 兼容端点：/models 探活 200，/chat/completions 返回固定的结构化叙述与 usage——
    两侧 provider（Node openaiProvider vs C# OpenAiNarrativeClient）拿到同一份叙述，合并结果才可比。 */
