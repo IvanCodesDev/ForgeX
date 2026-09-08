@@ -1,5 +1,6 @@
 using System.Net;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ForgeX.Analytics;
@@ -37,6 +38,7 @@ internal static class AnalysisTasksSection
         var tasks = new PostgresAnalysisTaskRepository(gate.PostgresUrl);
         var datasources = new PostgresDatasourceRepository(gate.PostgresUrl, 200);
         var options = new AnalysisTaskOptions(TtlMs: 60_000, Concurrency: 2, QueueCapacity: 16, StaleRunningMs: 60_000);
+        using var fakeAi = new FakeOpenAi();
         var app = await gate.StartApiAsync(
             new Dictionary<string, string?>(),
             builder =>
@@ -47,6 +49,15 @@ internal static class AnalysisTasksSection
                 builder.Services.AddSingleton(options);
                 builder.Services.AddSingleton(new AnalysisTaskQueue(options.QueueCapacity));
                 builder.Services.AddSingleton<AnalysisTaskRuntime>();
+                // 8.6c-2b-ii: process provider = rules, AI only through the caller's endpoint; 2 AI tasks per caller per day.
+                builder.Services.AddSingleton(new AnalysisAiOptions("rules", AnalysisAiOptions.DefaultBaseUrl, string.Empty, string.Empty, 10_000, Probe: false));
+                builder.Services.AddSingleton(new AnalysisGateOptions(AiConcurrency: 2, AiQueueMax: 8, DailyPerCaller: 2, DailyGlobal: 0));
+                builder.Services.AddSingleton(new AnalysisCacheOptions(TtlMs: 60_000, Max: 50));
+                builder.Services.AddSingleton<AnalysisProviderSelection>();
+                builder.Services.AddSingleton<AnalysisCostGate>();
+                builder.Services.AddSingleton<AnalysisResultCache>();
+                builder.Services.AddSingleton<OpenAiNarrativeClient>();
+                builder.Services.AddSingleton<AnalysisTaskExecutor>();
                 builder.Services.AddHostedService<AnalysisTaskWorker>();
             },
             api =>
@@ -195,6 +206,97 @@ internal static class AnalysisTasksSection
         var fresh = await tasks.GetAsync(tenantA, ownerA, freshId, ct);
         gate.Check("analysis-fresh-running-kept", afterFresh.StatusCode == HttpStatusCode.Accepted && fresh is { Status: "running" }, fresh?.Status);
 
+        // ── AI leg (8.6c-2b-ii): caller-supplied endpoint → C# provider, cost gate, cache ──
+        const string aiKey = "sk-gate-fake-key-0123456789";
+        var aiTenant = RandomTenant();
+        var aiOwner = "ow_" + aiTenant[3..];
+        var trustedAi = Gate.Trusted(aiTenant, aiOwner);
+        object AiBody(string question) => new { question, datasourceId = "sample", ai = new { baseUrl = fakeAi.BaseUrl, apiKey = aiKey, model = "gate-fake-model" } };
+
+        var (badScheme, badSchemeBody) = await gate.SendAsync(origin, HttpMethod.Post, "/api/v1/analysis-tasks",
+            JsonSerializer.Serialize(new { question = "x", ai = new { baseUrl = "ftp://ai.example", model = "m" } }), trustedAi);
+        gate.Check("analysis-ai-override-scheme-400",
+            badScheme.StatusCode == HttpStatusCode.BadRequest && Gate.Parse(badSchemeBody).GetProperty("title").GetString() == "aiBaseUrl 只允许 http(s)",
+            badSchemeBody);
+        var (noModel, noModelBody) = await gate.SendAsync(origin, HttpMethod.Post, "/api/v1/analysis-tasks",
+            JsonSerializer.Serialize(new { question = "x", ai = new { baseUrl = fakeAi.BaseUrl } }), trustedAi);
+        gate.Check("analysis-ai-override-incomplete-400",
+            noModel.StatusCode == HttpStatusCode.BadRequest &&
+            Gate.Parse(noModelBody).GetProperty("title").GetString() == "自带 AI 端点需要同时提供 aiBaseUrl 与 aiModel（aiApiKey 按端点要求可选）",
+            noModelBody);
+
+        var (aiAccepted, aiAcceptedBody) = await gate.SendAsync(origin, HttpMethod.Post, "/api/v1/analysis-tasks",
+            JsonSerializer.Serialize(AiBody("哪台机器的失败率最高？")), trustedAi);
+        var aiAcceptedJson = Gate.Parse(aiAcceptedBody);
+        gate.Check("analysis-ai-create-202",
+            aiAccepted.StatusCode == HttpStatusCode.Accepted &&
+            aiAcceptedJson.GetProperty("engine").GetString() == "openai-compatible" &&
+            aiAcceptedJson.GetProperty("willUseAi").GetBoolean() &&
+            aiAcceptedJson.GetProperty("quota").GetProperty("ok").GetBoolean() &&
+            aiAcceptedJson.GetProperty("quota").GetProperty("remaining").GetInt64() == 2,
+            aiAcceptedBody);
+        var aiId = aiAcceptedJson.GetProperty("id").GetString()!;
+        var aiSnapshot = await WaitTerminalAsync(gate, origin, aiId, trustedAi);
+        var aiReport = aiSnapshot.GetProperty("report");
+        gate.Check("analysis-ai-report-merged",
+            aiSnapshot.GetProperty("status").GetString() == "done" &&
+            aiReport.GetProperty("engine").GetString() == "openai-compatible" &&
+            aiReport.GetProperty("narrativeBy").GetString() == "gate-fake-model" &&
+            aiReport.GetProperty("model").GetString() == "gate-fake-model" &&
+            aiReport.GetProperty("statsBy").GetString() == "local-stats-kernel" &&
+            aiReport.GetProperty("title").GetString() == FakeOpenAi.Title &&
+            aiReport.GetProperty("tokenUsage").GetProperty("total_tokens").GetInt32() == 366 &&
+            !aiReport.GetProperty("cached").GetBoolean(),
+            aiSnapshot.ToString().Length > 400 ? aiSnapshot.ToString()[..400] : aiSnapshot.ToString());
+        var (aiEvents, aiEventsBody) = await gate.SendAsync(origin, HttpMethod.Get, $"/api/v1/analysis-tasks/{aiId}/events", null, trustedAi);
+        var aiStages = aiEventsBody.Split("\n\n", StringSplitOptions.RemoveEmptyEntries)
+            .Where(static frame => frame.Contains("event: progress", StringComparison.Ordinal))
+            .Select(static frame => Gate.Parse(frame.Split('\n').First(static line => line.StartsWith("data:", StringComparison.Ordinal))[5..].Trim()).GetProperty("stage").GetString())
+            .ToArray();
+        gate.Check("analysis-ai-events", aiEvents.StatusCode == HttpStatusCode.OK && aiStages.SequenceEqual(["stats", "submit", "merge"]), string.Join(",", aiStages));
+        gate.Check("analysis-ai-endpoint-called-with-bearer",
+            fakeAi.Requests.Count == 1 && fakeAi.Requests[0].Authorization == "Bearer " + aiKey &&
+            fakeAi.Requests[0].Body.Contains("\"response_format\":{\"type\":\"json_object\"}", StringComparison.Ordinal) &&
+            fakeAi.Requests[0].Body.Contains("# 统计简报（已核验，勿重算）", StringComparison.Ordinal),
+            fakeAi.Requests.Count);
+        gate.Check("analysis-ai-key-never-persisted",
+            !aiSnapshot.ToString().Contains(aiKey, StringComparison.Ordinal) &&
+            !(await tasks.GetAsync(aiTenant, aiOwner, aiId, ct))!.EventsJson.Contains(aiKey, StringComparison.Ordinal),
+            aiId);
+
+        // Same question again: cache hit, no second upstream call, quota untouched.
+        var (cachedAccepted, cachedAcceptedBody) = await gate.SendAsync(origin, HttpMethod.Post, "/api/v1/analysis-tasks",
+            JsonSerializer.Serialize(AiBody("哪台机器的失败率最高？")), trustedAi);
+        var cachedSnapshot = await WaitTerminalAsync(gate, origin, Gate.Parse(cachedAcceptedBody).GetProperty("id").GetString()!, trustedAi);
+        gate.Check("analysis-ai-cache-hit",
+            cachedAccepted.StatusCode == HttpStatusCode.Accepted &&
+            Gate.Parse(cachedAcceptedBody).GetProperty("quota").GetProperty("remaining").GetInt64() == 1 &&
+            cachedSnapshot.GetProperty("report").GetProperty("cached").GetBoolean() &&
+            cachedSnapshot.GetProperty("report").GetProperty("title").GetString() == FakeOpenAi.Title &&
+            cachedSnapshot.GetProperty("lastEventSeq").GetInt64() == 2 &&
+            fakeAi.Requests.Count == 1,
+            cachedAcceptedBody);
+
+        // Second distinct question consumes the last unit; the third degrades to the rules engine with the reason on record.
+        var (secondAccepted, secondBody) = await gate.SendAsync(origin, HttpMethod.Post, "/api/v1/analysis-tasks",
+            JsonSerializer.Serialize(AiBody("材料与失败率有什么关系")), trustedAi);
+        await WaitTerminalAsync(gate, origin, Gate.Parse(secondBody).GetProperty("id").GetString()!, trustedAi);
+        var (degradedAccepted, degradedBody) = await gate.SendAsync(origin, HttpMethod.Post, "/api/v1/analysis-tasks",
+            JsonSerializer.Serialize(AiBody("成本随时间怎么变化")), trustedAi);
+        var degradedJson = Gate.Parse(degradedBody);
+        var degradedSnapshot = await WaitTerminalAsync(gate, origin, degradedJson.GetProperty("id").GetString()!, trustedAi);
+        var degradedReport = degradedSnapshot.GetProperty("report");
+        gate.Check("analysis-ai-quota-degraded",
+            secondAccepted.StatusCode == HttpStatusCode.Accepted && degradedAccepted.StatusCode == HttpStatusCode.Accepted &&
+            !degradedJson.GetProperty("willUseAi").GetBoolean() &&
+            !degradedJson.GetProperty("quota").GetProperty("ok").GetBoolean() &&
+            degradedJson.GetProperty("quota").GetProperty("reason").GetString()!.StartsWith("你今日的 AI 分析额度已用尽（2 次/日）", StringComparison.Ordinal) &&
+            degradedReport.GetProperty("engine").GetString() == "server-rules" &&
+            degradedReport.GetProperty("degradedFrom").GetString() == "openai-compatible" &&
+            degradedReport.GetProperty("sections").EnumerateArray().Any(static section => section.GetProperty("h").GetString() == "为什么这份报告没有 AI 叙述") &&
+            fakeAi.Requests.Count == 2,
+            degradedBody);
+
         await app.StopAsync();
         await tasks.DisposeAsync();
         await datasources.DisposeAsync();
@@ -223,4 +325,93 @@ internal static class AnalysisTasksSection
         !element.TryGetProperty(property, out var value) || value.ValueKind == JsonValueKind.Null;
 
     private static string RandomTenant() => "tn_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
+
+    /// <summary>
+    /// Minimal OpenAI-compatible endpoint: /v1/models for the probe, /v1/chat/completions with a fixed
+    /// fenced JSON narrative (the same shape the dual-run's fake returns) and a fixed usage block.
+    /// </summary>
+    private sealed class FakeOpenAi : IDisposable
+    {
+        public const string Title = "AI 叙述：失败率结论";
+
+        private readonly HttpListener _listener = new();
+        private readonly CancellationTokenSource _stop = new();
+
+        public FakeOpenAi()
+        {
+            var port = FreePort();
+            BaseUrl = $"http://127.0.0.1:{port}/v1";
+            _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+            _listener.Start();
+            _ = Task.Run(ServeAsync);
+        }
+
+        public string BaseUrl { get; }
+
+        public List<(string Path, string? Authorization, string Body)> Requests { get; } = [];
+
+        private async Task ServeAsync()
+        {
+            while (!_stop.IsCancellationRequested)
+            {
+                HttpListenerContext context;
+                try
+                {
+                    context = await _listener.GetContextAsync();
+                }
+                catch (Exception) when (_stop.IsCancellationRequested)
+                {
+                    return;
+                }
+                using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
+                var body = await reader.ReadToEndAsync();
+                var path = context.Request.Url?.AbsolutePath ?? string.Empty;
+                string response;
+                if (path == "/v1/models")
+                {
+                    response = "{\"object\":\"list\",\"data\":[{\"id\":\"gate-fake-model\"}]}";
+                }
+                else if (path == "/v1/chat/completions")
+                {
+                    lock (Requests) Requests.Add((path, context.Request.Headers["Authorization"], body));
+                    var narrative = JsonSerializer.Serialize(new
+                    {
+                        title = Title,
+                        verdict = "AI 叙述：按简报，失败率差异及其 95% 置信区间见下文；数字均来自本地统计核。",
+                        sections = new[] { new { h = "AI 小节", lines = new[] { "第一条要点（来自简报）", "第二条要点（来自简报）" } } },
+                    });
+                    response = JsonSerializer.Serialize(new
+                    {
+                        id = "chatcmpl-gate",
+                        choices = new[] { new { index = 0, message = new { role = "assistant", content = "```json\n" + narrative + "\n```" }, finish_reason = "stop" } },
+                        usage = new { prompt_tokens = 321, completion_tokens = 45, total_tokens = 366 },
+                    });
+                }
+                else
+                {
+                    context.Response.StatusCode = 404;
+                    response = "{\"error\":\"unexpected\"}";
+                }
+                var bytes = Encoding.UTF8.GetBytes(response);
+                context.Response.ContentType = "application/json";
+                context.Response.ContentLength64 = bytes.Length;
+                await context.Response.OutputStream.WriteAsync(bytes);
+                context.Response.Close();
+            }
+        }
+
+        private static int FreePort()
+        {
+            using var socket = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+            socket.Start();
+            return ((IPEndPoint)socket.LocalEndpoint).Port;
+        }
+
+        public void Dispose()
+        {
+            _stop.Cancel();
+            _listener.Stop();
+            _listener.Close();
+        }
+    }
 }

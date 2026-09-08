@@ -66,7 +66,9 @@ internal static class AnalysisTaskEndpoints
         PostgresAnalysisTaskRepository tasks,
         AnalysisTaskQueue queue,
         AnalysisTaskRuntime runtime,
-        AnalysisTaskOptions options)
+        AnalysisTaskOptions options,
+        AnalysisProviderSelection providers,
+        AnalysisCostGate gate)
     {
         var caller = CallerContextBoundary.GetRequired(context);
         var body = await EndpointBodies.ReadJsonAsync<AnalysisTaskCreateRequestDto>(context, MaxCreateBodyBytes, "请求体过大");
@@ -85,6 +87,15 @@ internal static class AnalysisTaskEndpoints
             return ApiProblemResults.Create(context, 400, "question_too_long", "question 超过 " + MaxQuestionLength + " 字");
         }
 
+        // Caller-supplied endpoint beats the process provider (Node: request-level > OPENAI_* > rules).
+        var (override_, overrideError) = AiEndpoint.Parse(body.Value?.Ai?.BaseUrl, body.Value?.Ai?.ApiKey, body.Value?.Ai?.Model);
+        if (overrideError is not null)
+        {
+            return ApiProblemResults.Create(context, 400, "invalid_ai_endpoint", overrideError);
+        }
+        var endpoint = override_ ?? providers.ProcessEndpoint;
+        var providerId = endpoint is null ? AnalysisProviderSelection.RulesId : AnalysisProviderSelection.OpenAiId;
+
         var datasourceId = string.IsNullOrEmpty(body.Value?.DatasourceId) ? "sample" : body.Value!.DatasourceId!;
         var datasources = context.RequestServices.GetService<IDatasourceRepository>();
         var datasource = await DatasourceEndpoints.ResolveAsync(datasources, caller.TenantId, caller.OwnerId, datasourceId, context.RequestAborted);
@@ -101,6 +112,10 @@ internal static class AnalysisTaskEndpoints
             runtime.LiveIds,
             context.RequestAborted);
 
+        // Node routes/analyze.js: the quota pre-check tells the caller up front whether AI will be used —
+        // the gate is consulted again (and consumed) when the task actually runs.
+        var verdict = endpoint is null ? null : gate.Check(caller.OwnerId);
+
         var id = "t_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(8));
         var record = new AnalysisTaskRecord(
             id,
@@ -108,8 +123,8 @@ internal static class AnalysisTaskEndpoints
             caller.OwnerId,
             question,
             datasource.Id,
-            AnalysisTaskExecutor.Engine,
-            AnalysisTaskExecutor.Engine,
+            providerId,
+            providerId,
             caller.TenantId,
             "running",
             0,
@@ -124,15 +139,25 @@ internal static class AnalysisTaskEndpoints
             now + TimeSpan.FromMilliseconds(options.TtlMs),
             now);
         await tasks.UpsertAsync(record, context.RequestAborted);
+        // Node: datasourceKey = ds.cacheKey || ds.contentSha256 || ds.id (the sample carries its digest as both).
+        var datasourceKey = datasource.CacheKey.Length > 0 ? datasource.CacheKey
+            : datasource.ContentSha256.Length > 0 ? datasource.ContentSha256 : datasource.Id;
         await queue.EnqueueAsync(
-            new AnalysisTaskWorkItem(record, datasource.Rows.Clone(), datasource.Provenance.Clone()),
+            new AnalysisTaskWorkItem(
+                record,
+                datasource.Rows.Clone(),
+                datasource.Provenance.Clone(),
+                datasourceKey,
+                endpoint,
+                providerId,
+                override_?.CacheVariant ?? string.Empty),
             context.RequestAborted);
 
         var accepted = new AnalysisTaskAcceptedDto(
             id,
-            AnalysisTaskExecutor.Engine,
-            WillUseAi: false,
-            Quota: null,
+            providerId,
+            WillUseAi: verdict is { Ok: true },
+            Quota: verdict is null ? null : new AnalysisQuotaDto(verdict.Ok, verdict.Remaining, verdict.Reason),
             new AnalysisTaskLinksDto($"/api/v1/analysis-tasks/{id}", $"/api/v1/analysis-tasks/{id}/events"));
         return Results.Json(accepted, statusCode: StatusCodes.Status202Accepted);
     }

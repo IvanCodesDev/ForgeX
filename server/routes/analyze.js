@@ -5,7 +5,9 @@
    Stage 8.6c-2a：SSE 进度流也改读 C#（GET /api/v1/analysis-tasks/{id}/events）——C# 发的是
    id/event 命名帧，前端 EventSource.onmessage 只认无名 data: 帧，所以 Node 在这里重新组帧：
    progress/message 帧的 data 就是 Node 落库的事件对象，原样转发；C# 的 done 快照帧只在事件里
-   没有终态事件时才合成一条 Node 形状的终态事件。创建仍在 Node（任务在本进程执行），随 8.6c-2b 迁移。
+   没有终态事件时才合成一条 Node 形状的终态事件。
+   Stage 8.6c-2b：创建也交给 C#（POST /api/v1/analysis-tasks）——规则引擎腿、AI provider、成本闸门、
+   结果缓存都在 ForgeX.Api 进程内；Node 只剩身份 / 限流 / question 与自带端点的入口校验。
    ANALYSIS_TASKS_AUTHORITY=node（默认）保持既有行为，作为回滚开关。 */
 "use strict";
 const { HttpError, readJson, sendJson, sseStart, sseSend } = require("../lib/http");
@@ -105,10 +107,12 @@ async function proxyEventStream(req, res, cfg, log, identity, taskId, rc) {
 
 /* csharp 模式（8.6c-2b 规则引擎腿）：把创建交给 C#。身份 / 限流 / question 校验仍在 Node，
    数据源归属由 C# 按租户 + owner 判定（他人数据源 → 404，与 8.6a A7 同一取舍）。 */
-async function createOnAuthority(cfg, log, identity, question, datasourceId, rc) {
+async function createOnAuthority(cfg, log, identity, question, datasourceId, aiOverride, rc) {
+  const payload = { question, datasourceId };
+  if (aiOverride) payload.ai = { baseUrl: aiOverride.baseUrl, apiKey: aiOverride.apiKey, model: aiOverride.model };
   let response;
   try {
-    response = await authorityRequest(cfg, identity, "POST", "/api/v1/analysis-tasks", { question, datasourceId }, {
+    response = await authorityRequest(cfg, identity, "POST", "/api/v1/analysis-tasks", payload, {
       timeoutMs: cfg.resourceAuthorityTimeoutMs,
     });
   } catch (error) {
@@ -143,18 +147,20 @@ function register(router, ctx) {
     // 密钥只进 provider 闭包，不进任务快照、日志或任何响应。
     const aiOverride = parseAiOverride(body);
 
-    // 8.6c-2b 规则引擎腿：不走 AI 的任务由 C# 创建并执行。AI 任务（进程级 provider 或自带端点）
-    // 仍在 Node 创建——C# 侧的 AI provider / 成本闸门 / 缓存随 8.6c-2b-ii 迁移；它们照样落库到同一张表，
-    // 结果 / 轮询 / 进度流依旧从 C# 读。
-    if (csharp && !aiOverride && !tasks.usesAi) {
-      const accepted = await createOnAuthority(cfg, log, identity, question, body.datasourceId || "sample", rc);
+    // 8.6c-2b：csharp 态下创建全部交给 C#——规则引擎腿（2b-i）与 AI 腿（2b-ii：provider / 成本闸门 / 缓存都在 C# 进程内）。
+    // 自带端点只作为请求体转发一次，Node 不落日志、不进快照；进程级 AI 端点由 C# 自己的 OpenAi:* 配置决定。
+    if (csharp) {
+      const accepted = await createOnAuthority(cfg, log, identity, question, body.datasourceId || "sample", aiOverride, rc);
       metrics.tasks++;
+      const quota = accepted.quota && typeof accepted.quota === "object" ? accepted.quota : null;
       sendJson(res, 202, {
         taskId: accepted.id,
         engine: accepted.engine,
         authenticated: identity.authenticated,
-        willUseAi: false,
-        quota: null,
+        willUseAi: accepted.willUseAi === true,
+        quota: quota
+          ? { ok: quota.ok === true, remaining: quota.remaining == null ? null : quota.remaining, reason: quota.reason || undefined }
+          : null,
       });
       return;
     }

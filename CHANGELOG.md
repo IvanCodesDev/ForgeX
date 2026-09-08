@@ -9,6 +9,27 @@
 
 ## [Unreleased]
 
+### Stage 8.6c-2b-ii：创建链 AI 腿迁 C#——OpenAI 兼容 provider / 成本闸门 / 结果缓存（2026-09-08）
+- `ANALYSIS_TASKS_AUTHORITY=csharp` 时 **所有** `POST /api/analyze` 交给 C#：Node 只剩身份 / 限流 / question / 自带端点入口校验，
+  自带端点（`aiBaseUrl/aiApiKey/aiModel`）作为请求体 `ai` 字段转发一次，Node 不落日志、不进快照；202 透传 C# 的 `willUseAi` / `quota`
+  （`reason` 为 null 不回显，与 Node 自算形状一致）。
+- C# 新增 `AnalysisProviders.cs`：`AiEndpoint.Parse`（逐字复刻 `lib/ai-endpoint.js` 的规则与文案）；`AnalysisProviderSelection`
+  （`Analysis__Provider=auto|openai|rules` + `OpenAi__BaseUrl/ApiKey/Model/TimeoutMs`，启动探活失败降级规则引擎——Node `probeProvider`）；
+  `AnalysisCostGate`（`lib/quota.js` 的进程内版：`Analysis__AiConcurrency/AiQueueMax/AiDailyPerCaller/AiDailyGlobal`，日键 UTC，
+  额度尽 / 队满的文案逐字一致，槽位直接交给下一个排队者）；`AnalysisResultCache`（同 key 算法 sha256(provider[:variant], datasourceKey,
+  question.trim()) + scope → [:32]，LRU + TTL，`Analysis__CacheTtlMs/CacheMax`）；`OpenAiNarrativeClient`（系统 / 用户提示词逐字移植、
+  `temperature 0.2` + `response_format json_object`、无 key 不发空 Authorization、上游报文掩蔽密钥、`AI 服务响应异常（HTTP n）`）；
+  `AnalysisReportMerge`（`extractJson` 容忍代码围栏、`mergeWithLocal` 图表 / evidence / provenance 一律本地并追加 排行|统计|口径|读数说明|相关性
+  明细小节、`叙述降级说明`、`_degrade` 的「为什么这份报告没有 AI 叙述」小节）。执行器：`stats 0.2 → submit 0.4 → merge 0.9`，
+  闸门不过 → `stage: quota` 降级、队满 → 降级不报错，缓存命中 → `stage: cache` + `cached:true`；BM25 top-4 知识注入只在 C# 一侧
+  （两套 BM25 收敛：csharp 态 Node 不再注入）。密钥只存在于请求与内存工作项，`analysis-ai-key-never-persisted` 门禁断言快照 / 事件里搜不到。
+- 证据：双跑新增 9 例 ai-*（自带端点不完整 400；三次不同问题 + 一次同问：闸门 `remaining 2 → 1`、同问命中缓存不扣额、第三个降级；
+  三条进度流；轮询），postgres 腿 Node B 经 C# provider / 闸门 / 缓存 vs Node A 本地 openaiProvider / CostGate / ResultCache 打同一个
+  假 OpenAI 服务：报告（含合并叙述、`tokenUsage`、降级小节）/ 事件序列 / 闸门文案逐字段一致，**93 例 × 两腿 = 176 一致 / 10 豁免 / 0 失败**。
+  ResourceGate `analysis-tasks-postgres` 段 +9（自带端点校验、合并报告、事件、Bearer 头与提示词、密钥不落库、缓存命中、额度降级）→ **367**；
+  `tests/analysis-tasks-authority.test.js` 37 → 41。C# 提示词以原始 UTF-8 发送（`UnsafeRelaxedJsonEscaping`），与 Node 线上形态一致。
+- 至此 `/api/analyze` 创建链整体可切 C#（8.6c 关闭）；剩余 8.6d：Node 纯代理 → `dotnet ForgeX.Api` 单进程部署 → 删除 `server/`。
+
 ### Stage 8.6c-2b-i：`/api/analyze` 创建链迁 C#（规则引擎腿）
 - 创建链按用户拍板「先规则引擎腿，再 AI provider / 成本闸门 / 缓存（2b-ii）」分两步。本刀：`ANALYSIS_TASKS_AUTHORITY=csharp`
   时不走 AI 的 `POST /api/analyze`（进程级 provider 为规则引擎且请求未自带 AI 端点）由 Node 校验身份 / 限流 / question 后

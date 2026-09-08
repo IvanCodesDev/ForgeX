@@ -22,6 +22,7 @@
 
 const crypto = require("crypto");
 const fs = require("fs");
+const http = require("http");
 const net = require("net");
 const os = require("os");
 const path = require("path");
@@ -37,6 +38,64 @@ const INTERNAL_SECRET = "stage86a-resource-dualrun-internal-secret-" + crypto.ra
 const PUBLIC_BASE = "https://forgex.example";
 // 8.6c-1：分析任务只读切流按腿选权威——C# 无 file provider，file 腿的 Node B 只能留在 node。
 const ANALYSIS_TASKS_AUTHORITY_BY_LEG = { file: "node", postgres: "csharp" };
+// 8.6c-2b-ii：两侧同样的 AI 日额度（每调用方 2 次），语料里第三个 AI 任务必须两侧同步降级。
+const AI_DAILY_PER_CALLER = 2;
+const FAKE_AI_MODEL = "dual-run-fake-model";
+const FAKE_AI_KEY = "sk-dual-run-fake-key-000000";
+
+/* 假 OpenAI 兼容端点：/models 探活 200，/chat/completions 返回固定的结构化叙述与 usage——
+   两侧 provider（Node openaiProvider vs C# OpenAiNarrativeClient）拿到同一份叙述，合并结果才可比。 */
+function startFakeOpenAi() {
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      requests.push({
+        method: req.method,
+        url: req.url,
+        authorization: req.headers.authorization || null,
+        body: Buffer.concat(chunks).toString("utf8"),
+      });
+      if (req.method === "GET" && req.url === "/v1/models") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ object: "list", data: [{ id: FAKE_AI_MODEL }] }));
+        return;
+      }
+      if (req.method === "POST" && req.url === "/v1/chat/completions") {
+        const narrative = {
+          title: "AI 叙述：失败率结论",
+          verdict: "AI 叙述：按简报，失败率差异及其 95% 置信区间见下文；数字均来自本地统计核。",
+          sections: [{ h: "AI 小节", lines: ["第一条要点（来自简报）", "第二条要点（来自简报）"] }],
+        };
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({
+            id: "chatcmpl-dualrun",
+            object: "chat.completion",
+            model: FAKE_AI_MODEL,
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: "```json\n" + JSON.stringify(narrative) + "\n```" },
+                finish_reason: "stop",
+              },
+            ],
+            usage: { prompt_tokens: 321, completion_tokens: 45, total_tokens: 366 },
+          })
+        );
+        return;
+      }
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "unexpected fake openai request" }));
+    });
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () =>
+      resolve({ server, origin: `http://127.0.0.1:${server.address().port}`, requests })
+    );
+  });
+}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const keyId = (key) => crypto.createHash("sha256").update(key).digest("hex").slice(0, 8);
@@ -105,6 +164,8 @@ async function spawnApi(leg, storageRoot, postgresUrl, calibrationTenant) {
   if (leg === "postgres") {
     providerEnv.AnalysisTasks__Provider = "postgres";
     providerEnv.AnalysisTasks__PostgresUrl = postgresUrl;
+    // 8.6c-2b-ii：与 Node A 同样的日额度，第三个 AI 任务两侧都必须降级为规则引擎。
+    providerEnv.Analysis__AiDailyPerCaller = String(AI_DAILY_PER_CALLER);
   }
   const child = spawn(dotnetExecutable(), [apiDll], {
     cwd: root,
@@ -741,7 +802,88 @@ const CASES = [
     path: (state) => "/api/analyze/" + state.uploadTaskId + "/stream",
     sse: true,
   },
+  // ── AI 腿（8.6c-2b-ii）：自带 OpenAI 兼容端点 → 假 AI 服务；日额度 2 次/调用方，第三个降级；同问命中缓存 ──
+  {
+    name: "ai-override-incomplete",
+    role: "submitter",
+    method: "POST",
+    path: "/api/analyze",
+    body: (state) => ({ datasourceId: "sample", question: "x", aiBaseUrl: state.aiBaseUrl }),
+  },
+  {
+    name: "ai-analyze",
+    role: "submitter",
+    method: "POST",
+    path: "/api/analyze",
+    analyze: true,
+    body: (state) => aiBody(state, "哪台机器的失败率最高？"),
+    after: (json, state) => {
+      state.aiTaskId = json && json.taskId;
+    },
+  },
+  {
+    name: "ai-analyze-cached",
+    role: "submitter",
+    method: "POST",
+    path: "/api/analyze",
+    analyze: true,
+    body: (state) => aiBody(state, "哪台机器的失败率最高？"),
+    after: (json, state) => {
+      state.aiCachedTaskId = json && json.taskId;
+    },
+  },
+  {
+    name: "ai-analyze-second",
+    role: "submitter",
+    method: "POST",
+    path: "/api/analyze",
+    analyze: true,
+    body: (state) => aiBody(state, "材料与失败率有什么关系"),
+  },
+  {
+    name: "ai-analyze-quota-degraded",
+    role: "submitter",
+    method: "POST",
+    path: "/api/analyze",
+    analyze: true,
+    body: (state) => aiBody(state, "成本随时间怎么变化"),
+    after: (json, state) => {
+      state.aiDegradedTaskId = json && json.taskId;
+    },
+  },
+  {
+    name: "ai-stream",
+    role: "submitter",
+    method: "GET",
+    path: (state) => "/api/analyze/" + state.aiTaskId + "/stream",
+    sse: true,
+  },
+  {
+    name: "ai-stream-cached",
+    role: "submitter",
+    method: "GET",
+    path: (state) => "/api/analyze/" + state.aiCachedTaskId + "/stream",
+    sse: true,
+  },
+  {
+    name: "ai-stream-quota-degraded",
+    role: "submitter",
+    method: "GET",
+    path: (state) => "/api/analyze/" + state.aiDegradedTaskId + "/stream",
+    sse: true,
+  },
+  { name: "ai-poll", role: "submitter", method: "GET", path: (state) => "/api/analyze/" + state.aiTaskId },
 ];
+
+function aiBody(state, question) {
+  return {
+    datasourceId: "sample",
+    question,
+    aiBaseUrl: state.aiBaseUrl,
+    aiApiKey: FAKE_AI_KEY,
+    aiModel: FAKE_AI_MODEL,
+  };
+}
 
 /* SSE 全文 → 无名 data: 帧序列（JSON 解析），注释行与命名帧分别计数；ts 是墙钟，去掉后比对。 */
 function pickSseEvents(text) {
@@ -954,6 +1096,8 @@ async function runCase(instance, testCase) {
         engine: response.json.engine,
         authenticated: response.json.authenticated,
         willUseAi: response.json.willUseAi,
+        // 8.6c-2b-ii：闸门预检结果也要一致（ok / remaining / reason 文案）。
+        quota: response.json.quota === undefined ? null : response.json.quota,
       },
       result: result && { status: result.status, body: result.json },
     };
@@ -969,8 +1113,10 @@ async function runLeg(leg, options) {
   let api = null;
   let nodeA = null;
   let nodeB = null;
+  let fakeAi = null;
   try {
     const calibrationTenantCsharp = randomTenant();
+    fakeAi = await startFakeOpenAi();
     api = await spawnApi(leg, path.join(runtimeRoot, "csharp"), options.postgresUrl, calibrationTenantCsharp);
     nodeA = await startNode("a", {
       dataDir: path.join(runtimeRoot, "node-a"),
@@ -979,6 +1125,7 @@ async function runLeg(leg, options) {
       calibrationGovernanceAuthority: "node",
       sharesAuthority: "node",
       analysisTasksAuthority: "node",
+      dailyPerCaller: AI_DAILY_PER_CALLER,
       ...(leg === "postgres"
         ? { persistenceProvider: "postgres", postgresUrl: options.postgresUrl, postgresTenantId: randomTenant() }
         : {}),
@@ -991,12 +1138,15 @@ async function runLeg(leg, options) {
       sharesAuthority: "csharp",
       // 只读切流要求 B 自己也把任务落到 C# 读的那张表：postgres 腿 B 开 PG 持久化并切 csharp，file 腿只能留 node。
       analysisTasksAuthority: ANALYSIS_TASKS_AUTHORITY_BY_LEG[leg],
+      dailyPerCaller: AI_DAILY_PER_CALLER,
       ...(leg === "postgres"
         ? { persistenceProvider: "postgres", postgresUrl: options.postgresUrl, postgresTenantId: randomTenant() }
         : {}),
       gcodeAuthorityUrl: api.baseUrl,
       gcodeAuthorityInternalSecret: INTERNAL_SECRET,
     });
+    nodeA.state.aiBaseUrl = fakeAi.origin + "/v1";
+    nodeB.state.aiBaseUrl = fakeAi.origin + "/v1";
 
     for (const testCase of CASES) {
       const a = await runCase(nodeA, testCase);
@@ -1038,6 +1188,7 @@ async function runLeg(leg, options) {
     if (nodeA) await nodeA.app.close().catch(() => {});
     if (nodeB) await nodeB.app.close().catch(() => {});
     if (api) await stop(api.child);
+    if (fakeAi) await new Promise((resolve) => fakeAi.server.close(resolve));
     safeCleanup(runtimeRoot);
   }
 }
