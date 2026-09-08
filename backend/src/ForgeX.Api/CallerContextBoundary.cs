@@ -8,12 +8,18 @@ namespace ForgeX.Api;
 /// Stage 8.6a trusted-channel extras consumed only by calibration governance: the Node proxy has already
 /// authenticated the API key / review key and forwards the 8-hex key digest plus the role it verified.
 /// </summary>
+/// <remarks>CallerKind (Stage 8.6d): how a direct caller was identified — "key" (API key) or "ip" (anonymous); null on the trusted channel.</remarks>
 internal sealed record ForgeXCallerContext(
     string TenantId,
     string OwnerId,
     bool Trusted,
     string? ActorKeyId = null,
-    string? ActorRole = null);
+    string? ActorRole = null,
+    string? CallerKind = null)
+{
+    /// <summary>Node identity.authenticated: true only when a configured API key matched.</summary>
+    public bool Authenticated => CallerKind == "key";
+}
 
 internal static class CallerContextBoundary
 {
@@ -147,6 +153,9 @@ internal static class CallerContextBoundary
         context.Items.TryGetValue(ContextItemKey, out var value) && value is ForgeXCallerContext caller
             ? caller
             : throw new InvalidOperationException("Caller context middleware did not run for this endpoint.");
+
+    /// <summary>Stage 8.6d: the public facade resolves direct callers on Node-shaped paths and hands the context over here.</summary>
+    internal static void Set(HttpContext context, ForgeXCallerContext caller) => context.Items[ContextItemKey] = caller;
 
     /// <summary>
     /// Actor headers are optional (only calibration governance consumes them), but when present on the

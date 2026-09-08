@@ -129,6 +129,7 @@ internal sealed class AnalysisTaskExecutor(
     AnalysisAiOptions aiOptions,
     AnalysisGateOptions gateOptions,
     OpenAiNarrativeClient openAi,
+    AnalysisTaskMetrics metrics,
     IServiceProvider services,
     ILogger<AnalysisTaskExecutor> logger)
 {
@@ -146,6 +147,7 @@ internal sealed class AnalysisTaskExecutor(
     public async Task RunAsync(AnalysisTaskWorkItem item, CancellationToken cancellationToken)
     {
         var task = new TaskState(item.Record, repository);
+        var started = DateTimeOffset.UtcNow;
         try
         {
             var cacheKey = AnalysisResultCache.Key(
@@ -161,6 +163,7 @@ internal sealed class AnalysisTaskExecutor(
                 var hit = (JsonObject)JsonNode.Parse(cached)!;
                 hit["taskId"] = item.Record.Id;
                 hit["cached"] = true;
+                metrics.RecordCached();
                 await task.FinishAsync(hit.ToJsonString(), cancellationToken);
                 return;
             }
@@ -181,7 +184,12 @@ internal sealed class AnalysisTaskExecutor(
             var error = string.IsNullOrWhiteSpace(exception.Message) ? "分析失败" : exception.Message;
             logger.LogError("task failed taskId={TaskId} engine={Engine} error={Error}", item.Record.Id, item.ProviderId,
                 OpenAiNarrativeClient.MaskSecret(error, item.Ai?.ApiKey));
+            metrics.RecordFailed();
             await task.FailAsync(OpenAiNarrativeClient.MaskSecret(error, item.Ai?.ApiKey), CancellationToken.None);
+        }
+        finally
+        {
+            metrics.RecordDuration((long)(DateTimeOffset.UtcNow - started).TotalMilliseconds);
         }
     }
 
@@ -270,6 +278,7 @@ internal sealed class AnalysisTaskExecutor(
     private async Task<JsonObject> DegradeAsync(AnalysisTaskWorkItem item, TaskState task, string reason, CancellationToken cancellationToken)
     {
         // Node _degrade: the rules provider runs with its own progress events and no knowledge injection.
+        metrics.RecordDegraded();
         var rules = await RulesAsync(item, task, cancellationToken);
         return AnalysisReportMerge.Degrade(rules, item.ProviderId, reason);
     }

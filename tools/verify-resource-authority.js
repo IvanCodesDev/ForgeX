@@ -152,11 +152,19 @@ async function stop(child) {
   if (child.exitCode === null) child.kill("SIGKILL");
 }
 
-async function spawnApi(leg, storageRoot, postgresUrl, calibrationTenant) {
+async function spawnApi(leg, storageRoot, postgresUrl, calibrationTenant, facadeKeys) {
   const port = await getFreePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   const output = [];
   const providerEnv = {};
+  if (facadeKeys) {
+    // 8.6d-1：公共门面——C# 直接说 Node 方言，直连身份用与 Node 实例同构的两把 key（submitter / reviewer）。
+    providerEnv.PublicFacade__Enabled = "true";
+    providerEnv.PublicFacade__RateLimitMs = "0";
+    providerEnv.PublicFacade__PublicBase = PUBLIC_BASE;
+    providerEnv.DirectAuth__ApiKeys = `${facadeKeys.submitter},${facadeKeys.reviewer}`;
+    providerEnv.DirectAuth__CalibrationReviewKeys = facadeKeys.reviewer;
+  }
   for (const section of ["Datasources", "Knowledge", "Calibrations", "Shares"]) {
     providerEnv[`${section}__Provider`] = leg;
     if (leg === "postgres") providerEnv[`${section}__PostgresUrl`] = postgresUrl;
@@ -188,9 +196,15 @@ async function spawnApi(leg, storageRoot, postgresUrl, calibrationTenant) {
   return { child, baseUrl, output };
 }
 
+// key 每次运行随机后缀：租户 id 由 key 派生，本机反复跑同一个 PostgreSQL 时不会把上一轮的知识文档 / 任务算进来。
+const RUN_ID = crypto.randomBytes(4).toString("hex");
+const runKeys = (label) => ({
+  submitter: `dual-run-${label}-submit-${RUN_ID}`,
+  reviewer: `dual-run-${label}-review-${RUN_ID}`,
+});
+
 async function startNode(label, overrides) {
-  const submitKey = `dual-run-${label}-submit`;
-  const reviewKey = `dual-run-${label}-review`;
+  const { submitter: submitKey, reviewer: reviewKey } = runKeys(label);
   const app = createApp({
     logLevel: "error",
     forceMock: true,
@@ -1108,6 +1122,42 @@ async function runCase(instance, testCase) {
   return { status: response.status, body: normalize(picked, instance), raw: picked };
 }
 
+/* 一条用例的比对与记录：`via` 标明 C# 侧是经 Node B（csharp 门面代理）还是 C# 直连（8.6d-1 公共门面）。 */
+function compare(results, leg, via, testCase, a, b) {
+  const diffs = diffPaths({ status: a.status, body: a.body }, { status: b.status, body: b.body }, "", []);
+  const waivers = WAIVERS.filter((waiver) => waiver.caseName === testCase.name);
+  const unwaived = diffs.filter(
+    (diff) =>
+      !waivers.some((waiver) =>
+        waiver.paths.some(
+          (prefix) => diff.path === prefix || diff.path.startsWith(prefix + ".") || diff.path.startsWith(prefix + "[")
+        )
+      )
+  );
+  const result = diffs.length === 0 ? "pass" : unwaived.length === 0 ? "waived" : "fail";
+  results.push({
+    leg,
+    via,
+    name: testCase.name,
+    result,
+    status: { node: a.status, csharp: b.status },
+    diffs: diffs.map((diff) => ({
+      path: diff.path,
+      node: trimForReport(diff.a),
+      csharp: trimForReport(diff.b),
+      waived: !unwaived.includes(diff),
+    })),
+    // 截断的响应样本留在产物里，方便审阅「到底比了什么」；完整正文只在失败时才需要人工复跑。
+    nodeBody: trimForReport(a.raw),
+    ...(result === "pass" ? {} : { csharpBody: trimForReport(b.raw) }),
+  });
+  const tag = result === "pass" ? "PASS  " : result === "waived" ? "WAIVED" : "FAIL  ";
+  const legLabel = via === "csharp-direct" ? `${leg}/facade` : leg;
+  process.stdout.write(
+    `  ${tag} [${legLabel}] ${testCase.name} (${a.status}/${b.status})${result === "fail" ? " " + JSON.stringify(unwaived.slice(0, 3)) : ""}\n`
+  );
+}
+
 async function runLeg(leg, options) {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "forgex-resource-dualrun-"));
   const results = [];
@@ -1115,10 +1165,24 @@ async function runLeg(leg, options) {
   let nodeA = null;
   let nodeB = null;
   let fakeAi = null;
+  let facadeApi = null;
+  // 8.6d-1：postgres 腿再起第二个 ForgeX.Api 进程作「C# 直连」实例 C——同一份语料直接打到公共门面，与 Node A 比对。
+  // 单独进程：校准治理是部署级状态（Calibrations__TenantId），与 Node B 共用一个进程会互相污染提交序列。
+  // file 腿没有分析任务 provider，公共门面起不来，如实跳过。
+  const facadeKeys = leg === "postgres" ? runKeys("c") : null;
   try {
     const calibrationTenantCsharp = randomTenant();
     fakeAi = await startFakeOpenAi();
     api = await spawnApi(leg, path.join(runtimeRoot, "csharp"), options.postgresUrl, calibrationTenantCsharp);
+    if (facadeKeys) {
+      facadeApi = await spawnApi(
+        leg,
+        path.join(runtimeRoot, "csharp-facade"),
+        options.postgresUrl,
+        randomTenant(),
+        facadeKeys
+      );
+    }
     nodeA = await startNode("a", {
       dataDir: path.join(runtimeRoot, "node-a"),
       datasourcesAuthority: "node",
@@ -1148,47 +1212,31 @@ async function runLeg(leg, options) {
     });
     nodeA.state.aiBaseUrl = fakeAi.origin + "/v1";
     nodeB.state.aiBaseUrl = fakeAi.origin + "/v1";
+    const csharpDirect = facadeApi
+      ? {
+          label: "c",
+          baseUrl: facadeApi.baseUrl,
+          keys: facadeKeys,
+          roleByKeyId: { [keyId(facadeKeys.submitter)]: "@submitter", [keyId(facadeKeys.reviewer)]: "@reviewer" },
+          state: { aiBaseUrl: fakeAi.origin + "/v1" },
+        }
+      : null;
 
     for (const testCase of CASES) {
       const a = await runCase(nodeA, testCase);
       const b = await runCase(nodeB, testCase);
-      const diffs = diffPaths({ status: a.status, body: a.body }, { status: b.status, body: b.body }, "", []);
-      const waivers = WAIVERS.filter((waiver) => waiver.caseName === testCase.name);
-      const unwaived = diffs.filter(
-        (diff) =>
-          !waivers.some((waiver) =>
-            waiver.paths.some(
-              (prefix) =>
-                diff.path === prefix || diff.path.startsWith(prefix + ".") || diff.path.startsWith(prefix + "[")
-            )
-          )
-      );
-      const result = diffs.length === 0 ? "pass" : unwaived.length === 0 ? "waived" : "fail";
-      results.push({
-        leg,
-        name: testCase.name,
-        result,
-        status: { node: a.status, csharp: b.status },
-        diffs: diffs.map((diff) => ({
-          path: diff.path,
-          node: trimForReport(diff.a),
-          csharp: trimForReport(diff.b),
-          waived: !unwaived.includes(diff),
-        })),
-        // 截断的响应样本留在产物里，方便审阅「到底比了什么」；完整正文只在失败时才需要人工复跑。
-        nodeBody: trimForReport(a.raw),
-        ...(result === "pass" ? {} : { csharpBody: trimForReport(b.raw) }),
-      });
-      const tag = result === "pass" ? "PASS  " : result === "waived" ? "WAIVED" : "FAIL  ";
-      process.stdout.write(
-        `  ${tag} [${leg}] ${testCase.name} (${a.status}/${b.status})${result === "fail" ? " " + JSON.stringify(unwaived.slice(0, 3)) : ""}\n`
-      );
+      compare(results, leg, "node-b", testCase, a, b);
+      if (csharpDirect) {
+        const c = await runCase(csharpDirect, testCase);
+        compare(results, leg, "csharp-direct", testCase, a, c);
+      }
     }
     return { results, apiOutput: api.output };
   } finally {
     if (nodeA) await nodeA.app.close().catch(() => {});
     if (nodeB) await nodeB.app.close().catch(() => {});
     if (api) await stop(api.child);
+    if (facadeApi) await stop(facadeApi.child);
     if (fakeAi) await new Promise((resolve) => fakeAi.server.close(resolve));
     safeCleanup(runtimeRoot);
   }
@@ -1215,13 +1263,15 @@ async function main() {
   const waived = cases.filter((item) => item.result === "waived").length;
   const fail = cases.filter((item) => item.result === "fail").length;
   const report = {
-    schemaVersion: "1.1",
+    schemaVersion: "1.2",
     generatedAtUtc: new Date().toISOString(),
     legs,
     skipped,
     // 1.1：分析任务只读切流按腿记录 Node B 的权威——file 腿的 task-* 用例是 Node 对 Node。
+    // 1.2（8.6d-1）：postgres 腿每条用例额外比对一次「Node A vs C# 公共门面直连」（results[].via = csharp-direct）。
     authority: {
       analysisTasks: Object.fromEntries(legs.map((leg) => [leg, ANALYSIS_TASKS_AUTHORITY_BY_LEG[leg]])),
+      publicFacade: Object.fromEntries(legs.map((leg) => [leg, leg === "postgres" ? "csharp-direct" : "unavailable"])),
     },
     cases: cases.length,
     pass,

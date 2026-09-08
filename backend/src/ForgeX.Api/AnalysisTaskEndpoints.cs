@@ -77,31 +77,70 @@ internal static class AnalysisTaskEndpoints
             return body.Problem;
         }
 
-        var question = JsValue.Trim(body.Value?.Question ?? string.Empty);
-        if (question.Length == 0)
-        {
-            return ApiProblemResults.Create(context, 400, "question_required", "question 不能为空");
-        }
-        if (question.Length > MaxQuestionLength)
-        {
-            return ApiProblemResults.Create(context, 400, "question_too_long", "question 超过 " + MaxQuestionLength + " 字");
-        }
-
         // Caller-supplied endpoint beats the process provider (Node: request-level > OPENAI_* > rules).
         var (override_, overrideError) = AiEndpoint.Parse(body.Value?.Ai?.BaseUrl, body.Value?.Ai?.ApiKey, body.Value?.Ai?.Model);
         if (overrideError is not null)
         {
             return ApiProblemResults.Create(context, 400, "invalid_ai_endpoint", overrideError);
         }
+
+        var (accepted, error) = await TryCreateAsync(
+            context,
+            caller,
+            body.Value?.Question ?? string.Empty,
+            body.Value?.DatasourceId,
+            override_,
+            new AnalysisTaskCreationDeps(tasks, queue, runtime, options, providers, gate));
+        return error is not null
+            ? ApiProblemResults.Create(context, error.Status, error.Code, error.Title)
+            : Results.Json(accepted, statusCode: StatusCodes.Status202Accepted);
+    }
+
+    /// <summary>Everything the creation core needs; the facade (Stage 8.6d) resolves these itself from the service provider.</summary>
+    internal sealed record AnalysisTaskCreationDeps(
+        PostgresAnalysisTaskRepository Tasks,
+        AnalysisTaskQueue Queue,
+        AnalysisTaskRuntime Runtime,
+        AnalysisTaskOptions Options,
+        AnalysisProviderSelection Providers,
+        AnalysisCostGate Gate);
+
+    /// <summary>A rejection the caller renders in its own dialect: problem+json internally, Node's {error} on the public facade.</summary>
+    internal sealed record FacadeError(int Status, string Code, string Title);
+
+    /// <summary>
+    /// Shared creation core (Node routes/analyze.js after identity / rate limit): question checks with Node's
+    /// messages, dataset resolved under the caller's tenant / owner, stale-running recovery, quota pre-check,
+    /// running row persisted, work item queued. Returns either the 202 payload or a rejection.
+    /// </summary>
+    internal static async Task<(AnalysisTaskAcceptedDto? Accepted, FacadeError? Error)> TryCreateAsync(
+        HttpContext context,
+        ForgeXCallerContext caller,
+        string rawQuestion,
+        string? rawDatasourceId,
+        AiEndpoint? override_,
+        AnalysisTaskCreationDeps deps)
+    {
+        var (tasks, queue, runtime, options, providers, gate) = deps;
+        var question = JsValue.Trim(rawQuestion);
+        if (question.Length == 0)
+        {
+            return (null, new FacadeError(400, "question_required", "question 不能为空"));
+        }
+        if (question.Length > MaxQuestionLength)
+        {
+            return (null, new FacadeError(400, "question_too_long", "question 超过 " + MaxQuestionLength + " 字"));
+        }
+
         var endpoint = override_ ?? providers.ProcessEndpoint;
         var providerId = endpoint is null ? AnalysisProviderSelection.RulesId : AnalysisProviderSelection.OpenAiId;
 
-        var datasourceId = string.IsNullOrEmpty(body.Value?.DatasourceId) ? "sample" : body.Value!.DatasourceId!;
+        var datasourceId = string.IsNullOrEmpty(rawDatasourceId) ? "sample" : rawDatasourceId!;
         var datasources = context.RequestServices.GetService<IDatasourceRepository>();
         var datasource = await DatasourceEndpoints.ResolveAsync(datasources, caller.TenantId, caller.OwnerId, datasourceId, context.RequestAborted);
         if (datasource is null)
         {
-            return ApiProblemResults.Create(context, 404, "datasource_not_found", "数据源不存在或已过期，请重新上传");
+            return (null, new FacadeError(404, "datasource_not_found", "数据源不存在或已过期，请重新上传"));
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -159,7 +198,7 @@ internal static class AnalysisTaskEndpoints
             WillUseAi: verdict is { Ok: true },
             Quota: verdict is null ? null : new AnalysisQuotaDto(verdict.Ok, verdict.Remaining, verdict.Reason),
             new AnalysisTaskLinksDto($"/api/v1/analysis-tasks/{id}", $"/api/v1/analysis-tasks/{id}/events"));
-        return Results.Json(accepted, statusCode: StatusCodes.Status202Accepted);
+        return (accepted, null);
     }
 
     public static async Task<IResult> ListAsync(HttpContext context, PostgresAnalysisTaskRepository tasks)

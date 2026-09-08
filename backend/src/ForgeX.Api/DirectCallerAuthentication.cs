@@ -79,9 +79,21 @@ internal static class DirectCallerAuthentication
                 "需要 API Key：请在 Authorization: Bearer <key> 或 X-API-Key 头中提供");
         }
 
-        var remote = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        caller = FromCallerString("ip:" + remote);
+        caller = FromCallerString("ip:" + RemoteAddress(context));
         return null;
+    }
+
+    /// <summary>
+    /// Node clientIp(): the socket address (X-Forwarded-For is applied earlier by the forwarded-headers
+    /// middleware when the deployment trusts its proxy). IPv4-mapped IPv6 collapses to the IPv4 text so a
+    /// dual-stack listener yields the same "ip:127.0.0.1" identity Node did.
+    /// </summary>
+    internal static string RemoteAddress(HttpContext context)
+    {
+        var address = context.Connection.RemoteIpAddress;
+        if (address is null) return "unknown";
+        if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
+        return address.ToString();
     }
 
     /// <summary>
@@ -115,7 +127,8 @@ internal static class DirectCallerAuthentication
     internal static ForgeXCallerContext FromCallerString(string callerId)
     {
         var digest = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(callerId)))[..32];
-        return new ForgeXCallerContext("tn_" + digest, "ow_" + digest, false);
+        var kind = callerId.StartsWith("key:", StringComparison.Ordinal) ? "key" : "ip";
+        return new ForgeXCallerContext("tn_" + digest, "ow_" + digest, false, CallerKind: kind);
     }
 
     private static string ReadApiKey(HttpRequest request)

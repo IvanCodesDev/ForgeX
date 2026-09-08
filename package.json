@@ -55,6 +55,7 @@
     "dotnet:static-drill": "npm run dotnet:build && node tools/verify-static-hosting.js",
     "dotnet:resources": "npm run dotnet:build && node tools/run-dotnet.js run --project backend/tests/ForgeX.ResourceGate/ForgeX.ResourceGate.csproj --configuration Release --no-build",
     "dotnet:resource-authority": "node tools/verify-resource-authority.js",
+    "dotnet:public-facade": "node tools/verify-public-facade.js",
     "resources:fixtures": "node tools/generate-resource-parity-fixtures.js",
     "resources:fixtures:check": "node tools/generate-resource-parity-fixtures.js --check",
     "dotnet:api": "node tools/run-dotnet.js run --project backend/src/ForgeX.Api/ForgeX.Api.csproj",

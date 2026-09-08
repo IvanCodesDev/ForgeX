@@ -142,6 +142,26 @@ Node persists snapshots asynchronously per task, so right after a task finishes 
 `202 running` once before `200`; clients already poll. Foreign tasks return `404` on the C# leg where
 Node answered `403` (same convention as above). Rollback: set the switch back to `node` and restart.
 
+### Stage 8.6d-1: the C# public facade (Node's dialect without Node)
+
+`PublicFacade__Enabled=true` makes `forgex-api` serve Node's public routes itself — `/api/analyze[/…]`
+(unnamed `data:` SSE frames), `/api/datasource`, `/api/knowledge[/search]`, `/api/share/*`,
+`/api/calibrations/*`, `/healthz` in the shape the frontend probes, Node's `/metrics` series names, the
+`/api/auth/infini/me` tombstone — with Node's `{ "error": "…" }` bodies and messages, so the browser
+does not notice whether a Node proxy sits in front. Server-layer semantics travel with it:
+`PublicFacade__AllowOrigins` (comma list; `OPTIONS` always answers `204`, CORS headers only for listed
+origins), `PublicFacade__RateLimitMs` (default 5000, per-IP cooldown on task creation only),
+`PublicFacade__TrustProxy=true` (take the client IP from the first `X-Forwarded-For` hop, as
+`TRUST_PROXY=1` did), `PublicFacade__PublicBase` (falls back to `Shares__PublicBase`; share links use
+it, else the request `Origin`). Direct identity is the Stage 8.2 mapping (`DirectAuth__ApiKeys`,
+`DirectAuth__CalibrationReviewKeys`, `DirectAuth__RequireAuth` ≙ `API_KEYS`, `CALIBRATION_REVIEW_KEYS`,
+`REQUIRE_AUTH`), which hashes to the same tenant / owner ids Node wrote, so existing rows stay owned.
+The facade requires `AnalysisTasks__Provider=postgres` plus the four resource providers; the internal
+`/api/v1/*` contract is unchanged. Evidence: the dual-run replays its whole corpus a third time against
+the facade directly (`results[].via = csharp-direct`) and `npm run dotnet:public-facade` covers CORS,
+404 text, rate limiting, `/healthz`, `/metrics`, `REQUIRE_AUTH` and `TRUST_PROXY`. Until 8.6d-2 the
+facade stays off in the shipped Compose file; Node remains the entry point.
+
 Production objectives and alert response are defined in [`SLO.md`](./SLO.md),
 [`alerts/forgex.rules.yml`](./alerts/forgex.rules.yml), and [`RUNBOOK.md`](./RUNBOOK.md). Before each
 release run `npm run dotnet:capacity`, `npm run dotnet:recovery-drill`, `npm run security:audit`,
