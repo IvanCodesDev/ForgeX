@@ -1,5 +1,7 @@
+<p align="center">
+  <img width="150" alt="exec-ab8574a0-a8eb-47a1-adb1-ff8c6883b54f" src="https://github.com/user-attachments/assets/e27d2fef-d894-4958-a884-8a996f8ee131" />
+</p>
 <div align="center">
-  <img src="./docs/images/forgex-logo.svg" width="140" alt="FORGE·X Insight Logo">
 
   <h1>FORGE·X Insight</h1>
 
