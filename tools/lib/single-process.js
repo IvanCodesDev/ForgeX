@@ -61,12 +61,14 @@ async function startSingleProcess({ port, storageRoot, postgresUrl, apiKeys = ""
   }
   const stop = async () => {
     if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
-    child.kill();
-    await Promise.race([new Promise((resolve) => child.once("exit", resolve)), sleep(5000)]);
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill("SIGKILL");
-      await new Promise((resolve) => child.once("exit", resolve));
-    }
+    await new Promise((resolve) => {
+      const timer = setTimeout(() => child.kill("SIGKILL"), 5000);
+      child.once("exit", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      child.kill();
+    });
   };
   try {
     const deadline = Date.now() + 45000;

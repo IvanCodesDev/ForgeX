@@ -17,8 +17,15 @@ const rootDir = path.resolve(__dirname, "../..");
 function buildReactFixture() {
   const authorityMode = process.env.E2E_GCODE_AUTHORITY === "dotnet" ? "dotnet" : "browser";
   const analyticsAuthorityMode = process.env.E2E_ANALYTICS_AUTHORITY === "dotnet" ? "dotnet" : "browser";
-  const npmCli = process.env.npm_execpath;
-  const command = npmCli ? process.execPath : process.platform === "win32" ? "npm.cmd" : "npm";
+  // Windows 的 .cmd 不能直接 spawnSync；优先使用 npm 自身的 JS 入口，避免 EINVAL。
+  const npmCli = [
+    process.env.npm_execpath,
+    path.join(path.dirname(process.execPath), "node_modules/npm/bin/npm-cli.js"),
+  ].find((candidate) => candidate && fs.existsSync(candidate));
+  if (!npmCli && process.platform === "win32") {
+    throw new Error("无法定位 npm CLI，请通过 npm run test:e2e 启动，或使用包含 npm 的 Node 安装。");
+  }
+  const command = npmCli ? process.execPath : "npm";
   const args = npmCli ? [npmCli, "run", "frontend:build"] : ["run", "frontend:build"];
   const result = childProcess.spawnSync(command, args, {
     cwd: rootDir,
@@ -46,12 +53,14 @@ function buildReactFixture() {
   if (!fs.existsSync(entry)) throw new Error("React E2E build missing: " + entry);
 }
 
-buildReactFixture();
-
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "forgex-e2e-"));
 const sidecarEnabled = process.env.E2E_GCODE_AUTHORITY === "dotnet" || process.env.E2E_ANALYTICS_AUTHORITY === "dotnet";
 
 async function main() {
+  if (process.env.E2E_SERVER !== "node" && !process.env.POSTGRES_URL) {
+    throw new Error("C# E2E 需要已迁移的测试 POSTGRES_URL；验证旧网关时显式设置 E2E_SERVER=node。");
+  }
+  buildReactFixture();
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "forgex-e2e-"));
   if (process.env.E2E_SERVER !== "node") {
     const api = await startSingleProcess({
       port: 8899,

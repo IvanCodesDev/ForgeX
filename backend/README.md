@@ -212,12 +212,12 @@ secret keeps the explicit `tn_local` / `ow_local` development scope for direct l
 ForgeX.Api now owns the storage and semantics of the three remaining Node-side resources, behind
 internal endpoints that stay out of the public OpenAPI document (the Stage 8.1 shares precedent):
 
-| Resource | Endpoints | Provider key |
-| --- | --- | --- |
-| Datasources | `POST /api/v1/datasources`, `GET /api/v1/datasources/{id}` (incl. `sample`) | `Datasources:Provider` |
-| Knowledge | `POST /api/v1/knowledge`, `GET /api/v1/knowledge`, `POST /api/v1/knowledge/search` | `Knowledge:Provider` |
-| Calibration governance | `GET /api/v1/calibrations`, `GET /api/v1/calibrations/stats`, `GET/POST /api/v1/calibrations/submissions`, `POST /api/v1/calibrations/{id}/revisions/{rev}/review` | `Calibrations:Provider` |
-| Shares (8.1, file leg added) | unchanged | `Shares:Provider` |
+| Resource                     | Endpoints                                                                                                                                                          | Provider key            |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------- |
+| Datasources                  | `POST /api/v1/datasources`, `GET /api/v1/datasources/{id}` (incl. `sample`)                                                                                        | `Datasources:Provider`  |
+| Knowledge                    | `POST /api/v1/knowledge`, `GET /api/v1/knowledge`, `POST /api/v1/knowledge/search`                                                                                 | `Knowledge:Provider`    |
+| Calibration governance       | `GET /api/v1/calibrations`, `GET /api/v1/calibrations/stats`, `GET/POST /api/v1/calibrations/submissions`, `POST /api/v1/calibrations/{id}/revisions/{rev}/review` | `Calibrations:Provider` |
+| Shares (8.1, file leg added) | unchanged                                                                                                                                                          | `Shares:Provider`       |
 
 Every provider accepts `disabled` (default: nothing registered), `file` (JSON documents under
 `Storage:Root/{datasources,knowledge,shares}` and `Calibrations:StateFile`, which reads and writes
@@ -307,3 +307,35 @@ pinned runtime driver and a real PostgreSQL integration environment are added.
 ## Rollback boundary
 
 The old page remains at `/`, the React page remains at `/react/`, and the default G-code authority remains the browser. Rollback therefore builds React with `VITE_REACT_GCODE_ENABLED=0` and `VITE_GCODE_AUTHORITY=browser`, clears `GCODE_AUTHORITY_URL`, and stops the .NET process. The gateway route may remain deployed: while unconfigured it returns a structured `503` and receives no requests from the rolled-back UI. Keep the file-job backup and any applied PostgreSQL expand migration during the rollback window; no Node data migration is required for this slice.
+
+## Stage 8.6d-3 前置：Node 服务契约的 C# 替身
+
+本轮增加 `npm run dotnet:server-contract`：真实启动 ForgeX.Api，直接验证公共 HTTP 契约，不导入 `server/` 或经典脚本。需要 Release API、React 构建产物以及完成六个迁移的隔离测试 `POSTGRES_URL`。缺少数据库时明确失败；测试使用规则引擎，无外部 AI 计费。
+
+`tests/server.test.js` 的分段对应关系如下，供后续删除逐项核销；这是验收准备，暂不删除 Node 测试：
+
+1. 健康与引擎模式 → 公共契约第 1 组。
+2. 静态路径与 React 映射（含 2b）→ 公共契约第 2 组及 `ForgeX.StaticGate` 的临时静态根、缺失回退、原始路径和缓存测试。
+3. 上传与来源标记 → 公共契约第 3 组，包含 413 与非法 JSON。
+4. 分析/SSE/轮询 → 公共契约第 4 组。
+5. 上传数据分析 → 公共契约第 5 组。
+6. 参数校验 → 公共契约第 6 组。
+7. 知识登记 → 公共契约第 7 组。
+8. 分享页面 → 公共契约第 8 组。
+9. 限流 → 公共契约第 9 组。
+10. Provider 选择 → `ServerProviderSection` 的 `server-10-*`。
+11. AI 叙述与权威数字合并 → `server-11-*`，保留图表、证据、来源与统计小节。
+12. 简报与数据规模解耦 → `server-12-*`。
+13. 缓存 → `server-13-*`，含租户 scope、数据源、provider 隔离和 LRU/TTL。
+14. 检索 → `server-14-*`；逐字节语义继续由 ResourceGate 的 Node 生成夹具把关。
+15. 检索能力标记 → 公共契约第 15 组。
+16. 持久化 → 公共契约第 16 组，测试真实进程重启与 PostgreSQL；原 Node 的纯内存模式不作为 C# 公共部署模式保留。
+17. 文件存储原语 → ResourceGate 的 `FileCollectionSection`（原子写、TTL、容量、损坏文件等）；Node 的既有 file 数据不会自动迁入 PostgreSQL，部署前仍需另行验证迁移。
+18. 成本闸门 → `server-18-*` 的个人/全局日限额、UTC 日期、并发、排队和释放；AI 耗尽端到端降级及缓存不扣费由 `AnalysisTasksSection` 验证。**既定差异：C# 额度与缓存为进程内状态，`persisted=false`；旧 Node 的 usage.json 跨重启保留并未迁移，不宣称等价。**
+19. 身份与隔离 → 公共契约第 19 组及 `ForgeX.AuthGate` 的授权矩阵。
+20. 额度/规则引擎行为 → 公共契约第 20 组（本机假 AI 验证公共端点、缓存不扣额、额度耗尽降级与密钥不落快照）及 ResourceGate 的 `analysis-ai-quota-degraded`。
+21. 指标 → 公共契约第 21 组。
+22. 分享披露与撤销 → 公共契约第 22 组。
+23. G-code → 公共契约第 23 组验证直接权威端点和作业身份边界，异步持久化由单进程部署演练/JobGate 补齐。Node 的流式代理实现测试在代理删除后才退役，不能用直连接口通过来宣称这些代理分支已逐条迁移。
+
+本轮公共 HTTP 契约 100 项通过，新增内部契约 59 项；ResourceGate 总计从 367 增至 426（file + postgres 双腿）。CI 分别保存 `csharp-server-contract.json` 与 `resource-authority-gate.json`。测试数量不能替代删除审批、真实容器验收和生产观察；现阶段仍保留 Node、经典前端及原测试链。

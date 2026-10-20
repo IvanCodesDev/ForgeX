@@ -199,6 +199,17 @@ jobs:
       - name: 公共门面单进程上传、分析、分享与重启验收
         run: npm run dotnet:single-process
 
+      - name: C# 公共服务契约（Node 退役前的 HTTP 替身）
+        run: npm run dotnet:server-contract
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: csharp-server-contract-dotnet-10.0.302
+          path: backend/artifacts/csharp-server-contract.json
+          if-no-files-found: warn
+          retention-days: 14
+
       - uses: actions/upload-artifact@v4
         with:
           name: gcode-golden-diff-dotnet-10.0.302
