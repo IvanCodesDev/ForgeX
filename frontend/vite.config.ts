@@ -3,19 +3,22 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
-/* 旧入口的原始资产按字节供给，不进打包管线。
-   落在 assets/ 下是因为服务端静态 allowlist 只放行 /react/assets/，见 server/lib/http.js。 */
+/* 设计系统样式按字节供给，不进打包管线。
+   落在 assets/ 下是因为服务端静态 allowlist 只放行 /react/assets/，见 server/lib/http.js。
+   源文件由 React 侧持有（frontend/design-system/，与 src/styles/ 的打包 CSS 不同，这两份不进管线），
+   构建不再读取经典目录——这是删除经典前端的前置条件；经典目录存在期间两份副本必须逐字节一致，
+   由 src/test/classic-retirement-gate.test.ts 把关。 */
 const LEGACY_ASSETS = [
   {
     /* 设计系统原样复用。交给打包器压缩会按构建目标重写厂商前缀，
        实测 .pill-card 的标准 backdrop-filter 会被删成只剩 -webkit-，
        Firefox 只认标准属性，毛玻璃将整体失效。 */
-    source: "./classic/css/style.css",
+    source: "./design-system/style.css",
     asset: "assets/style.css",
     type: "text/css; charset=utf-8",
   },
   {
-    source: "./classic/css/tokens.css",
+    source: "./design-system/tokens.css",
     asset: "assets/tokens.css",
     type: "text/css; charset=utf-8",
   },

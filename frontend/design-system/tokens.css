@@ -1,0 +1,36 @@
+:root {
+  --bg-0: #262b35;
+  --bg-1: #2c323e;
+  --bg-2: #333a48;
+  --grid-line: rgba(196, 210, 232, 0.07);
+  --grid-line-hi: rgba(196, 210, 232, 0.11);
+  --ink-0: #1d222b;
+  --ink-1: #5a6270;
+  --ink-2: #9aa2b0;
+  --lt-0: #eef1f6;
+  --lt-1: #aab3c2;
+  --accent: #ff6a2b;
+  --accent-deep: #f0561a;
+  --ok: #2ca878;
+  --warn: #e59a3a;
+  --err: #e0484d;
+  --blue: #4f83e0;
+  --glass: rgba(238, 242, 247, 0.6);
+  --glass-soft: rgba(238, 242, 247, 0.42);
+  --glass-edge: rgba(255, 255, 255, 0.55);
+  --stroke: rgba(29, 34, 43, 0.1);
+  --stroke-hi: rgba(29, 34, 43, 0.2);
+  --f-body: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "微软雅黑", "PingFang SC", sans-serif;
+  --f-mono: "Bahnschrift", "Cascadia Mono", "Consolas", monospace;
+  --r-card: 18px;
+  --r-md: 12px;
+  --r-sm: 9px;
+  --shadow-card: 0 20px 48px rgba(10, 14, 22, 0.42), 0 3px 10px rgba(10, 14, 22, 0.28);
+  --shadow-pill: 0 12px 30px rgba(10, 14, 22, 0.38), 0 2px 6px rgba(10, 14, 22, 0.24);
+  --glass-gloss:
+    inset 0 1px 0 var(--glass-edge), inset 0 0 0 1px rgba(255, 255, 255, 0.22),
+    inset 0 16px 30px rgba(255, 255, 255, 0.14);
+  --edge: 18px;
+  --ctx-w: 300px;
+  --param-w: 324px;
+}

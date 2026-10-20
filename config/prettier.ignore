@@ -13,6 +13,8 @@
 ../tests/
 ../index.html
 ../frontend/classic/css/
+# React 持有的设计系统样式：按字节直出、不能被重排（经典目录存在期间由 vitest 门禁比对两份一致）
+../frontend/design-system/
 
 # Playwright 产物
 ../test-results/
