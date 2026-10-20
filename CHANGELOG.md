@@ -9,7 +9,7 @@
 
 ## [Unreleased]
 
-### Stage 8.6d-1：C# 公共门面——ForgeX.Api 直接说 Node 的公共方言（2026-09-08）
+### Stage 8.6d-1：C# 公共门面——ForgeX.Api 直接说 Node 的公共方言（2026-09-09）
 - Node 退场三步走的第一步（可回滚：不开 `PublicFacade__Enabled` 就零变化）。新增 `PublicFacade.cs`：把 Node 形状的公共路由
   接到现有 handler——`POST /api/analyze`（Node 的 `aiBaseUrl/aiApiKey/aiModel` 字段、202 `{taskId, engine, authenticated,
   willUseAi, quota}`）、`GET /api/analyze/{id}[/result|/stream]`（**无名 `data:` 帧**，`: connected` 起头，终态收口，
@@ -35,7 +35,7 @@
 - 下一步 8.6d-2：`Dockerfile.api` 多阶段（前端产物进镜像 + 静态托管 + 公共门面）、render.yaml / compose / CI E2E 切单进程，
   Node 服务移到 `legacy-node` profile 观察 7 天；8.6d-3 删除 `server/`。
 
-### Stage 8.6c-2b-ii：创建链 AI 腿迁 C#——OpenAI 兼容 provider / 成本闸门 / 结果缓存（2026-09-08）
+### Stage 8.6c-2b-ii：创建链 AI 腿迁 C#——OpenAI 兼容 provider / 成本闸门 / 结果缓存（2026-09-09）
 - `ANALYSIS_TASKS_AUTHORITY=csharp` 时 **所有** `POST /api/analyze` 交给 C#：Node 只剩身份 / 限流 / question / 自带端点入口校验，
   自带端点（`aiBaseUrl/aiApiKey/aiModel`）作为请求体 `ai` 字段转发一次，Node 不落日志、不进快照；202 透传 C# 的 `willUseAi` / `quota`
   （`reason` 为 null 不回显，与 Node 自算形状一致）。

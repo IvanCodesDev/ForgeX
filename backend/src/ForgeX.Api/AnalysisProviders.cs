@@ -14,7 +14,7 @@ namespace ForgeX.Api;
 /// lib/quota.js and the ResultCache in services/analysis.js. Everything the user can observe is kept
 /// identical: provider ids, progress events, the system / user prompt, the merge rules that keep
 /// charts / evidence local, the degrade section, the quota messages and the cache key derivation.
-/// Decisions (user, 2026-09-08): gate and cache live in-process, the AI call is non-streaming.
+/// Decisions (user, 2026-09-09): gate and cache live in-process, the AI call is non-streaming.
 /// </summary>
 internal sealed record AnalysisAiOptions(string Preference, string BaseUrl, string ApiKey, string Model, int TimeoutMs, bool Probe)
 {
