@@ -11,7 +11,10 @@
 
    Stage 7.3 扩面：除启动态外，五个流程页（模型/切片/校准/质量/洞察）逐页、
    四台机型逐台执行同一套「布局契约 + 整屏像素」比对（§5 硬门禁），
-   两入口的截图同步归档到 optimization/stage7-classic-retirement/ 作为视觉校验记录。 */
+   两入口的截图同步归档到 optimization/stage7-classic-retirement/ 作为视觉校验记录。
+
+   Stage 9 起 React 会长出 classic 没有的能力：这类 UI 必须以 data-react-only 声明，
+   比对口径是「React 去掉声明的专有块后 ≡ classic」（见 REACT_ONLY_SELECTOR）。 */
 "use strict";
 
 const fs = require("fs");
@@ -88,6 +91,12 @@ const TRACKED_STYLES = [
 const CHANNEL_TOLERANCE = 8;
 const MAX_MISMATCH_RATIO = 0.002;
 
+/** React 专有能力的声明标记。classic 已冻结，Stage 9 起 React 会出现 classic 没有的 UI
+    （首例：9.3 的 STL / 3MF 导入区）；这类块在源码里以 data-react-only 声明，
+    比对口径改为「React 去掉声明的专有块后 ≡ classic」：契约采集跳过其子树，截图前整体折叠。
+    专有面可用 `grep -r data-react-only frontend/src` 审计，不允许未声明的差异。 */
+const REACT_ONLY_SELECTOR = "[data-react-only]";
+
 /** 流程页清单（顶部导航全集）：四个流程面板 + 洞察独立面板。 */
 const FLOW_PAGES = [
   { id: "import", pill: "模型", panel: "#ctx-panel" },
@@ -123,11 +132,12 @@ async function waitBooted(page) {
 /** 在页面上下文里采集一组选择器的布局契约（几何 + 计算样式 + 叶子文案）。 */
 function collectContract(page, selectors) {
   return page.evaluate(
-    ([selectorList, styleKeys]) => {
+    ([selectorList, styleKeys, reactOnly]) => {
       const round = (value) => Math.round(value);
       const entries = [];
       for (const selector of selectorList) {
-        const nodes = Array.from(document.querySelectorAll(selector));
+        // 已声明的 React 专有块不进契约（截图前它们也被整体折叠，见 collapseReactOnlyAdditions）
+        const nodes = Array.from(document.querySelectorAll(selector)).filter((node) => !node.closest(reactOnly));
         entries.push({ selector, count: nodes.length });
         nodes.forEach((node, index) => {
           const rect = node.getBoundingClientRect();
@@ -141,7 +151,8 @@ function collectContract(page, selectors) {
             className: node.getAttribute("class") ?? "",
             hidden: node.hasAttribute("hidden"),
             disabled: node.disabled === true,
-            childElements: node.childElementCount,
+            // 子元素计数同样不含已声明的 React 专有块（折叠后仍在 DOM 里）
+            childElements: Array.from(node.children).filter((child) => !child.matches(reactOnly)).length,
             /* 只在叶子节点比对文案：容器的 textContent 会拼进 HTML 源码的缩进空白，
                那是书写格式而非渲染差异，容器的实际内容由其子节点各自覆盖。 */
             text: node.childElementCount === 0 ? (node.textContent ?? "").replace(/\s+/g, " ").trim() : null,
@@ -152,7 +163,7 @@ function collectContract(page, selectors) {
       }
       return entries;
     },
-    [selectors, TRACKED_STYLES]
+    [selectors, TRACKED_STYLES, REACT_ONLY_SELECTOR]
   );
 }
 
@@ -174,11 +185,18 @@ async function hideNondeterministicLayers(page) {
   });
 }
 
+/** 折叠 React 专有块：以样式规则整体 display:none，对比对前后才渲染出来的流程页内容同样生效。
+    classic 上没有这类节点，规则空转；React 上折叠后其后续兄弟的几何与 classic 对齐。 */
+async function collapseReactOnlyAdditions(page) {
+  await page.addStyleTag({ content: `${REACT_ONLY_SELECTOR} { display: none !important; }` });
+}
+
 /** 隐去 3D 画布后整屏截图，只保留确定性的 CSS 界面层。 */
 async function captureInterface(page, url) {
   await page.goto(url);
   await waitBooted(page);
   await hideNondeterministicLayers(page);
+  await collapseReactOnlyAdditions(page);
   await page.waitForTimeout(200);
   return page.screenshot();
 }
@@ -289,6 +307,7 @@ async function captureFlowPages(page, url) {
   await page.goto(url);
   await waitBooted(page);
   await hideNondeterministicLayers(page);
+  await collapseReactOnlyAdditions(page);
   const states = {};
   for (const def of FLOW_PAGES) {
     await openFlowPage(page, def);
@@ -305,6 +324,7 @@ async function captureMachines(page, url) {
   await page.goto(url);
   await waitBooted(page);
   await hideNondeterministicLayers(page);
+  await collapseReactOnlyAdditions(page);
   await openFlowPage(page, FLOW_PAGES[0]);
   const states = {};
   for (const machine of MACHINES) {

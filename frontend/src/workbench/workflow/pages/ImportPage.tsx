@@ -10,12 +10,14 @@ import {
 } from "../../../legacy/engine";
 import { Slider } from "../../controls/Slider";
 import type { GcodeImportPhase } from "../gcode-import";
-import type { ImportAssets } from "../useImportAssets";
+import type { MeshImportPhase } from "../mesh-import";
+import type { ImportAssets, MeshImportState } from "../useImportAssets";
 
 /* 内联 SVG 路径与旧实现一致（ui.js 的 ICONS / 内置模型图标）。 */
 const ICON_UPLOAD = '<path d="M12 16V5m0 0l-4 4m4-4l4 4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/>';
 const ICON_LAYERS = '<path d="M3 8h18M3 12h18M3 16h18M3 20h18M3 4h18"/>';
 const ICON_MOTION = '<path d="M4 17a8 8 0 0116 0"/><path d="M12 17l4.5-5.5"/><circle cx="12" cy="17" r="1.4"/>';
+const ICON_MESH = '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 3v18M4 7.5l8 4.5 8-4.5"/>';
 const BUILTIN_ICONS: Readonly<Record<string, string>> = {
   gear: '<circle cx="30" cy="23" r="12"/><circle cx="30" cy="23" r="4"/><path d="M30 7v4M30 35v4M14 23h4M42 23h4M18.7 11.7l2.8 2.8M38.5 31.5l2.8 2.8M41.3 11.7l-2.8 2.8M21.5 31.5l-2.8 2.8"/>',
   impeller:
@@ -411,6 +413,96 @@ function GcodeSection(ctx: PageContext) {
   );
 }
 
+const MESH_PHASE_LABEL: Readonly<Record<MeshImportPhase, string>> = {
+  read: "读取文件",
+  hash: "SHA-256 校验",
+  parse: "解析网格",
+  rebuild: "装配模型",
+};
+
+const MESH_FORMAT_LABEL: Readonly<Record<MeshImportState["mesh"]["format"], string>> = {
+  "stl-binary": "STL（二进制）",
+  "stl-ascii": "STL（ASCII）",
+  "3mf": "3MF",
+};
+
+/** 网格摘要：全部数字均为浏览器预览口径，C# 权威解析（Stage 9.3 后半）就位后在旁并列权威值。 */
+function MeshSummary({ state }: { readonly state: MeshImportState }) {
+  const m = state.mesh;
+  const size = `${m.sizeMm.x.toFixed(1)} × ${m.sizeMm.y.toFixed(1)} × ${m.sizeMm.z.toFixed(1)} mm`;
+  return (
+    <>
+      <div className="gcode-summary" id="mesh-summary" data-mesh-via={state.via}>
+        <div className="kv">
+          <span className="k">文件</span>
+          <span className="v">{state.name}</span>
+        </div>
+        <div className="kv">
+          <span className="k">格式</span>
+          <span className="v">
+            {MESH_FORMAT_LABEL[m.format] +
+              (m.unit ? ` · 单位 ${m.unit}` : "") +
+              (m.objectCount > 1 ? ` · ${m.objectCount} 个对象` : "")}
+          </span>
+        </div>
+        <div className="kv">
+          <span className="k">预览解析</span>
+          <span className="v hl">{`${m.triangleCount.toLocaleString()} 面 · ${size}`}</span>
+        </div>
+        <div className="kv">
+          <span className="k">体积 / 表面积</span>
+          <span className="v">{`${m.volumeCm3.toFixed(2)} cm³ · ${m.surfaceAreaCm2.toFixed(1)} cm²`}</span>
+        </div>
+        <div className="kv">
+          <span className="k">悬垂面</span>
+          <span className={m.needSupport ? "v warn" : "v hl"}>
+            {m.needSupport ? `${m.overhangAreaMm2.toFixed(0)} mm² · 建议开启支撑` : "无需支撑"}
+          </span>
+        </div>
+        <div className="kv">
+          <span className="k">SHA-256</span>
+          <span className="v">{`${state.sha256.slice(0, 16)}…`}</span>
+        </div>
+      </div>
+      <div className="note" data-mesh-authority="pending">
+        以上为浏览器预览解析（体积、尺寸、悬垂为几何估算）；C# 权威解析接入后将在此并列权威数值。
+      </div>
+      {m.warnings.map((warning) => (
+        <div className="note" key={warning}>{`⚠ ${warning}`}</div>
+      ))}
+    </>
+  );
+}
+
+function MeshSection({ sim, assets }: PageContext) {
+  const importing = assets.meshImport;
+  const state = assets.mesh;
+  const live = state && sim.model && sim.model.id === "mesh-import";
+  /* React 专有能力（classic 没有网格导入）：data-react-only 是对 react-parity 门禁的声明，
+     比对时整块折叠并跳过契约采集；.panel-body 是普通块级流，这层包裹不改变布局。 */
+  return (
+    <div data-react-only="stage-9.3 mesh-import">
+      <div className="sec-label">STL / 3MF · 导入网格</div>
+      <UploadZone
+        id="mesh-zone"
+        icon={ICON_MESH}
+        title="拖拽 STL / 3MF 到此处，或点击选择"
+        subtitle="二进制 / ASCII STL、3MF 装配 · 后台解析 · 直接进入切片与打印仿真"
+        onClick={() => document.getElementById("mesh-input")?.click()}
+        onFile={assets.handleMeshFile}
+      />
+      {importing.status === "parsing" ? (
+        <div className="note" data-mesh-import={importing.phase ?? "read"}>
+          {`正在后台解析网格（界面保持可交互）：${MESH_PHASE_LABEL[importing.phase ?? "read"]} · ${Math.round(
+            importing.progress * 100
+          )}%`}
+        </div>
+      ) : null}
+      {live ? <MeshSummary state={state} /> : null}
+    </div>
+  );
+}
+
 function ImageSection({ assets }: PageContext) {
   const image = assets.image;
   return (
@@ -687,6 +779,7 @@ export function ImportPage({ sim, ui, bus, assets }: ImportPageProps) {
       <ProfileSection />
       <CalibrationSection />
       <BuiltinSection {...ctx} />
+      <MeshSection {...ctx} />
       <GcodeSection {...ctx} />
       <ImageSection {...ctx} />
       <ModelAndExportSection {...ctx} bump={bump} />

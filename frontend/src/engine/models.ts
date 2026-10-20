@@ -4,6 +4,7 @@
 import * as THREE from "three";
 import { clamp, deg2rad, type Point2 } from "./util.ts";
 import type { HeightGrid, Loop, SliceableModel } from "./slicer.ts";
+import type { MeshModel } from "./mesh-import.ts";
 
 export interface ImageModelOptions {
   mode: "relief" | "silhouette" | string;
@@ -335,7 +336,22 @@ export function rebuildImageModel(model: BuiltModel, opts: Partial<ImageModelOpt
 
 export function buildGeometry(model: BuiltModel): THREE.BufferGeometry {
   if (model.kind === "grid") return gridGeometry(model.grid!);
+  if (model.kind === "mesh") return meshGeometry((model as MeshModel).mesh.positions);
   return outlineGeometry(model);
+}
+
+/** 导入网格（Stage 9.3）：模型局部 Z-up (x,y,z) → 世界 (x,z,−y)，与 outlineGeometry 的 rotateX(−90°) 同一映射 */
+function meshGeometry(positions: Float32Array): THREE.BufferGeometry {
+  const world = new Float32Array(positions.length);
+  for (let i = 0; i < positions.length; i += 3) {
+    world[i] = positions[i]!;
+    world[i + 1] = positions[i + 2]!;
+    world[i + 2] = -positions[i + 1]!;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(world, 3));
+  g.computeVertexNormals();
+  return g;
 }
 
 /** 射线法点在多边形内判定 */

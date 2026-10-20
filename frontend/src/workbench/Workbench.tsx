@@ -135,7 +135,7 @@ export function Workbench() {
 
       <Toasts overlays={overlays} />
       <ModalHost overlays={overlays} />
-      {/* 六个隐藏文件输入框全部由宿主绑定（uploads 区 + 洞察 CSV） */}
+      {/* 七个隐藏文件输入框全部由宿主绑定（uploads 区 + 洞察 CSV） */}
       <input
         type="file"
         id="file-input"
@@ -150,6 +150,13 @@ export function Workbench() {
         accept=".gcode,.gco,.gc,text/x-gcode,text/plain"
         hidden
         onChange={pickFile(assets.handleGcodeFile)}
+      />
+      <input
+        type="file"
+        id="mesh-input"
+        accept=".stl,.3mf,model/stl,model/3mf,application/vnd.ms-package.3dmanufacturing-3dmodel+xml"
+        hidden
+        onChange={pickFile(assets.handleMeshFile)}
       />
       <input
         type="file"

@@ -17,6 +17,8 @@ import {
   type ParsedGcode,
 } from "../../legacy/engine";
 import { GcodeImportError, importGcodeFile, type GcodeImportHandle, type GcodeImportPhase } from "./gcode-import";
+import { MeshImportError, importMeshFile, type MeshImportHandle, type MeshImportPhase } from "./mesh-import";
+import { MAX_MESH_BYTES, createMeshModel, type MeshImportPayload } from "../../engine/mesh-import";
 import type { WorkbenchHandles } from "../useLegacyWorkbench";
 
 /** 与旧实现一致的图片模型再生成防抖。 */
@@ -63,14 +65,33 @@ export interface GcodeImportProgressState {
 
 const GCODE_IMPORT_IDLE: GcodeImportProgressState = { status: "idle", phase: null, progress: 0 };
 
+/** 已载入的 STL / 3MF 网格（浏览器预览解析口径；C# 权威解析待 Stage 9.3 后半）。 */
+export interface MeshImportState {
+  readonly name: string;
+  readonly sha256: string;
+  readonly via: "worker" | "main";
+  readonly mesh: MeshImportPayload;
+}
+
+export interface MeshImportProgressState {
+  readonly status: "idle" | "parsing";
+  readonly phase: MeshImportPhase | null;
+  readonly progress: number;
+}
+
+const MESH_IMPORT_IDLE: MeshImportProgressState = { status: "idle", phase: null, progress: 0 };
+
 export interface ImportAssets {
   readonly image: ImageModelState;
   readonly gcode: GcodeImportState | null;
   readonly gcodeImport: GcodeImportProgressState;
+  readonly mesh: MeshImportState | null;
+  readonly meshImport: MeshImportProgressState;
   readonly machineLog: MachineLogState | null;
   readonly authority: GcodeAuthorityState;
   handleImageFile(file: File): void;
   handleGcodeFile(file: File): void;
+  handleMeshFile(file: File): void;
   handleMachineLogFile(file: File): void;
   handleProfileFile(file: File): void;
   handleCalibrationFile(file: File): void;
@@ -94,6 +115,8 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
   const [image, setImage] = useState<ImageModelState>(INITIAL_IMAGE_STATE);
   const [gcode, setGcode] = useState<GcodeImportState | null>(null);
   const [gcodeImport, setGcodeImport] = useState<GcodeImportProgressState>(GCODE_IMPORT_IDLE);
+  const [mesh, setMesh] = useState<MeshImportState | null>(null);
+  const [meshImport, setMeshImport] = useState<MeshImportProgressState>(MESH_IMPORT_IDLE);
   const [machineLog, setMachineLog] = useState<MachineLogState | null>(null);
   const authorityMode = resolveAuthorityMode(import.meta.env);
   const [authority, setAuthority] = useState<GcodeAuthorityState>({ mode: authorityMode, ...AUTHORITY_IDLE });
@@ -104,6 +127,7 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
   const regenTimer = useRef<number | null>(null);
   const authorityAbort = useRef<AbortController | null>(null);
   const gcodeImportHandle = useRef<GcodeImportHandle | null>(null);
+  const meshImportHandle = useRef<MeshImportHandle | null>(null);
 
   const sim = handles?.sim ?? null;
   const ui = handles?.ui ?? null;
@@ -168,7 +192,7 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
     [sim]
   );
 
-  const clearImportChain = useCallback(() => {
+  const clearGcodeChain = useCallback(() => {
     gcodeImportHandle.current?.cancel();
     gcodeImportHandle.current = null;
     setGcodeImport(GCODE_IMPORT_IDLE);
@@ -177,6 +201,18 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
     authorityAbort.current?.abort();
     setAuthority({ mode: authorityMode, ...AUTHORITY_IDLE });
   }, [authorityMode]);
+
+  const clearMeshChain = useCallback(() => {
+    meshImportHandle.current?.cancel();
+    meshImportHandle.current = null;
+    setMeshImport(MESH_IMPORT_IDLE);
+    setMesh(null);
+  }, []);
+
+  const clearImportChain = useCallback(() => {
+    clearGcodeChain();
+    clearMeshChain();
+  }, [clearGcodeChain, clearMeshChain]);
 
   const regenerateImageModel = useCallback(
     (state: ImageModelState) => {
@@ -261,6 +297,7 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
           if (gcodeImportHandle.current !== handle) return; // 已被更新的导入替换
           const legacyParsed = parsed as unknown as ParsedGcode;
           const reconcile = gcodeParser.reconcile(legacyParsed);
+          clearMeshChain(); // 导入 toolpath 替换当前几何，网格摘要随之失效
           sim.loadImportedToolpath(legacyParsed, { name: file.name, sourceText, toolpath });
           /* 几何随导入固化：setGcode 触发重渲，参数面板锁定标签随 React 状态立即生效 */
           setGcode({ name: file.name, parsed: legacyParsed, reconcile, sha256 });
@@ -280,7 +317,50 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
           }
         });
     },
-    [sim, ui, requestAuthority]
+    [sim, ui, requestAuthority, clearMeshChain]
+  );
+
+  /* STL / 3MF 在 Worker 内读取、SHA-256、解析、归一化（Stage 9.3 前半，浏览器预览口径）；
+     主线程只把 Transferable 顶点缓冲装配为可切片模型，随后进入既有的切片 → 仿真 → 导出链。 */
+  const handleMeshFile = useCallback(
+    (file: File) => {
+      if (!sim || !ui) return;
+      if (!/\.(stl|3mf)$/i.test(file.name || "")) return ui.toast("请选择 .stl / .3mf 文件", "err");
+      if (file.size > MAX_MESH_BYTES)
+        return ui.toast(`网格文件超过 ${Math.round(MAX_MESH_BYTES / 1024 / 1024)}MB，请先精简`, "err");
+      if (printLocked(sim)) return ui.toast("打印中不可更换模型", "warn");
+      meshImportHandle.current?.cancel();
+      setMeshImport({ status: "parsing", phase: "read", progress: 0 });
+      const handle = importMeshFile(file, (progress) =>
+        setMeshImport({ status: "parsing", phase: progress.phase, progress: progress.progress })
+      );
+      meshImportHandle.current = handle;
+      handle.promise
+        .then(({ mesh: payload, sha256, via }) => {
+          if (meshImportHandle.current !== handle) return; // 已被更新的导入替换
+          clearGcodeChain();
+          sim.setModel(createMeshModel(payload, { name: file.name }), true);
+          setMesh({ name: file.name, sha256, via, mesh: payload });
+          const size = `${payload.sizeMm.x.toFixed(1)} × ${payload.sizeMm.y.toFixed(1)} × ${payload.sizeMm.z.toFixed(1)} mm`;
+          ui.toast(
+            `已导入 ${payload.format.toUpperCase()} · ${payload.triangleCount.toLocaleString()} 面 · ${size} · SHA-256 ${sha256.slice(0, 12)}…`,
+            "ok"
+          );
+          for (const warning of payload.warnings) ui.toast(warning, "warn");
+        })
+        .catch((error: unknown) => {
+          if (error instanceof MeshImportError && error.code === "CANCELLED") return;
+          console.error("[mesh-import]", error);
+          ui.toast("网格导入失败：" + String((error as Error)?.message ?? error), "err");
+        })
+        .finally(() => {
+          if (meshImportHandle.current === handle) {
+            meshImportHandle.current = null;
+            setMeshImport(MESH_IMPORT_IDLE);
+          }
+        });
+    },
+    [sim, ui, clearGcodeChain]
   );
 
   const handleMachineLogFile = useCallback(
@@ -393,10 +473,13 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
       image,
       gcode,
       gcodeImport,
+      mesh,
+      meshImport,
       machineLog,
       authority,
       handleImageFile,
       handleGcodeFile,
+      handleMeshFile,
       handleMachineLogFile,
       handleProfileFile,
       handleCalibrationFile,
@@ -408,10 +491,13 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
       image,
       gcode,
       gcodeImport,
+      mesh,
+      meshImport,
       machineLog,
       authority,
       handleImageFile,
       handleGcodeFile,
+      handleMeshFile,
       handleMachineLogFile,
       handleProfileFile,
       handleCalibrationFile,
