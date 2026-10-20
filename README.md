@@ -128,7 +128,7 @@ npm run frontend:dev
 
 Docker / Render 部署默认使用上述 C# 单进程架构，需先配置 PostgreSQL 并执行迁移；Node 兼容服务保留为开发与回滚入口，`npm start` 仍使用该入口。部署和 7 天观察流程见 [`deploy/README.md`](./deploy/README.md)。
 
-STL/3MF 保留 Worker 即时预览；C# 单进程镜像同时启用原始文件几何校验，按 SHA-256 绑定尺寸、面数和边检查结果。开发时可用 `VITE_MESH_AUTHORITY=dotnet` 显式开启，离线模式仅本地预览。当前支持二进制/ASCII STL 与核心 3MF 的单位、同部件组件和构建变换；必需扩展及跨模型分件明确拒绝。体积是几何估算，开口、朝向冲突或多对象未执行布尔并集时不提供数值；自相交、顶点流形性与组件重叠尚未检测。切片仍使用浏览器几何预览，详见 [`backend/README.md`](./backend/README.md)。
+STL/3MF 保留 Worker 即时预览；C# 单进程镜像同时启用原始文件几何校验，按 SHA-256 绑定尺寸、面数和边检查结果。开发时可用 `VITE_MESH_AUTHORITY=dotnet` 显式开启，离线模式仅本地预览。当前支持二进制/ASCII STL，以及核心 3MF 和 Production 分件引用的几何子集：按包关系选择根模型，支持跨文件对象、各模型单位换算及嵌套变换；其他必需扩展明确拒绝。体积是几何估算，开口、朝向冲突或多对象未执行布尔并集时不提供数值；自相交、顶点流形性与组件重叠尚未检测。切片仍使用浏览器几何预览，详见 [`backend/README.md`](./backend/README.md)。
 
 AI 不是基础功能的前置条件：聚合、统计检验、图表和规则报告均可由确定性计算完成；配置 AI provider 后，它只根据已经核算的结果组织叙述，不重算或覆盖证据。
 

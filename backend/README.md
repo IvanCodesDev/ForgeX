@@ -51,11 +51,12 @@ the immediate preview used by `browser` and `shadow` modes.
 
 `POST /api/v1/meshes/analyze?format=stl|3mf` 接收 `application/octet-stream` 原始文件字节，使用 API Key / 可信通道边界，返回 OpenAPI 生成的 `MeshAnalysisResult`。上传字节不写入持久化存储；结果包含原始 SHA-256、字节数、尺寸、面数、表面积、闭合边与面朝向检查。
 
-- 二进制和 ASCII STL 按毫米解释；核心 3MF 按声明单位换算，支持构建与同部件组件的嵌套变换。必需扩展、跨模型分件、引用环、无效索引和非有限坐标明确拒绝。单位与变换依据 [3MF Consortium 核心规范](https://github.com/3MFConsortium/spec_core/blob/master/3MF%20Core%20Specification.md)。
-- 文件和 ZIP 总声明解压量上限 64 MiB，单 XML 16 MiB，ZIP 条目 256，三角面 250000，组件实例 4096，嵌套深度 32。禁止 DTD / 外部 XML 实体，不读取外部关系。每进程仅同时处理一份网格，繁忙返回 429 和 `Retry-After: 2`，20 秒超时返回 408；超限 413、损坏或不支持内容 422。
+- 二进制和 ASCII STL 按毫米解释；3MF 支持核心几何与 Production 分件引用子集。按 `_rels/.rels` 选择根模型；根模型的 build item / component 可通过 Production 命名空间的 `path` 引用包内其他模型。前缀不要求固定为 `p`，但必须声明对应的必需扩展，分件必须有根模型 `.rels` 关系。对象 ID 按模型隔离；只读取实际构建涉及的模型，子模型 build 不执行，非根组件跨文件引用明确拒绝。
+- 各模型顶点与本地平移按各自 unit 解释；跨文件先换算到父模型单位，再应用引用变换。返回的 `unit` 是根模型单位，`sizeMm` 始终为毫米。根模型及引用模型的未知必需扩展（含 Alternatives、加密等）拒绝处理。引用环、无效索引、重复几何容器和非有限坐标明确拒绝。本接口不执行完整 XML Schema / UUID 合规认证，也不解释颜色、材料或切片参数。依据 [3MF 核心规范](https://github.com/3MFConsortium/spec_core/blob/master/3MF%20Core%20Specification.md)和 [Production 规范](https://github.com/3MFConsortium/spec_production/blob/master/3MF%20Production%20Extension.md)。
+- 文件、ZIP 总声明解压量和所读 XML 累计实际解压量上限 64 MiB，单 XML 16 MiB，ZIP 条目 256，三角面 250000，已读取模型的资源对象总数与组件展开次数分别不超过 4096，嵌套深度 32。部件缓存避免重复解压；解压长度必须与目录一致。禁止 DTD / 外部 XML 实体、包外模型关系、包路径穿越及重复路径，不提取到磁盘、不请求网络。每进程仅同时处理一份网格，繁忙返回 429 和 `Retry-After: 2`，20 秒超时返回 408；超限 413、损坏或不支持内容 422。
 - 体积仅是单对象闭合且朝向一致时的有向几何估算；其他情况返回显式 `null`。未执行自相交、顶点流形性或组件布尔并集，不能视为水密认证或材料实测。多对象表面积按三角面累加，可能包含内部面。
 - React 的 `VITE_MESH_AUTHORITY=dotnet` 在预览成功后校验原件；大小写扩展名、文件指纹、数值和拓扑状态均做客户端校验。失败保留预览，换模型或退出页面取消旧请求；本地切片继续使用预览几何，数值有差异时会提示核对。默认开发开关为 browser，C# Docker 镜像开启 dotnet；Node 兼容网关未代理此新接口，应使用 browser。file:// / offline 保持零请求。
-- 浏览器同样限制 ZIP 条目、声明总解压量、单模型实际解压量与组件展开；预览最大 1000000 面，超出后端 250000 面门槛时可继续预览，但不会显示校验成功。
+- 浏览器同样限制 ZIP / XML 解压量、资源与组件展开，并按包关系处理根模型、Production 分件和单位，排除 `printable=false/0` 的构建项。无根 `.rels` 的旧文件仍保留预览兼容回退，C# 校验要求完整包关系。预览最大 1000000 面，超出后端 250000 面门槛时可继续预览，但不会显示校验成功。
 
 `ForgeX.ResourceGate` 覆盖几何解析和真实 HTTP 拒绝路径；前端单测覆盖文件绑定、结构漂移、取消、超时与 ZIP 限制；CI 增加 `E2E_MESH_AUTHORITY=dotnet` 的真实 C# Chromium 专项。
 
@@ -357,4 +358,4 @@ The old page remains at `/`, the React page remains at `/react/`, and the defaul
 23. G-code → 公共契约第 23 组验证直接权威端点和作业身份边界，异步持久化由单进程部署演练/JobGate 补齐。Node 的流式代理实现测试在代理删除后才退役，不能用直连接口通过来宣称这些代理分支已逐条迁移。
 24. 单进程路由错误 → 公共契约第 24 组验证内部 405/415、`Allow`、公共中文 404，以及 GET/POST/DELETE/HEAD 和大小写路径。
 
-公共 HTTP 契约现为 196 项；ResourceGate 为 519 项（file + postgres 双腿，包含 provider 等内部契约 59 项、部署健康故障验证 16 项和网格解析/HTTP 验证 77 项）。CI 分别保存 `csharp-server-contract.json` 与 `resource-authority-gate.json`。测试数量不能替代删除审批、真实容器验收和生产观察；现阶段仍保留 Node、经典前端及原测试链。
+公共 HTTP 契约现为 196 项；ResourceGate 为 544 项（file + postgres 双腿，包含 provider 等内部契约 59 项、部署健康故障验证 16 项和网格解析/HTTP 验证 102 项）。CI 分别保存 `csharp-server-contract.json` 与 `resource-authority-gate.json`。测试数量不能替代删除审批、真实容器验收和生产观察；现阶段仍保留 Node、经典前端及原测试链。

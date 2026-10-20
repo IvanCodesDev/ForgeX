@@ -326,6 +326,134 @@ describe("STL 解析与归一化", () => {
 /* ── 3MF ──────────────────────────────────── */
 
 describe("3MF 解析（ZIP + XML，零依赖）", () => {
+  const production = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06";
+  const relationship = "http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel";
+  const relations = (target: string, extra = "") =>
+    new TextEncoder().encode(
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="r" Type="${relationship}" Target="${target}" ${extra}/></Relationships>`
+    );
+  const productionModel = (unit: string, body: string, namespace = production) =>
+    new TextEncoder().encode(
+      new TextDecoder()
+        .decode(modelXml(unit, body))
+        .replace("<model ", `<model xmlns:parts="${namespace}" requiredextensions="parts" `)
+    );
+  const assembly = productionModel(
+    "centimeter",
+    `<resources><object id="1">${BOX_3MF_MESH}</object><object id="2"><components><component parts:path="/3D/Objects/part.model" objectid="1" transform="1 0 0 0 1 0 0 0 1 30 0 0"/></components></object></resources><build><item objectid="1"/><item objectid="2"/></build>`
+  );
+  const child = modelXml(
+    "inch",
+    `<resources><object id="1">${BOX_3MF_MESH}</object></resources><build><item objectid="999"/></build>`
+  );
+  const productionPackage = (root = assembly, part = child, partRelations = relations("Objects/part.model")) =>
+    zip([
+      { name: "_rels/.rels", data: relations("/3D/build.model") },
+      // A canonical-name decoy must never override the OPC root relationship.
+      { name: "3D/3dmodel.model", data: modelXml("parsec", "") },
+      { name: "3D/build.model", data: root, deflate: true },
+      { name: "3D/_rels/build.model.rels", data: partRelations },
+      { name: "3D/Objects/part.model", data: part, deflate: true },
+    ]);
+  it("按 OPC 根关系解析 Production 分件、别名前缀和混合单位，忽略子模型 build", async () => {
+    const result = await parse3mf(await productionPackage());
+    const payload = analyzeTriangles(result.positions, "3mf", result);
+    expect(result.objectCount).toBe(2);
+    expect(payload.triangleCount).toBe(24);
+    expect(payload.sizeMm).toEqual({ x: 808, y: 254, z: 254 });
+    expect(result.warnings).toEqual([]);
+  });
+  it("先换算分件单位，再组合子组件与父模型变换", async () => {
+    const root = productionModel(
+      "millimeter",
+      `<resources><object id="2"><components><component parts:path="/3D/Objects/part.model" objectid="2" transform="2 0 0 0 2 0 0 0 2 30 0 0"/></components></object></resources><build><item objectid="2" transform="1 0 0 0 1 0 0 0 1 100 0 0"/></build>`
+    );
+    const part = modelXml(
+      "inch",
+      `<resources><object id="1">${BOX_3MF_MESH}</object><object id="2"><components><component objectid="1" transform="1 0 0 0 1 0 0 0 1 1 0 0"/></components></object></resources><build/>`
+    );
+    const result = await parse3mf(await productionPackage(root, part, relations("../3D/Objects/part.model")));
+    expect(result.positions[0]).toBeCloseTo(180.8, 4);
+    const payload = analyzeTriangles(result.positions, "3mf", result);
+    expect(payload.sizeMm.x).toBeCloseTo(1016, 3);
+    expect(payload.sizeMm.z).toBeCloseTo(508, 3);
+  });
+  it("build item 可直接引用分件，解码路径并忽略子模型的无效构建项", async () => {
+    const root = productionModel(
+      "millimeter",
+      '<resources/><build><item parts:path="/3D/Objects/%70art.model" objectid="1"/></build>'
+    );
+    const part = modelXml(
+      "millimeter",
+      `<resources><object id="1">${BOX_3MF_MESH}</object></resources><build><item objectid="999" transform="not executed" path="ignored"/></build>`
+    );
+    const result = await parse3mf(await productionPackage(root, part));
+    expect(result.objectCount).toBe(1);
+    expect(analyzeTriangles(result.positions, "3mf", result).sizeMm).toEqual({ x: 20, y: 10, z: 10 });
+  });
+  it("拒绝缺少分件关系的路径引用", async () => {
+    const unrelated = new TextEncoder().encode(
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>'
+    );
+    await expect(parse3mf(await productionPackage(assembly, child, unrelated))).rejects.toThrow(/关系声明/);
+  });
+  it.each([
+    ["包外关系", relations("https://example.invalid/part.model"), /包内文件/],
+    ["External 关系", relations("Objects/part.model", 'TargetMode="External"'), /包外模型/],
+    ["关系越界", relations("../../part.model"), /越过包根/],
+    ["缺少模型部件", relations("Objects/missing.model"), /不存在/],
+  ])("拒绝%s", async (_name, rels, error) => {
+    await expect(parse3mf(await productionPackage(assembly, child, rels))).rejects.toThrow(error);
+  });
+  it.each([
+    ["路径越界", (s: string) => s.replace("/3D/Objects/part.model", "/3D/%2e%2e/part.model"), /路径不合法/],
+    ["相对分件路径", (s: string) => s.replace("/3D/Objects/part.model", "Objects/part.model"), /绝对路径/],
+    ["错误扩展命名空间", (s: string) => s.replace(production, "urn:unsupported"), /必需扩展/],
+    ["未声明必需扩展", (s: string) => s.replace('requiredextensions="parts"', ""), /必需扩展/],
+    ["未限定路径命名空间", (s: string) => s.replace("parts:path", "path"), /命名空间/],
+  ])("拒绝%s", async (_name, mutate, error) => {
+    const root = new TextEncoder().encode(mutate(new TextDecoder().decode(assembly)));
+    await expect(parse3mf(await productionPackage(root))).rejects.toThrow(error);
+  });
+  it("拒绝非根模型组件再次跨文件引用及子模型未知单位", async () => {
+    const nested = productionModel(
+      "inch",
+      '<resources><object id="1"><components><component parts:path="/3D/Objects/part.model" objectid="1"/></components></object></resources><build/>'
+    );
+    await expect(parse3mf(await productionPackage(assembly, nested))).rejects.toThrow(/非根模型/);
+    await expect(parse3mf(await productionPackage(assembly, modelXml("parsec", "")))).rejects.toThrow(/未知单位/);
+    await expect(parse3mf(await productionPackage(assembly, modelXml("toString", "")))).rejects.toThrow(/未知单位/);
+  });
+  it("排除 printable=false 的构建项，不回退到全部对象", async () => {
+    const unprintable = modelXml(
+      "millimeter",
+      `<resources><object id="1">${BOX_3MF_MESH}</object></resources><build><item objectid="1" printable="false"/></build>`
+    );
+    await expect(parse3mf(await zip([{ name: "3D/3dmodel.model", data: unprintable }]))).rejects.toThrow(
+      /没有可打印对象/
+    );
+  });
+  it("拒绝重复包路径、DTD、重复对象和未知必需扩展", async () => {
+    await expect(
+      parse3mf(
+        await zip([
+          { name: "3D/a.model", data: child },
+          { name: "3d/A.MODEL", data: child },
+        ])
+      )
+    ).rejects.toThrow(/重复/);
+    const dtd = new TextEncoder().encode(
+      '<!DOCTYPE model [<!ENTITY x SYSTEM "file:///secret">]>' + new TextDecoder().decode(child)
+    );
+    await expect(parse3mf(await productionPackage(assembly, dtd))).rejects.toThrow(/DTD/);
+    const duplicate = modelXml(
+      "millimeter",
+      `<resources><object id="1">${BOX_3MF_MESH}</object><object id="1">${BOX_3MF_MESH}</object></resources>`
+    );
+    await expect(parse3mf(await productionPackage(assembly, duplicate))).rejects.toThrow(/ID 重复/);
+    const unknown = productionModel("millimeter", "", "urn:unsupported");
+    await expect(parse3mf(await productionPackage(assembly, unknown))).rejects.toThrow(/必需扩展/);
+  });
   it("限制 ZIP 条目数和声明的总解压大小", async () => {
     const many = await zip(Array.from({ length: 257 }, (_, i) => ({ name: `${i}.model`, data: new Uint8Array() })));
     await expect(parse3mf(many)).rejects.toThrow(/条目超过/);

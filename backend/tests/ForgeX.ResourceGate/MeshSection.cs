@@ -16,6 +16,8 @@ namespace ForgeX.ResourceGate;
 internal static class MeshSection
 {
     private const string Namespace = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02";
+    private const string Production = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06";
+    private const string PartRelations = "<Relationships xmlns='http://schemas.openxmlformats.org/package/2006/relationships'><Relationship Id='part' Type='http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel' Target='Objects/part.model'/></Relationships>";
     private const string Mesh = "<mesh><vertices><vertex x='0' y='0' z='0'/><vertex x='10' y='0' z='0'/><vertex x='0' y='10' z='0'/><vertex x='0' y='0' z='10'/></vertices><triangles><triangle v1='0' v2='2' v3='1'/><triangle v1='0' v2='1' v3='3'/><triangle v1='0' v2='3' v3='2'/><triangle v1='1' v2='2' v3='3'/></triangles></mesh>";
     private static readonly float[][] Vertices = [[0, 0, 0], [10, 0, 0], [0, 10, 0], [0, 0, 10]];
     private static readonly int[][] Faces = [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
@@ -110,6 +112,31 @@ internal static class MeshSection
         gate.Check("mesh-3mf-negative-determinant-disclosed", reflected.VolumeCm3 > 0 && reflected.Warnings.Any(w => w.Contains("为负")));
         gate.Check("mesh-self-intersection-limitation-disclosed", pair.Warnings.Any(w => w.Contains("自相交") && w.Contains("重叠")));
 
+        var productionExtra = $"xmlns:parts='{Production}' requiredextensions='parts'";
+        var assembly = Model("<object id='2'><components><component objectid='2' parts:path='/3D/Objects/part.model' transform='2 0 0 0 2 0 0 0 2 30 0 0'/></components></object>",
+            "<item objectid='2' transform='1 0 0 0 1 0 0 0 1 100 0 0'/>", extra: productionExtra);
+        var child = Model("<object id='1'>" + Mesh + "</object><object id='2'><components><component objectid='1' transform='1 0 0 0 1 0 0 0 1 1 0 0'/></components></object>",
+            "<item objectid='999' transform='not executed' path='ignored'/>", unit: "inch");
+        byte[] ProductionPackage(string? root = null, string? part = null, string? relations = null) =>
+            Package(root ?? assembly, null, ("3D/_rels/3dmodel.model.rels", relations ?? PartRelations), ("3D/Objects/part.model", part ?? child));
+        var built = await Analyze(ProductionPackage(), "3mf");
+        gate.Check("mesh-production-prefixed-required-extension", built.TriangleCount == 4 && built.ObjectCount == 1);
+        gate.Check("mesh-production-mixed-unit-nested-transform", Math.Abs(built.SizeMm.X - 508) < 1e-8 && Math.Abs(built.SizeMm.Z - 508) < 1e-8);
+        gate.Check("mesh-production-child-build-ignored", Math.Abs(built.VolumeCm3!.Value - Math.Pow(50.8, 3) / 6) < 1e-7);
+        var twoParts = Model("<object id='1'>" + Mesh + "</object>",
+            "<item objectid='1'/><item objectid='1' parts:path='/3D/Objects/part.model' transform='1 0 0 0 1 0 0 0 1 30 0 0'/>", unit: "centimeter", extra: productionExtra);
+        var mixed = await Analyze(ProductionPackage(twoParts, Model(unit: "inch")), "3mf");
+        gate.Check("mesh-production-scoped-ids-and-parent-unit-translation", Math.Abs(mixed.SizeMm.X - 554) < 1e-9 && mixed.ObjectCount == 2 && mixed.TriangleCount == 8);
+        gate.Check("mesh-production-multi-object-volume-withheld", mixed.VolumeCm3 is null);
+        var relativeRelation = PartRelations.Replace("Objects/part.model", "../3D/Objects/part.model");
+        gate.Check("mesh-production-relative-opc-relationship", (await Analyze(ProductionPackage(relations: relativeRelation), "3mf")).TriangleCount == 4);
+        var escapedAssembly = assembly.Replace("Objects/part.model", "Objects/%70art.model");
+        gate.Check("mesh-production-percent-encoded-part-path", (await Analyze(ProductionPackage(escapedAssembly), "3mf")).TriangleCount == 4);
+        var alternativeRoot = Package(Model(build: "<item objectid='999'/>"),
+            "<Relationships xmlns='http://schemas.openxmlformats.org/package/2006/relationships'><Relationship Id='r' Type='http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel' Target='/3D/build.model'/></Relationships>",
+            ("3D/build.model", assembly), ("3D/_rels/build.model.rels", PartRelations), ("3D/Objects/part.model", child));
+        gate.Check("mesh-production-root-selected-by-opc", (await Analyze(alternativeRoot, "3mf")).TriangleCount == 4);
+
         var app = await gate.StartApiAsync(new Dictionary<string, string?>
         { ["DirectAuth:ApiKeys"] = "mesh-gate-key", ["DirectAuth:RequireAuth"] = "true" },
             b => b.Services.AddSingleton<MeshAnalysisAdmission>(), a =>
@@ -172,6 +199,28 @@ internal static class MeshSection
             gate.Check("mesh-http-invalid-" + test.Name, (int)result.Status == test.Status, result.Json);
             gate.Check("mesh-http-invalid-no-path-" + test.Name, !result.Json.ToString().Contains("file:///secret"));
         }
+        var productionInvalid = new (string Name, byte[] Bytes)[]
+        {
+            ("missing-relationship", ProductionPackage(relations: PartRelations.Replace("3dmodel'", "unknown'"))),
+            ("external-relationship", ProductionPackage(relations: PartRelations.Replace("Target=", "TargetMode='External' Target="))),
+            ("network-relationship", ProductionPackage(relations: PartRelations.Replace("Objects/part.model", "https://example.invalid/a.model"))),
+            ("escaped-relationship", ProductionPackage(relations: PartRelations.Replace("Objects/part.model", "../../outside.model"))),
+            ("missing-part", ProductionPackage(relations: PartRelations.Replace("Objects/part.model", "Objects/missing.model"))),
+            ("relative-part", ProductionPackage(assembly.Replace("/3D/Objects/part.model", "Objects/part.model"))),
+            ("traversal-part", ProductionPackage(assembly.Replace("/3D/Objects/part.model", "/3D/%2e%2e/part.model"))),
+            ("encoded-network-part", ProductionPackage(assembly.Replace("/3D/Objects/part.model", "/%2f3D/Objects/part.model"))),
+            ("wrong-path-namespace", ProductionPackage(assembly.Replace(Production, "urn:wrong"))),
+            ("unqualified-path", ProductionPackage(assembly.Replace("parts:path", "path"))),
+            ("missing-required-extension", ProductionPackage(assembly.Replace("requiredextensions='parts'", ""))),
+            ("child-cross-reference", ProductionPackage(part: Model("<object id='2'><components><component objectid='1' parts:path='/3D/Objects/part.model'/></components></object>", extra: productionExtra))),
+            ("child-unsupported-extension", ProductionPackage(part: child.Replace("<model ", "<model requiredextensions='q' xmlns:q='urn:unsupported' "))),
+            ("child-unknown-unit", ProductionPackage(part: child.Replace("inch", "parsec"))),
+            ("child-missing-object", ProductionPackage(part: Model())),
+            ("duplicate-geometry", Package(Model("<object id='1'>" + Mesh + Mesh + "</object>"))),
+            ("production-and-unknown-required", ProductionPackage(assembly.Replace("requiredextensions='parts'", "requiredextensions='parts q' xmlns:q='urn:unsupported'"))),
+        };
+        foreach (var test in productionInvalid)
+            gate.Check("mesh-production-reject-" + test.Name, (await Send(test.Bytes, "3mf")).Status == HttpStatusCode.UnprocessableEntity);
         var forgedXmlSize = invalidCases[^1].Bytes.ToArray();
         for (var offset = 0; offset < forgedXmlSize.Length - 46; offset++)
         {

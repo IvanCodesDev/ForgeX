@@ -118,7 +118,7 @@ function zip(entries) {
 }
 
 /** 3MF：对象 1 = 20×10×10 盒；对象 2 = 两个对象 1 的组件（一个平移 x+30）；build 项再整体抬高 z+5 */
-function threeMf() {
+function threeMf(production = false) {
   const mesh = `<mesh><vertices>
     <vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="20" y="10" z="0"/><vertex x="0" y="10" z="0"/>
     <vertex x="0" y="0" z="10"/><vertex x="20" y="0" z="10"/><vertex x="20" y="10" z="10"/><vertex x="0" y="10" z="10"/>
@@ -143,6 +143,23 @@ function threeMf() {
 </model>`;
   const contentTypes = `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>`;
   const rels = `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>`;
+  if (production) {
+    const namespace = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06";
+    const root = `<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:parts="${namespace}" requiredextensions="parts"><resources><object id="2"><components><component parts:path="/3D/Objects/part.model" objectid="1" transform="0.1 0 0 0 0.1 0 0 0 0.1 30 0 0"/><component parts:path="/3D/Objects/part.model" objectid="1" transform="0.1 0 0 0 0.1 0 0 0 0.1 0 0 0"/></components></object></resources><build><item objectid="2"/></build></model>`;
+    const child = `<model unit="centimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><object id="1">${mesh}</object></resources><build><item objectid="999" transform="not executed"/></build></model>`;
+    return zip([
+      { name: "[Content_Types].xml", data: Buffer.from(contentTypes), deflate: true },
+      { name: "_rels/.rels", data: Buffer.from(rels.replace("/3D/3dmodel.model", "/3D/build.model")), deflate: true },
+      { name: "3D/3dmodel.model", data: Buffer.from("<invalid-decoy/>"), deflate: true },
+      { name: "3D/build.model", data: Buffer.from(root), deflate: true },
+      {
+        name: "3D/_rels/build.model.rels",
+        data: Buffer.from(rels.replace("/3D/3dmodel.model", "Objects/part.model")),
+        deflate: true,
+      },
+      { name: "3D/Objects/part.model", data: Buffer.from(child), deflate: true },
+    ]);
+  }
   return zip([
     { name: "[Content_Types].xml", data: Buffer.from(contentTypes, "utf8"), deflate: true },
     { name: "_rels/.rels", data: Buffer.from(rels, "utf8"), deflate: true },
@@ -204,6 +221,7 @@ test.describe("STL / 3MF 导入（Worker 浏览器预览解析）", () => {
     // 20×20×10 盒，故意偏离原点：验证 XY 居中 / Z 归零
     fs.writeFileSync(path.join(fixtureDir, "box.stl"), binaryStl(boxTriangles(5, 7, 3, 25, 27, 13)));
     fs.writeFileSync(path.join(fixtureDir, "pair.3mf"), threeMf());
+    fs.writeFileSync(path.join(fixtureDir, "production.3mf"), threeMf(true));
     // 扩展名对但内容坏：声明 4 亿个三角形的 100 字节文件
     const broken = Buffer.alloc(100);
     broken.writeUInt32LE(400_000_000, 80);
@@ -338,6 +356,30 @@ test.describe("STL / 3MF 导入（Worker 浏览器预览解析）", () => {
       timeout: 30_000,
     });
     await expect(summary).toHaveCount(0);
+  });
+
+  test("Production 3MF：OPC 根模型、跨文件组件及单位变换在预览与 C# 中一致", async ({ page }) => {
+    await openImportPage(page);
+    await importMesh(page, path.join(fixtureDir, "production.3mf"));
+    const summary = page.locator("#mesh-summary");
+    await expect(summary).toContainText("production.3mf");
+    await expect(summary).toContainText("24 面 · 50.0 × 10.0 × 10.0 mm");
+    await expect(summary).toContainText("4.00 cm³");
+    expect(await page.evaluate(() => window.__meshGate.errors)).toEqual([]);
+    const state = await page.evaluate(() => ({
+      via: window.__forgexMeshImportVia,
+      height: window.FX.sim.model.height,
+      layers: window.FX.sim.slice.totalLayers,
+      layerHeight: window.FX.sim.settings.layerHeight,
+    }));
+    expect(state.via).toBe("worker");
+    expect(state.height).toBe(10);
+    expect(state.layers).toBe(Math.round(10 / state.layerHeight));
+    if (process.env.E2E_MESH_AUTHORITY === "dotnet") {
+      await expect(page.locator('[data-mesh-authority="done"]')).toBeVisible();
+      await expect(page.locator("#mesh-authority-summary")).toContainText("24 面");
+      await expect(page.locator('[data-mesh-diff="true"]')).toHaveCount(0);
+    }
   });
 
   test("坏文件：只给错误 toast，当前模型与切片保持不变", async ({ page }) => {

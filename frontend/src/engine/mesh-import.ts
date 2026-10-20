@@ -3,7 +3,7 @@
    Stage 9.3 前半：浏览器侧「预览解析」。产物是与内置模型同构的可切片模型——
    切片器通过 outlinesAt(z) 取平面截交环，printer3d / 导出通过 buildGeometry 取三角网格，
    因此导入网格可以直接进入既有的切片 → 打印仿真 → 导出链。
-   C# 权威解析（体积/尺寸/水密性等结论以 C# 为准）留给 Stage 9.3 后半；本模块的所有
+   C# 校验结果由独立接口提供；本模块的所有
    数字都标注为「浏览器预览」，不得写入权威数据集。
 
    坐标约定：与 STL 行业惯例一致，Z-up、单位 mm。归一化后 XY 以包围盒中心为原点、
@@ -276,17 +276,47 @@ function attrs(s: string): Record<string, string> {
   const out: Record<string, string> = {};
   ATTR_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = ATTR_RE.exec(s)) !== null) out[m[1]!] = m[2] ?? m[3] ?? "";
+  while ((m = ATTR_RE.exec(s)) !== null)
+    out[m[1]!] = (m[2] ?? m[3] ?? "").replace(
+      /&(?:amp|lt|gt|quot|apos);/g,
+      (entity) => ({ "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&apos;": "'" })[entity]!
+    );
   return out;
 }
 
-function parseModelXml(xml: string): {
+const PRODUCTION_NS = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06";
+const MODEL_RELATIONSHIP = "http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel";
+
+function parseModelXml(
+  xml: string,
+  parseBuild = true
+): {
   unit: string;
+  hasBuild: boolean;
   objects: Map<string, ModelObject>;
   build: Array<{ objectId: string; path: string | null; transform: Mat }>;
 } {
+  if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new Error("3MF 不支持 DTD 或实体声明");
+  xml = xml.replace(/<!--[\s\S]*?-->/g, "");
   const modelTag = xml.match(/<model\b([^>]*)>/i);
-  const unit = (modelTag ? attrs(modelTag[1]!).unit : undefined) || "millimeter";
+  if (!modelTag) throw new Error("3MF 缺少 model 元素");
+  const modelAttrs = attrs(modelTag[1]!);
+  if (modelAttrs.xmlns !== "http://schemas.microsoft.com/3dmanufacturing/core/2015/02")
+    throw new Error("3MF 模型命名空间无效");
+  const required = (modelAttrs.requiredextensions ?? "").split(/\s+/).filter(Boolean);
+  if (required.some((prefix) => modelAttrs[`xmlns:${prefix}`] !== PRODUCTION_NS))
+    throw new Error("3MF 声明了不受支持的必需扩展");
+  const partPath = (attributes: Record<string, string>): string | null => {
+    const key = Object.keys(attributes).find((name) => name === "path" || name.endsWith(":path"));
+    if (key == null) return null;
+    const prefix = key.includes(":") ? key.slice(0, key.indexOf(":")) : "";
+    if (!prefix || (attributes[`xmlns:${prefix}`] ?? modelAttrs[`xmlns:${prefix}`]) !== PRODUCTION_NS)
+      throw new Error("3MF 分件路径必须使用 Production 命名空间");
+    if (!required.some((p) => modelAttrs[`xmlns:${p}`] === PRODUCTION_NS))
+      throw new Error("3MF 分件引用必须声明 Production 必需扩展");
+    return attributes[key]!;
+  };
+  const unit = modelAttrs.unit || "millimeter";
   const objects = new Map<string, ModelObject>();
   const objectRe = /<object\b([^>]*?)(\/>|>([\s\S]*?)<\/object>)/g;
   let om: RegExpExecArray | null;
@@ -313,9 +343,11 @@ function parseModelXml(xml: string): {
     while ((cm = compRe.exec(body)) !== null) {
       const ca = attrs(cm[1]!);
       if (!ca.objectid) continue;
-      components.push({ objectId: ca.objectid, path: ca["p:path"] ?? null, transform: parseMat(ca.transform) });
+      components.push({ objectId: ca.objectid, path: partPath(ca), transform: parseMat(ca.transform) });
     }
     if (!a.id) continue;
+    if (objects.has(a.id)) throw new Error("3MF 对象 ID 重复");
+    if (objects.size >= 4096) throw new Error("3MF 对象数超过 4096");
     objects.set(a.id, {
       id: a.id,
       type: a.type || "model",
@@ -325,21 +357,52 @@ function parseModelXml(xml: string): {
     });
   }
   const build: Array<{ objectId: string; path: string | null; transform: Mat }> = [];
-  const buildBlock = xml.match(/<build\b[^>]*>([\s\S]*?)<\/build>/i);
+  const buildBlock = parseBuild ? xml.match(/<build\b[^>]*>([\s\S]*?)<\/build>/i) : null;
   if (buildBlock) {
     const itemRe = /<item\b([^>]*?)\/?>/g;
     let im: RegExpExecArray | null;
     while ((im = itemRe.exec(buildBlock[1]!)) !== null) {
       const ia = attrs(im[1]!);
       if (!ia.objectid) continue;
-      build.push({ objectId: ia.objectid, path: ia["p:path"] ?? null, transform: parseMat(ia.transform) });
+      if (ia.printable === "0" || ia.printable === "false") continue;
+      build.push({ objectId: ia.objectid, path: partPath(ia), transform: parseMat(ia.transform) });
     }
   }
-  return { unit, objects, build };
+  return { unit, objects, build, hasBuild: /<build\b/.test(xml) };
 }
 
-function normalizePath(p: string): string {
-  return p.replace(/^\/+/, "").replace(/\\/g, "/");
+function normalizePath(value: string): string {
+  const path = decodeURIComponent(value).replace(/^\//, "");
+  if (
+    !path ||
+    /[\\:#?]/.test(path) ||
+    hasControlCharacters(path) ||
+    path.split("/").some((p) => !p || p === "." || p === "..")
+  )
+    throw new Error("3MF 包内路径不合法");
+  return path;
+}
+
+function hasControlCharacters(value: string): boolean {
+  return [...value].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127);
+}
+
+function relationshipPath(owner: string, value: string): string {
+  const decoded = decodeURIComponent(value);
+  if (/^[a-z][a-z\d+.-]*:|^\/\/|[\\?#]/i.test(decoded) || hasControlCharacters(decoded))
+    throw new Error("3MF 模型关系必须指向包内文件");
+  const full = decoded.startsWith("/") ? decoded.slice(1) : owner.slice(0, owner.lastIndexOf("/") + 1) + decoded;
+  const segments: string[] = [];
+  for (const segment of full.split("/")) {
+    if (segment === ".") continue;
+    if (segment === "..") {
+      if (!segments.length) throw new Error("3MF 模型关系越过包根目录");
+      segments.pop();
+    } else if (!segment) throw new Error("3MF 模型关系路径无效");
+    else segments.push(segment);
+  }
+  if (!segments.length) throw new Error("3MF 模型关系路径无效");
+  return segments.join("/");
 }
 
 export interface Parsed3mf {
@@ -351,20 +414,84 @@ export interface Parsed3mf {
 
 export async function parse3mf(bytes: Uint8Array): Promise<Parsed3mf> {
   const entries = readZipDirectory(bytes);
+  const packageEntries = new Map<string, ZipEntry>();
+  for (const entry of entries) {
+    const key = normalizePath(entry.name.replace(/\/$/, "")).toLowerCase();
+    if (packageEntries.has(key)) throw new Error("3MF 包含重复或大小写冲突的 ZIP 路径");
+    packageEntries.set(key, entry);
+  }
   const modelEntries = entries.filter((e) => /\.model$/i.test(e.name));
   if (!modelEntries.length) throw new Error("3MF 内没有 .model 部件（不是 3D 制造格式包）");
-  const root =
+  let root =
     modelEntries.find((e) => normalizePath(e.name).toLowerCase() === "3d/3dmodel.model") ??
     modelEntries.find((e) => !/\/objects\//i.test(e.name)) ??
     modelEntries[0]!;
   const decoder = new TextDecoder("utf-8");
-  const files = new Map<string, ReturnType<typeof parseModelXml>>();
-  for (const e of modelEntries) {
-    files.set(normalizePath(e.name), parseModelXml(decoder.decode(await readZipEntry(bytes, e))));
+  let actualExpanded = 0;
+  const readXml = async (entry: ZipEntry): Promise<string> => {
+    const xml = await readZipEntry(bytes, entry);
+    actualExpanded += xml.length;
+    if (actualExpanded > MAX_MESH_BYTES) throw new Error("3MF XML 累计实际解压大小超过 64 MB");
+    const text = decoder.decode(xml);
+    if (/<!DOCTYPE|<!ENTITY/i.test(text)) throw new Error("3MF 不支持 DTD 或实体声明");
+    return text.replace(/<!--[\s\S]*?-->/g, "");
+  };
+  const readRelationships = async (entry: ZipEntry, owner: string): Promise<string[]> => {
+    const xml = await readXml(entry);
+    const tag = xml.match(/<Relationships\b([^>]*)>/);
+    if (!tag || attrs(tag[1]!).xmlns !== "http://schemas.openxmlformats.org/package/2006/relationships")
+      throw new Error("3MF 包关系命名空间无效");
+    const paths: string[] = [];
+    for (const match of xml.matchAll(/<Relationship\b([^>]*?)\/?>/g)) {
+      const a = attrs(match[1]!);
+      if (a.Type !== MODEL_RELATIONSHIP) continue;
+      if (a.TargetMode && a.TargetMode !== "Internal") throw new Error("3MF 不允许包外模型关系");
+      const path = relationshipPath(owner, a.Target ?? "");
+      if (!packageEntries.has(path.toLowerCase())) throw new Error("3MF 模型关系指向不存在的包内文件");
+      paths.push(path);
+    }
+    return paths;
+  };
+  const rootRelations = packageEntries.get("_rels/.rels");
+  if (rootRelations) {
+    const paths = await readRelationships(rootRelations, "");
+    if (paths.length !== 1) throw new Error("3MF 必须通过一个包内关系指定根模型");
+    root = packageEntries.get(paths[0]!.toLowerCase())!;
   }
   const rootPath = normalizePath(root.name);
-  const rootModel = files.get(rootPath)!;
-  const unitScale = UNIT_TO_MM[rootModel.unit.toLowerCase()];
+  const relationEntry = packageEntries.get(
+    (
+      rootPath.slice(0, rootPath.lastIndexOf("/") + 1) +
+      "_rels/" +
+      rootPath.slice(rootPath.lastIndexOf("/") + 1) +
+      ".rels"
+    ).toLowerCase()
+  );
+  const relatedParts = new Set(
+    relationEntry ? (await readRelationships(relationEntry, rootPath)).map((p) => p.toLowerCase()) : []
+  );
+  const files = new Map<string, ReturnType<typeof parseModelXml>>();
+  let resourceCount = 0;
+  const readPart = async (path: string): Promise<ReturnType<typeof parseModelXml>> => {
+    const key = path.toLowerCase();
+    const cached = files.get(key);
+    if (cached) return cached;
+    const entry = packageEntries.get(key);
+    if (!entry) throw new Error("3MF 缺少引用的模型部件");
+    const part = parseModelXml(await readXml(entry), key === rootPath.toLowerCase());
+    if (!Object.hasOwn(UNIT_TO_MM, part.unit)) throw new Error(`3MF 使用了未知单位 ${part.unit}`);
+    resourceCount += part.objects.size;
+    if (resourceCount > 4096) throw new Error("3MF 包内对象总数超过 4096");
+    if (
+      key !== rootPath.toLowerCase() &&
+      [...part.objects.values()].some((o) => o.components.some((c) => c.path != null))
+    )
+      throw new Error("3MF 非根模型的组件不能跨文件引用");
+    files.set(key, part);
+    return part;
+  };
+  const rootModel = await readPart(rootPath);
+  const unitScale = UNIT_TO_MM[rootModel.unit];
   if (unitScale == null) throw new Error(`3MF 使用了未知单位 ${rootModel.unit}`);
   const warnings: string[] = [];
   const coords: number[] = [];
@@ -372,16 +499,31 @@ export async function parse3mf(bytes: Uint8Array): Promise<Parsed3mf> {
   let expandedObjects = 0;
   const visiting = new Set<string>();
 
-  const emit = (path: string, id: string, m: Mat, depth: number): void => {
+  const reference = async (
+    owner: string,
+    target: string | null,
+    transform: Mat,
+    parent: Mat
+  ): Promise<{ path: string; matrix: Mat }> => {
+    const path = target == null ? owner : normalizePath(target);
+    if (target != null && (!target.startsWith("/") || target.startsWith("//") || !relatedParts.has(path.toLowerCase())))
+      throw new Error("3MF 分件需要包内绝对路径及根模型关系声明");
+    const from = await readPart(path);
+    const to = await readPart(owner);
+    const ratio = UNIT_TO_MM[from.unit]! / UNIT_TO_MM[to.unit]!;
+    const conversion: Mat = [ratio, 0, 0, 0, ratio, 0, 0, 0, ratio, 0, 0, 0];
+    return { path, matrix: mulMat(mulMat(conversion, transform), parent) };
+  };
+  const emit = async (path: string, id: string, m: Mat, depth: number): Promise<void> => {
     if (++expandedObjects > 4096) throw new Error("3MF 构建实例超过 4096 个");
-    const file = files.get(path);
+    const file = await readPart(path);
     const obj = file?.objects.get(id);
     if (!obj) {
       warnings.push(`3MF 引用了不存在的对象 ${path}#${id}，已跳过`);
       return;
     }
     if (obj.type !== "model" && obj.type !== "solidsupport") return; // support / other 不参与成品
-    const key = `${path}#${id}`;
+    const key = `${path.toLowerCase()}#${id}`;
     if (visiting.has(key) || depth > 32) {
       warnings.push(`3MF 组件引用成环（${key}），已截断`);
       return;
@@ -409,18 +551,21 @@ export async function parse3mf(bytes: Uint8Array): Promise<Parsed3mf> {
       }
     }
     for (const c of obj.components) {
-      const cPath = c.path ? normalizePath(c.path) : path;
-      emit(cPath, c.objectId, mulMat(c.transform, m), depth + 1);
+      const ref = await reference(path, c.path, c.transform, m);
+      await emit(ref.path, c.objectId, ref.matrix, depth + 1);
     }
     visiting.delete(key);
   };
 
   if (rootModel.build.length) {
-    for (const item of rootModel.build)
-      emit(item.path ? normalizePath(item.path) : rootPath, item.objectId, item.transform, 0);
+    for (const item of rootModel.build) {
+      const ref = await reference(rootPath, item.path, item.transform, IDENTITY);
+      await emit(ref.path, item.objectId, ref.matrix, 0);
+    }
   } else {
+    if (rootModel.hasBuild) throw new Error("3MF 构建清单没有可打印对象");
     warnings.push("3MF 缺少 <build> 段，已按全部 model 对象原位导入");
-    for (const [id, obj] of rootModel.objects) if (obj.type === "model") emit(rootPath, id, IDENTITY, 0);
+    for (const [id, obj] of rootModel.objects) if (obj.type === "model") await emit(rootPath, id, IDENTITY, 0);
   }
   if (!coords.length) throw new Error("3MF 内没有可构建的三角网格");
   return { positions: Float32Array.from(coords), objectCount, unit: rootModel.unit, warnings };

@@ -50,7 +50,7 @@ public sealed partial class MeshAnalyzer
         if (format == "3mf")
         {
             (unit, objects) = Read3mf(bytes, length, triangles, ct);
-            warnings.Add("仅解析 3MF 核心几何、单位与构建变换；颜色、材料和切片参数不参与本次校验。");
+            warnings.Add("仅解析 3MF 核心几何、Production 分件引用、单位与构建变换；颜色、材料和切片参数不参与本次校验。");
         }
         else if (format == "stl")
         {
@@ -186,7 +186,7 @@ public sealed partial class MeshAnalyzer
         if (objects > 1) warnings.Add("多对象未执行布尔并集，不提供聚合体积；表面积为逐三角面累加，可能包含内部面。");
         if (volume < 0) warnings.Add("网格整体有向体积为负；体积按绝对值展示，请检查面朝向。");
         warnings.Add("仅检查几何与边邻接，未检查自相交、顶点流形性或组件重叠；体积为几何估算，不是实测材料体积。");
-        return new MeshAnalysisResult("1.0", "forgex-mesh-csharp", "1.0.0",
+        return new MeshAnalysisResult("1.0", "forgex-mesh-csharp", "1.1.0",
             Convert.ToHexStringLower(SHA256.HashData(bytes.AsSpan(0, length))), length, format, unit,
             valid.Count, dropped, objects, new MeshSize(max.X - min.X, max.Y - min.Y, max.Z - min.Z),
             closed && oriented && objects == 1 ? Math.Abs(volume) / 1000 : null, area / 100,

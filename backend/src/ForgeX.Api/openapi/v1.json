@@ -15,8 +15,8 @@
     "/api/v1/meshes/analyze": {
       "post": {
         "operationId": "analyzeMesh",
-        "summary": "Inspect bounded STL or core 3MF geometry",
-        "description": "Requires the caller boundary. Raw bytes are not persisted. STL assumes millimeters. Core 3MF supports units, build transforms and same-part components; required extensions and cross-part references are rejected. Edge adjacency is checked; self-intersection, vertex manifoldness and overlaps are not checked. Volume is a geometric estimate and is null when edge closure or orientation fails or multiple objects require an unimplemented boolean union. Limits: 64 MiB upload/total ZIP expansion, 16 MiB XML, 256 ZIP entries, 250000 triangles, 4096 instances and nesting depth 32. One request per process, 20 second timeout.",
+        "summary": "Inspect bounded STL and 3MF geometry with Production part references",
+        "description": "Requires the caller boundary. Raw bytes are not persisted. STL assumes millimeters. 3MF supports core geometry and Production namespace part references declared by the root model relationships. Object IDs are scoped by model part; part units are converted into parent units before applying reference transforms. Only the root build is executed; cross-part components in child models and unknown required extensions are rejected. This is geometry inspection, not full schema or UUID certification. Edge adjacency is checked; self-intersection, vertex manifoldness and overlaps are not checked. Volume is a geometric estimate and is null when edge closure or orientation fails or multiple objects require an unimplemented boolean union. Limits: 64 MiB upload/declared ZIP expansion/actual XML expansion, 16 MiB XML, 256 ZIP entries, 250000 triangles, 4096 resource objects/instances and nesting depth 32. One request per process, 20 second timeout.",
         "parameters": [
           {
             "name": "format",
