@@ -12,6 +12,7 @@ import * as gcodeParserModule from "../engine/gcode-parser";
 import { FXInsightDataCompat } from "../engine/insight-data";
 import * as insightEngineModule from "../engine/insight-engine";
 import * as machineLogModule from "../engine/machine-log";
+import type { MachineLogTelemetrySummary } from "../engine/machine-log-summary";
 import * as modelsModule from "../engine/models";
 import { FXPrinters } from "../engine/printer3d";
 import * as profilesModule from "../engine/profile-registry";
@@ -156,6 +157,7 @@ export interface MachineLogRecord {
   readonly filamentG: number | null;
   readonly energyKwh: number | null;
   readonly energyEvidence: string;
+  readonly telemetry?: MachineLogTelemetrySummary;
   gcodeBinding?: GcodeBinding;
 }
 
@@ -197,6 +199,7 @@ export interface GcodeImportState {
 }
 
 export interface MachineLogState {
+  readonly importVia?: "worker" | "main";
   readonly log: MachineLogRecord;
   readonly comparison: ReadonlyArray<MachineLogComparisonRow>;
   readonly observation: TimeObservation | null;

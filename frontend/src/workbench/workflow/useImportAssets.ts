@@ -26,6 +26,13 @@ import { GcodeImportError, importGcodeFile, type GcodeImportHandle, type GcodeIm
 import { MeshImportError, importMeshFile, type MeshImportHandle, type MeshImportPhase } from "./mesh-import";
 import { MAX_MESH_BYTES, createMeshModel, type MeshImportPayload } from "../../engine/mesh-import";
 import type { WorkbenchHandles } from "../useLegacyWorkbench";
+import { verifyGcodeBinding } from "../../engine/machine-log";
+import {
+  importMachineLogFile,
+  MachineLogImportError,
+  type MachineLogImportHandle,
+  type MachineLogImportProgress,
+} from "./machine-log-import";
 
 /** 与旧实现一致的图片模型再生成防抖。 */
 const IMAGE_REGEN_DEBOUNCE_MS = 280;
@@ -87,6 +94,7 @@ export interface MeshImportProgressState {
 }
 
 const MESH_IMPORT_IDLE: MeshImportProgressState = { status: "idle", phase: null, progress: 0 };
+const MACHINE_LOG_IMPORT_IDLE = { status: "idle" as const, phase: null, progress: 0 };
 
 export interface ImportAssets {
   readonly image: ImageModelState;
@@ -95,11 +103,17 @@ export interface ImportAssets {
   readonly mesh: MeshImportState | null;
   readonly meshImport: MeshImportProgressState;
   readonly machineLog: MachineLogState | null;
+  readonly machineLogImport: {
+    readonly status: "idle" | "parsing";
+    readonly phase: MachineLogImportProgress["phase"] | null;
+    readonly progress: number;
+  };
   readonly authority: GcodeAuthorityState;
   handleImageFile(file: File): void;
   handleGcodeFile(file: File): void;
   handleMeshFile(file: File): void;
   handleMachineLogFile(file: File): void;
+  cancelMachineLogImport(): void;
   handleProfileFile(file: File): void;
   handleCalibrationFile(file: File): void;
   updateImage(patch: Partial<ImageModelState>, options?: { debounce?: boolean }): void;
@@ -125,6 +139,7 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
   const [mesh, setMesh] = useState<MeshImportState | null>(null);
   const [meshImport, setMeshImport] = useState<MeshImportProgressState>(MESH_IMPORT_IDLE);
   const [machineLog, setMachineLog] = useState<MachineLogState | null>(null);
+  const [machineLogImport, setMachineLogImport] = useState<ImportAssets["machineLogImport"]>(MACHINE_LOG_IMPORT_IDLE);
   const authorityMode = resolveAuthorityMode(import.meta.env);
   const [authority, setAuthority] = useState<GcodeAuthorityState>({ mode: authorityMode, ...AUTHORITY_IDLE });
   const imageRef = useRef(image);
@@ -136,15 +151,17 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
   const gcodeImportHandle = useRef<GcodeImportHandle | null>(null);
   const meshImportHandle = useRef<MeshImportHandle | null>(null);
   const meshAuthorityAbort = useRef<AbortController | null>(null);
-  const machineLogReader = useRef<FileReader | null>(null);
+  const machineLogImportHandle = useRef<MachineLogImportHandle | null>(null);
+  const machineLogImportEpoch = useRef(0);
   useEffect(
     () => () => {
       meshImportHandle.current?.cancel();
       meshAuthorityAbort.current?.abort();
       meshImportHandle.current = null;
       meshAuthorityAbort.current = null;
-      machineLogReader.current?.abort();
-      machineLogReader.current = null;
+      machineLogImportEpoch.current++;
+      machineLogImportHandle.current?.cancel();
+      machineLogImportHandle.current = null;
     },
     []
   );
@@ -219,9 +236,15 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
     [sim]
   );
 
+  const cancelMachineLogImport = useCallback(() => {
+    machineLogImportEpoch.current++;
+    machineLogImportHandle.current?.cancel();
+    machineLogImportHandle.current = null;
+    setMachineLogImport(MACHINE_LOG_IMPORT_IDLE);
+  }, []);
+
   const clearGcodeChain = useCallback(() => {
-    machineLogReader.current?.abort();
-    machineLogReader.current = null;
+    cancelMachineLogImport();
     gcodeImportHandle.current?.cancel();
     gcodeImportHandle.current = null;
     setGcodeImport(GCODE_IMPORT_IDLE);
@@ -230,7 +253,7 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
     setMachineLog(null);
     authorityAbort.current?.abort();
     setAuthority({ mode: authorityMode, ...AUTHORITY_IDLE });
-  }, [authorityMode]);
+  }, [authorityMode, cancelMachineLogImport]);
 
   const clearMeshChain = useCallback(() => {
     meshAuthorityAbort.current?.abort();
@@ -435,62 +458,48 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
       if (!sim || !ui) return;
       const current = gcodeRef.current;
       if (!sim.importedToolpath || !current) return ui.toast("请先导入要复盘的 G-code", "warn");
-      const { machineLog: machineLogService, timeCalibration, gcodeParser } = legacyImportServices();
-      if (!/\.(json|csv)$/i.test(file.name || "")) return ui.toast("真机日志仅支持 JSON / CSV", "err");
-      if (file.size > machineLogService.MAX_BYTES)
-        return ui.toast(`真机日志超过 ${Math.round(machineLogService.MAX_BYTES / 1024 / 1024)}MB`, "err");
-      machineLogReader.current?.abort();
+      const { machineLog: machineLogService, timeCalibration } = legacyImportServices();
+      cancelMachineLogImport();
       setMachineLog(null);
-      const reader = new FileReader();
-      machineLogReader.current = reader;
+      setMachineLogImport({ status: "parsing", phase: "read", progress: 0 });
+      const epoch = machineLogImportEpoch.current;
       const isCurrent = () =>
-        machineLogReader.current === reader && gcodeRef.current === current && !!sim.importedToolpath;
-      reader.onerror = () => {
-        if (isCurrent()) {
-          machineLogReader.current = null;
-          ui.toast("真机日志读取失败", "err");
-        }
-      };
-      reader.onload = () => {
-        void (async () => {
-          try {
-            if (!isCurrent() || !(reader.result instanceof ArrayBuffer)) return;
-            const bytes = reader.result;
-            const sourceSha256 = await gcodeParser.sha256(bytes);
-            if (!isCurrent()) return;
-            const log = machineLogService.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes), {
-              name: file.name,
-            });
-            log.sourceSha256 = sourceSha256;
-            const binding = machineLogService.verifyGcodeBinding(current.parsed, log);
-            if (binding.status === "invalid" || binding.status === "unavailable" || binding.status === "mismatch") {
-              throw new Error(binding.message);
-            }
-            log.gcodeBinding = binding;
-            if (!binding.verified) log.warnings.push(binding.message);
-            const comparison = machineLogService.compare(current.parsed, log);
-            const observation =
-              binding.verified &&
-              log.actualTimeSec !== null &&
-              log.actualTimeSec > 0 &&
-              current.parsed.stats.timeSec > 0
-                ? timeCalibration.observation(current.parsed, log)
-                : null;
-            const calibration = calibrationFor(current.parsed, log, true);
-            setMachineLog({ log, comparison, observation, calibration, binding });
-            ui.toast(`真机日志已接入：生成 ${comparison.length} 项计划/实测对比`, "ok");
-          } catch (error) {
-            if (!isCurrent()) return;
-            console.error("[machine-log]", error);
-            ui.toast("真机日志导入失败：" + String((error as Error)?.message ?? error), "err");
-          } finally {
-            if (machineLogReader.current === reader) machineLogReader.current = null;
+        machineLogImportEpoch.current === epoch && gcodeRef.current === current && !!sim.importedToolpath;
+      const handle = importMachineLogFile(file, (progress) => {
+        if (isCurrent()) setMachineLogImport({ status: "parsing", ...progress });
+      });
+      machineLogImportHandle.current = handle;
+      void handle.promise
+        .then(({ log, via }) => {
+          if (!isCurrent()) return;
+          const binding = verifyGcodeBinding(current.parsed, log);
+          if (binding.status === "invalid" || binding.status === "unavailable" || binding.status === "mismatch") {
+            throw new Error(binding.message);
           }
-        })();
-      };
-      reader.readAsArrayBuffer(file);
+          log.gcodeBinding = binding;
+          if (!binding.verified) log.warnings.push(binding.message);
+          const comparison = machineLogService.compare(current.parsed, log);
+          const observation =
+            binding.verified && log.actualTimeSec !== null && log.actualTimeSec > 0 && current.parsed.stats.timeSec > 0
+              ? timeCalibration.observation(current.parsed, log)
+              : null;
+          const calibration = calibrationFor(current.parsed, log, true);
+          setMachineLog({ log, comparison, observation, calibration, binding, importVia: via });
+          ui.toast(`真机日志已接入：生成 ${comparison.length} 项计划/实测对比`, "ok");
+        })
+        .catch((error: unknown) => {
+          if (!isCurrent() || (error instanceof MachineLogImportError && error.code === "CANCELLED")) return;
+          console.error("[machine-log]", error);
+          ui.toast("真机日志导入失败：" + String((error as Error)?.message ?? error), "err");
+        })
+        .finally(() => {
+          if (machineLogImportHandle.current === handle) {
+            machineLogImportHandle.current = null;
+            setMachineLogImport(MACHINE_LOG_IMPORT_IDLE);
+          }
+        });
     },
-    [sim, ui, calibrationFor]
+    [sim, ui, calibrationFor, cancelMachineLogImport]
   );
 
   const handleCalibrationFile = useCallback(
@@ -577,11 +586,13 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
       mesh,
       meshImport,
       machineLog,
+      machineLogImport,
       authority,
       handleImageFile,
       handleGcodeFile,
       handleMeshFile,
       handleMachineLogFile,
+      cancelMachineLogImport,
       handleProfileFile,
       handleCalibrationFile,
       updateImage,
@@ -595,11 +606,13 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
       mesh,
       meshImport,
       machineLog,
+      machineLogImport,
       authority,
       handleImageFile,
       handleGcodeFile,
       handleMeshFile,
       handleMachineLogFile,
+      cancelMachineLogImport,
       handleProfileFile,
       handleCalibrationFile,
       updateImage,

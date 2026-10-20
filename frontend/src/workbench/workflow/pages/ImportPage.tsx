@@ -245,11 +245,50 @@ function MachineLogSummary({ state }: { readonly state: MachineLogState }) {
   const calibration = state.calibration;
   return (
     <>
-      <div className="machine-log-summary" id="machine-log-summary">
+      <div
+        className="machine-log-summary"
+        id="machine-log-summary"
+        data-source-sha256={state.log.sourceSha256}
+        data-sample-count={state.log.telemetry?.sampleCount}
+        data-gcode-binding={state.binding.status}
+      >
         <div className="kv">
           <span className="k">真机日志</span>
           <span className="v">{`${state.log.name} · ${state.log.status}`}</span>
         </div>
+        {state.importVia && (
+          <div className="kv">
+            <span className="k">导入方式</span>
+            <span className="v">{state.importVia === "worker" ? "后台解析" : "本机兼容解析"}</span>
+          </div>
+        )}
+        <div className="kv">
+          <span className="k">文件绑定</span>
+          <span className="v">{state.binding.verified ? "已验证" : "未绑定"}</span>
+        </div>
+        {state.log.telemetry && (
+          <>
+            <div className="kv">
+              <span className="k">遥测样本</span>
+              <span className="v">{state.log.telemetry.sampleCount.toLocaleString()} 条</span>
+            </div>
+            {(
+              [
+                ["喷头记录范围", state.log.telemetry.nozzleC],
+                ["热床记录范围", state.log.telemetry.bedC],
+              ] as const
+            ).map(([label, range]) => (
+              <div className="kv" key={label}>
+                <span className="k">{label}</span>
+                <span className="v">
+                  {range.min === null || range.max === null
+                    ? "未提供"
+                    : `${range.min.toFixed(1)}–${range.max.toFixed(1)} °C`}
+                </span>
+              </div>
+            ))}
+          </>
+        )}
         {state.log.machineId ? (
           <div className="kv">
             <span className="k">设备 / 固件</span>
@@ -375,6 +414,7 @@ const GCODE_PHASE_LABEL: Readonly<Record<GcodeImportPhase, string>> = {
   pack: "打包路径",
   rebuild: "装配结果",
 };
+const MACHINE_LOG_PHASE_LABEL = { read: "读取文件", hash: "SHA-256 校验", parse: "解析日志", summary: "汇总遥测" };
 
 function GcodeSection(ctx: PageContext) {
   const { sim, assets } = ctx;
@@ -424,6 +464,14 @@ function GcodeSection(ctx: PageContext) {
             onClick={() => document.getElementById("machine-log-input")?.click()}
             onFile={assets.handleMachineLogFile}
           />
+          {assets.machineLogImport.status === "parsing" && (
+            <div role="status" className="note" data-machine-log-import={assets.machineLogImport.phase ?? "read"}>
+              {`真机日志：${MACHINE_LOG_PHASE_LABEL[assets.machineLogImport.phase ?? "read"]} · ${Math.round(assets.machineLogImport.progress * 100)}%`}
+              <button type="button" className="btn btn-ghost" onClick={assets.cancelMachineLogImport}>
+                取消日志导入
+              </button>
+            </div>
+          )}
           {assets.machineLog ? <MachineLogSummary state={assets.machineLog} /> : null}
         </>
       ) : null}

@@ -497,6 +497,8 @@ jobs:
             backend/artifacts/mesh-topology-panel.png
             backend/artifacts/gcode-cost-panel.png
             backend/artifacts/machine-cost-comparison.png
+            backend/artifacts/machine-log-worker.png
+            backend/artifacts/machine-log-worker.json
           if-no-files-found: warn
           retention-days: 7
 

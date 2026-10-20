@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { test, expect } = require("@playwright/test");
+const { probeMachineLogWorker } = require("./helpers/machine-log-worker");
 const fixture = path.resolve(__dirname, "../../contracts/validation/fixtures/cura-marlin.gcode");
 const sha = crypto.createHash("sha256").update(fs.readFileSync(fixture)).digest("hex");
 async function prepare(page) {
@@ -52,23 +53,6 @@ async function calculate(page) {
   await page.getByRole("button", { name: "计算成本", exact: true }).click();
   expect((await ready).ok()).toBe(true);
   await expect(page.locator("#gcode-cost-result")).toBeVisible();
-}
-async function holdNextLogHash(page) {
-  await page.evaluate(() => {
-    const original = crypto.subtle.digest.bind(crypto.subtle);
-    window.__logHashHeld = false;
-    window.__logHashFinished = false;
-    crypto.subtle.digest = async (...args) => {
-      crypto.subtle.digest = original;
-      window.__logHashHeld = true;
-      await new Promise((resolve) => {
-        window.__releaseLogHash = resolve;
-      });
-      const result = await original(...args);
-      window.__logHashFinished = true;
-      return result;
-    };
-  });
 }
 test.describe("C# 作业能耗与成本估算", () => {
   test.skip(process.env.E2E_GCODE_AUTHORITY !== "dotnet", "专项要求真实 C# 异步作业");
@@ -190,25 +174,25 @@ test.describe("C# 作业能耗与成本估算", () => {
     await expect(comparison).toHaveCount(0);
     await expect(page.locator("#gcode-cost-result")).toBeVisible();
   });
-  test("旧日志摘要晚到不覆盖新日志，切换模型后也不会回写", async ({ page }) => {
+  test("旧日志后台结果晚到不覆盖新日志，切换模型后也不会回写", async ({ page }) => {
     await prepare(page);
     await calculate(page);
-    await holdNextLogHash(page);
+    await probeMachineLogWorker(page, { holdResult: true });
     await page.locator("#machine-log-input").setInputFiles(logFile("old-held.json"));
-    await page.waitForFunction(() => window.__logHashHeld);
+    await page.waitForFunction(() => window.__machineLogWorkerProbe.held);
     await page.locator("#machine-log-input").setInputFiles(logFile("new-log.json", { energyKwh: 0.6 }));
     await expect(page.locator("#machine-log-summary")).toContainText("new-log.json");
-    await page.evaluate(() => window.__releaseLogHash());
-    await page.waitForFunction(() => window.__logHashFinished);
+    await page.evaluate(() => window.__releaseMachineLogWorker());
+    await page.waitForFunction(() => window.__machineLogWorkerProbe.released);
     await expect(page.locator("#machine-log-summary")).toContainText("new-log.json");
     await expect(page.locator('[data-cost-comparison="energy"]')).toContainText("0.600000");
 
-    await holdNextLogHash(page);
+    await probeMachineLogWorker(page, { holdResult: true });
     await page.locator("#machine-log-input").setInputFiles(logFile("switch-held.json"));
-    await page.waitForFunction(() => window.__logHashHeld);
+    await page.waitForFunction(() => window.__machineLogWorkerProbe.held);
     await page.locator(".model-card", { hasText: "行星齿轮" }).click();
-    await page.evaluate(() => window.__releaseLogHash());
-    await page.waitForFunction(() => window.__logHashFinished);
+    await page.evaluate(() => window.__releaseMachineLogWorker());
+    await page.waitForFunction(() => window.__machineLogWorkerProbe.released);
     await expect(page.locator("#gcode-cost-panel")).toHaveCount(0);
     await expect(page.locator("#machine-log-summary")).toHaveCount(0);
     await expect(page.locator("#machine-cost-comparison")).toHaveCount(0);

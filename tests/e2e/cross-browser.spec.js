@@ -2,6 +2,7 @@
 "use strict";
 
 const { test, expect } = require("@playwright/test");
+const { createHash } = require("crypto");
 
 async function waitBooted(page) {
   // Firefox 在 CI 软渲染下启动最慢（WebKit 同机 12s，FF 超过 30s），预算放宽到 90s。
@@ -32,6 +33,45 @@ async function waitBooted(page) {
 }
 
 test.describe("P6 cross-browser contract", () => {
+  test("React 工作台后台日志导入、文件绑定与遥测汇总", async ({ page }) => {
+    await page.goto("/react");
+    await waitBooted(page);
+    await page.locator("#flow-pills .flow-pill").first().click();
+    const gcode = "M83\nG90\nG1 Z0.2 F600\nG1 X10 Y10 E1 F600\n";
+    await page
+      .locator("#gcode-input")
+      .setInputFiles({ name: "react-cross.gcode", mimeType: "text/x-gcode", buffer: Buffer.from(gcode) });
+    await page.waitForFunction(() => window.FX.sim.importedToolpath);
+    await expect(page.locator("#gcode-summary")).toContainText("react-cross.gcode");
+    await page.locator("#machine-log-input").setInputFiles({
+      name: "react-cross.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(
+        JSON.stringify({
+          job: { gcodeSha256: createHash("sha256").update(gcode).digest("hex"), durationSec: 60 },
+          samples: [
+            { timeSec: 0, nozzleC: 20 },
+            { timeSec: 60, nozzleC: 210 },
+          ],
+        })
+      ),
+    });
+    try {
+      await expect(page.locator("#machine-log-summary")).toContainText("后台解析");
+    } catch (error) {
+      const diagnostics = await page.evaluate(() => ({
+        toasts: document.getElementById("toasts")?.textContent,
+        phase: document.querySelector("[data-machine-log-import]")?.textContent,
+        via: window.__forgexMachineLogImportVia,
+      }));
+      throw new Error(`React 日志未完成：${JSON.stringify(diagnostics)}`, { cause: error });
+    }
+    await expect(page.locator("#machine-log-summary")).toContainText("20.0–210.0");
+    expect(await page.evaluate(() => window.__forgexMachineLogImportVia)).toBe("worker");
+    await expect(page.locator("#machine-log-summary")).toHaveAttribute("data-gcode-binding", "verified");
+    await expect(page.locator("#machine-log-summary")).toHaveAttribute("data-sample-count", "2");
+    await expect(page.locator("#machine-log-summary")).toContainText("单任务观测倍率");
+  });
   test("应用启动、WebGL 场景与默认切片可用", async ({ page, browserName }) => {
     await page.goto("/legacy");
     await waitBooted(page);
@@ -71,18 +111,20 @@ test.describe("P6 cross-browser contract", () => {
     await page.locator("#machine-log-input").setInputFiles({
       name: "cross-browser.machine-log.json",
       mimeType: "application/json",
-      buffer: Buffer.from(JSON.stringify({
-        format: "forgex-machine-log",
-        version: 1,
-        job: {
-          machineId: "FX-CROSS",
-          firmware: "Klipper 0.12",
-          durationSec: 120,
-          completedLayers: 1,
-          status: "success",
-        },
-        telemetry: [],
-      })),
+      buffer: Buffer.from(
+        JSON.stringify({
+          format: "forgex-machine-log",
+          version: 1,
+          job: {
+            machineId: "FX-CROSS",
+            firmware: "Klipper 0.12",
+            durationSec: 120,
+            completedLayers: 1,
+            status: "success",
+          },
+          telemetry: [],
+        })
+      ),
     });
 
     await expect(page.locator("#machine-log-summary")).toContainText("FX-CROSS");

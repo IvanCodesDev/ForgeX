@@ -12,6 +12,7 @@
 const childProcess = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const { createHash } = require("crypto");
 const { test, expect } = require("@playwright/test");
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -61,6 +62,37 @@ test.describe("React 离线单文件（Stage 7.2 验收）", () => {
     // tsc 增量编译时冷缓存的 CI 机器可能较慢，给足预算
     test.setTimeout(300_000);
     buildOfflineArtifact();
+  });
+
+  test("file:// G-code 与真机日志后台导入，全程不请求网络", async ({ page }) => {
+    const requests = [];
+    page.on("request", (request) => {
+      if (/^https?:/i.test(request.url())) requests.push(request.url());
+    });
+    await waitBooted(page);
+    await page.locator("#flow-pills .flow-pill").first().click();
+    const gcode = "M83\nG90\nG1 Z0.2 F600\nG1 X10 Y10 E1 F600\n";
+    await page
+      .locator("#gcode-input")
+      .setInputFiles({ name: "offline-log.gcode", mimeType: "text/x-gcode", buffer: Buffer.from(gcode) });
+    await page.waitForFunction(() => window.FX.sim.importedToolpath);
+    await expect(page.locator("#gcode-summary")).toContainText("offline-log.gcode");
+    await page.locator("#machine-log-input").setInputFiles({
+      name: "offline-log.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(
+        JSON.stringify({
+          job: { gcodeSha256: createHash("sha256").update(gcode).digest("hex"), durationSec: 60 },
+          samples: [
+            { timeSec: 0, nozzleC: 20 },
+            { timeSec: 60, nozzleC: 210 },
+          ],
+        })
+      ),
+    });
+    await expect(page.locator("#machine-log-summary")).toContainText("后台解析");
+    expect(await page.evaluate(() => window.__forgexMachineLogImportVia)).toBe("worker");
+    expect(requests).toEqual([]);
   });
 
   test("file:// 启动：无报错、设计令牌生效、四机型可切换", async ({ page }) => {

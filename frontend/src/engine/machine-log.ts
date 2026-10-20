@@ -83,20 +83,21 @@ function firstText(...args: unknown[]): string {
   return "";
 }
 
-function csvRows(text: string): string[][] {
-  const rows: string[][] = [];
+function* csvRows(text: string): Generator<string[]> {
+  let rowCount = 0;
   let row: string[] = [];
   let field = "";
   let quoted = false;
   let closed = false;
   const finishRow = () => {
     row.push(field);
-    if (row.some((x) => x.trim())) rows.push(row);
+    const completed = row.some((x) => x.trim()) ? row : null;
     row = [];
     field = "";
     closed = false;
     // 一行表头 + MAX_ROWS 行数据，最后一行同样受限。
-    if (rows.length > MAX_ROWS + 1) throw new Error("真机日志行数超过上限");
+    if (completed && ++rowCount > MAX_ROWS + 1) throw new Error("真机日志行数超过上限");
+    return completed;
   };
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
@@ -119,7 +120,8 @@ function csvRows(text: string): string[][] {
       closed = false;
     } else if (ch === "\n" || ch === "\r") {
       if (ch === "\r" && text[i + 1] === "\n") i++;
-      finishRow();
+      const completed = finishRow();
+      if (completed) yield completed;
     } else {
       if (closed) {
         if (ch === " " || ch === "\t") continue;
@@ -129,8 +131,8 @@ function csvRows(text: string): string[][] {
     }
   }
   if (quoted) throw new Error("CSV 引号未闭合");
-  finishRow();
-  return rows;
+  const completed = finishRow();
+  if (completed) yield completed;
 }
 
 function key(v: unknown): string {
@@ -177,12 +179,12 @@ function record(value: unknown, label: string): RawRecord {
   return value as RawRecord;
 }
 
-function normalize(data: RawRecord, name?: string): MachineLogResult {
+function normalize(data: RawRecord, name?: string, normalizedSamples?: LogSample[]): MachineLogResult {
   const job = record(data.job ?? data.summary ?? data, "任务汇总");
-  const rawSamples = data.telemetry ?? data.samples ?? [];
+  const rawSamples = normalizedSamples ?? data.telemetry ?? data.samples ?? [];
   if (!Array.isArray(rawSamples)) throw new Error("遥测样本必须是数组");
   if (rawSamples.length > MAX_ROWS) throw new Error("真机日志行数超过上限");
-  const samples = rawSamples.map((s: unknown) => normalizeSample(record(s, "遥测样本")));
+  const samples = normalizedSamples ?? rawSamples.map((s: unknown) => normalizeSample(record(s, "遥测样本")));
   const minutes = (value: unknown) => {
     const number = finite(value);
     return number === null ? null : number * 60;
@@ -246,39 +248,44 @@ function normalize(data: RawRecord, name?: string): MachineLogResult {
 
 function parseCsvLog(text: string, name?: string): MachineLogResult {
   const rows = csvRows(text);
-  if (rows.length < 2) throw new Error("CSV 真机日志至少需要表头和一行数据");
-  const headers = rows[0]!.map(key);
+  const header = rows.next();
+  if (header.done) throw new Error("CSV 真机日志至少需要表头和一行数据");
+  const headers = header.value.map(key);
   if (headers.some((h) => !h) || new Set(headers).size !== headers.length) throw new Error("CSV 表头为空或存在重复列");
-  const objects = rows.slice(1).map((cells) => {
+  const samples: LogSample[] = [];
+  let last: RawRecord | null = null;
+  const identities: Record<string, string> = Object.create(null) as Record<string, string>;
+  const identityFields = [
+    ["job_id", "job"],
+    ["machine_id", "machine", "device_id"],
+    ["firmware", "firmware_version"],
+    ["slicer", "slicer_version"],
+    ["gcode_sha256", "gcode_sha", "gcode_hash"],
+  ];
+  for (const cells of rows) {
     if (cells.length !== headers.length) throw new Error("CSV 数据列数与表头不一致");
     const obj: RawRecord = Object.create(null) as RawRecord;
     headers.forEach((h, i) => {
       obj[h] = cells[i] == null ? "" : cells[i]!.trim();
     });
-    return obj;
-  });
-  const samples = objects.map(normalizeSample);
-  const last = objects[objects.length - 1]!;
-  const consistentText = (names: string[], lowercase = false) => {
-    let declared = "";
-    for (const obj of objects) {
+    samples.push(normalizeSample(obj));
+    last = obj;
+    for (const names of identityFields) {
+      const field = names[0]!;
       const raw = firstText(at(obj, names));
-      const value = lowercase ? raw.toLowerCase() : raw;
+      const value = field === "gcode_sha256" ? raw.toLowerCase() : raw;
       if (!value) continue;
-      if (declared && declared !== value) throw new Error(`CSV 真机日志中的 ${names[0]} 在不同行之间不一致`);
-      declared = value;
+      if (identities[field] && identities[field] !== value)
+        throw new Error(`CSV 真机日志中的 ${field} 在不同行之间不一致`);
+      identities[field] = value;
     }
-    return declared;
-  };
+  }
+  if (!last) throw new Error("CSV 真机日志至少需要表头和一行数据");
   return normalize(
     {
       format: "generic-machine-log-csv",
       job: {
-        job_id: consistentText(["job_id", "job"]),
-        machine_id: consistentText(["machine_id", "machine", "device_id"]),
-        firmware: consistentText(["firmware", "firmware_version"]),
-        slicer: consistentText(["slicer", "slicer_version"]),
-        gcode_sha256: consistentText(["gcode_sha256", "gcode_sha", "gcode_hash"], true),
+        ...identities,
         duration_s: at(last, ["duration_s", "duration_sec"]),
         filament_mm: at(last, ["filament_mm", "filament_used_mm"]),
         filament_g: at(last, ["filament_g", "filament_used_g"]),
@@ -287,9 +294,9 @@ function parseCsvLog(text: string, name?: string): MachineLogResult {
         energy_kwh: at(last, ["energy_kwh"]),
         energy_evidence: at(last, ["energy_evidence"]),
       },
-      samples,
     },
-    name
+    name,
+    samples
   );
 }
 
