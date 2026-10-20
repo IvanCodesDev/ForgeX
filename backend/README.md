@@ -37,6 +37,12 @@ GET  /openapi/v1.json
 POST /api/v1/gcode/analyze
 ```
 
+启用 `PublicFacade__Enabled=true` 时，同步计算端点（`/api/v1/gcode/analyze`、`/api/v1/analytics/*`、`/api/v1/calibration/*`）沿用 `DirectAuth` 和可信内部通道。配置 `DirectAuth__RequireAuth=true` 后，匿名或错误 key 返回 401；有效内部令牌仍须附带规范租户与所有者上下文。公开校准目录 `/api/v1/calibrations` 保持原访问规则。关闭公共门面时保留原 sidecar 兼容行为。
+
+单进程部署的 `/healthz` 同时检查业务持久化（包含分享）、G-code 文件存储、作业仓库、队列和工作线程启动状态；业务存储失败返回 503 `persistence_unavailable`，G-code 依赖不可用返回 503 `gcode_unavailable`。健康响应保留原能力字段，不包含内部路径或底层异常。ResourceGate 用真实文件目录故障与恢复验证探针。
+
+公共 `/api/*` 的未知路径与不支持方法返回 404 `{error: "接口不存在"}`；内部 `/api/v1/*` 保留 404、405（含 `Allow`）和 415 的 problem+json 契约。API 路径文字按 Kestrel 规则忽略大小写，身份边界采用相同规则；资源 ID 不转换大小写，用户隔离及校准审核权限保持原语义。
+
 The G-code endpoint accepts the raw `application/x-gcode` body. It returns an authoritative summary,
 a bounded per-layer plan, and packed display-only extrusion geometry. The React Worker still owns
 the immediate preview used by `browser` and `shadow` modes.
@@ -337,5 +343,6 @@ The old page remains at `/`, the React page remains at `/react/`, and the defaul
 21. 指标 → 公共契约第 21 组。
 22. 分享披露与撤销 → 公共契约第 22 组。
 23. G-code → 公共契约第 23 组验证直接权威端点和作业身份边界，异步持久化由单进程部署演练/JobGate 补齐。Node 的流式代理实现测试在代理删除后才退役，不能用直连接口通过来宣称这些代理分支已逐条迁移。
+24. 单进程路由错误 → 公共契约第 24 组验证内部 405/415、`Allow`、公共中文 404，以及 GET/POST/DELETE/HEAD 和大小写路径。
 
-本轮公共 HTTP 契约 100 项通过，新增内部契约 59 项；ResourceGate 总计从 367 增至 426（file + postgres 双腿）。CI 分别保存 `csharp-server-contract.json` 与 `resource-authority-gate.json`。测试数量不能替代删除审批、真实容器验收和生产观察；现阶段仍保留 Node、经典前端及原测试链。
+公共 HTTP 契约现为 196 项；ResourceGate 为 442 项（file + postgres 双腿，包含 provider 等内部契约 59 项和部署健康故障验证 16 项）。CI 分别保存 `csharp-server-contract.json` 与 `resource-authority-gate.json`。测试数量不能替代删除审批、真实容器验收和生产观察；现阶段仍保留 Node、经典前端及原测试链。

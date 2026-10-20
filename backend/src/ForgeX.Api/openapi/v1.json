@@ -53,6 +53,7 @@
       "post": {
         "operationId": "analyzeGCode",
         "summary": "Analyze an FDM G-code stream",
+        "description": "When PublicFacade is enabled, caller authentication follows DirectAuth and the trusted internal channel. RequireAuth rejects anonymous callers with 401.",
         "parameters": [
           {
             "name": "bedSizeMm",
@@ -189,6 +190,9 @@
             }
           },
           "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
             "$ref": "#/components/responses/Problem"
           },
           "413": {
@@ -501,6 +505,7 @@
       "post": {
         "operationId": "analyzeAnalyticsReport",
         "summary": "Recompute a deterministic analytics report for shadow comparison",
+        "description": "When PublicFacade is enabled, caller authentication follows DirectAuth and the trusted internal channel. RequireAuth rejects anonymous callers with 401.",
         "requestBody": {
           "required": true,
           "content": {
@@ -525,6 +530,9 @@
           "400": {
             "$ref": "#/components/responses/Problem"
           },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
           "413": {
             "$ref": "#/components/responses/Problem"
           },
@@ -541,6 +549,7 @@
       "post": {
         "operationId": "trainCalibrationModel",
         "summary": "Fit a deterministic Theil-Sen time calibration candidate",
+        "description": "When PublicFacade is enabled, caller authentication follows DirectAuth and the trusted internal channel. RequireAuth rejects anonymous callers with 401.",
         "requestBody": {
           "required": true,
           "content": {
@@ -563,6 +572,9 @@
             }
           },
           "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
             "$ref": "#/components/responses/Problem"
           },
           "413": {

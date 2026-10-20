@@ -89,11 +89,21 @@ internal static class PublicFacade
     };
 
     public static bool IsPublicPath(PathString path) =>
-        path.StartsWithSegments("/api/analyze", StringComparison.Ordinal) ||
-        path.StartsWithSegments("/api/datasource", StringComparison.Ordinal) ||
-        path.StartsWithSegments("/api/knowledge", StringComparison.Ordinal) ||
-        path.StartsWithSegments("/api/share", StringComparison.Ordinal) ||
-        path.StartsWithSegments("/api/calibrations", StringComparison.Ordinal);
+        path.StartsWithSegments("/api/analyze", StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWithSegments("/api/datasource", StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWithSegments("/api/knowledge", StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWithSegments("/api/share", StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWithSegments("/api/calibrations", StringComparison.OrdinalIgnoreCase);
+
+    internal static bool IsPublicApiPath(PathString path) =>
+        path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase) &&
+        !path.StartsWithSegments("/api/v1", StringComparison.OrdinalIgnoreCase);
+
+    internal static Task WriteRouteNotFoundAsync(HttpContext context)
+    {
+        context.Response.Headers.Remove("Allow");
+        return WriteErrorAsync(context, StatusCodes.Status404NotFound, NotFoundText);
+    }
 
     /// <summary>
     /// Runs before the caller-context boundary: CORS + OPTIONS 204 for every request, then Node's
@@ -120,7 +130,7 @@ internal static class PublicFacade
                     context,
                     directAuth,
                     out var caller,
-                    enforceRequireAuth: !path.StartsWithSegments("/api/calibrations", StringComparison.Ordinal));
+                    enforceRequireAuth: !path.StartsWithSegments("/api/calibrations", StringComparison.OrdinalIgnoreCase));
                 if (problem is not null)
                 {
                     await WriteErrorAsync(context, StatusCodes.Status401Unauthorized,
@@ -130,7 +140,7 @@ internal static class PublicFacade
                 CallerContextBoundary.Set(context, caller!);
             }
 
-            var sharePage = path.StartsWithSegments("/share", StringComparison.Ordinal);
+            var sharePage = path.StartsWithSegments("/share", StringComparison.OrdinalIgnoreCase);
             try
             {
                 if (sharePage)
@@ -202,17 +212,8 @@ internal static class PublicFacade
             new { enabled = false, authenticated = false, user = (object?)null, canUseAi = false, integration = "retired" },
             JsonOptions)).ExcludeFromDescription();
 
-        // Node: 未命中的公共 /api/* 一律 404「接口不存在」（任何方法）。内部 /api/v1/* 保持 problem+json
-        // （只置状态码，交给 StatusCodePages）。不加全局 fallback：静态托管中间件只接手无端点认领的 GET/HEAD。
-        app.MapFallback("/api/{**rest}", (HttpContext context) =>
-        {
-            if (context.Request.Path.StartsWithSegments("/api/v1", StringComparison.Ordinal))
-            {
-                context.Response.StatusCode = StatusCodes.Status404NotFound;
-                return Task.CompletedTask;
-            }
-            return WriteErrorAsync(context, StatusCodes.Status404NotFound, NotFoundText);
-        }).ExcludeFromDescription();
+        // 未命中的公共 API 错误由 Program 的 StatusCodePages 改写。
+        // 不注册 catch-all 端点，否则路由匹配会用它替代内部 API 的 405 / 415。
     }
 
     // ── 分析任务 ──────────────────────────────────────────────────────────────
@@ -499,19 +500,31 @@ internal static class PublicFacade
             if (services.GetService<PostgresAnalysisTaskRepository>() is { } tasks) await tasks.ProbeAsync(context.RequestAborted);
             if (services.GetService<IDatasourceRepository>() is { } datasources) await datasources.ProbeAsync(context.RequestAborted);
             if (services.GetService<IKnowledgeRepository>() is { } knowledge) await knowledge.ProbeAsync(context.RequestAborted);
+            if (services.GetService<IShareRepository>() is { } shares) await shares.ProbeAsync(context.RequestAborted);
             if (services.GetService<ICalibrationGovernanceStore>() is { } store) calibrations = await store.StatsAsync(context.RequestAborted);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            return Results.Json(new
+            return Unavailable("persistence_unavailable");
+        }
+
+        // 默认部署的容器与平台探针访问 /healthz，也必须覆盖 G-code 文件卷与作业宿主。
+        // 与 /health/ready 使用相同的持久化探针，业务 PostgreSQL 可用不代表文件卷可用。
+        try
+        {
+            var writable = await services.GetRequiredService<IContentObjectStore>().ProbeWritableAsync(context.RequestAborted);
+            var repository = await services.GetRequiredService<IGCodeJobRepositoryMaintenance>().ProbeAsync(context.RequestAborted);
+            services.GetRequiredService<ForgeXMetrics>().SetRepositoryHealth(repository.Ready, repository.RecordCount);
+            if (!writable || !repository.Ready ||
+                !services.GetRequiredService<IGCodeJobQueue>().IsAccepting ||
+                !services.GetRequiredService<GCodeJobWorker>().Started)
             {
-                ok = false,
-                engine,
-                provider = usesAi ? "openai" : "local",
-                persistence,
-                error = "persistence_unavailable",
-                now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            }, JsonOptions, statusCode: StatusCodes.Status503ServiceUnavailable);
+                return Unavailable("gcode_unavailable");
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return Unavailable("gcode_unavailable");
         }
 
         var snapshot = gate.Snapshot();
@@ -550,6 +563,16 @@ internal static class PublicFacade
             },
             now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         }, JsonOptions);
+
+        IResult Unavailable(string error) => Results.Json(new
+        {
+            ok = false,
+            engine,
+            provider = usesAi ? "openai" : "local",
+            persistence,
+            error,
+            now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        }, JsonOptions, statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 
     /// <summary>Node /metrics series that C#'s own exporter does not already emit (resource gauges come from ResourceGaugeSampler).</summary>

@@ -32,16 +32,17 @@ internal static class CallerContextBoundary
     internal const string SubmitterRole = "submitter";
     internal const string ReviewerRole = "reviewer";
 
+    // Match Kestrel's case-insensitive route literals without rewriting resource identifiers.
     public static bool AppliesTo(PathString path) =>
-        path.StartsWithSegments("/api/v1/gcode/analyses", StringComparison.Ordinal) ||
-        path.StartsWithSegments("/api/v1/jobs", StringComparison.Ordinal) ||
+        path.StartsWithSegments("/api/v1/gcode/analyses", StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWithSegments("/api/v1/jobs", StringComparison.OrdinalIgnoreCase) ||
         // Stage 8.1: share creation/revocation need the trusted caller context;
         // the public share page (/share/{token}) intentionally stays outside.
-        path.StartsWithSegments("/api/v1/shares", StringComparison.Ordinal) ||
-        path.StartsWithSegments("/api/v1/analysis-tasks", StringComparison.Ordinal) ||
+        path.StartsWithSegments("/api/v1/shares", StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWithSegments("/api/v1/analysis-tasks", StringComparison.OrdinalIgnoreCase) ||
         // Stage 8.6a: datasources / knowledge are owner-scoped resources.
-        path.StartsWithSegments("/api/v1/datasources", StringComparison.Ordinal) ||
-        path.StartsWithSegments("/api/v1/knowledge", StringComparison.Ordinal) ||
+        path.StartsWithSegments("/api/v1/datasources", StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWithSegments("/api/v1/knowledge", StringComparison.OrdinalIgnoreCase) ||
         IsCalibrationGovernance(path);
 
     /// <summary>
@@ -49,9 +50,16 @@ internal static class CallerContextBoundary
     /// (/api/v1/calibrations) and stats (/api/v1/calibrations/stats) stay outside the boundary.
     /// </summary>
     internal static bool IsCalibrationGovernance(PathString path) =>
-        path.StartsWithSegments("/api/v1/calibrations/submissions", StringComparison.Ordinal) ||
-        (path.StartsWithSegments("/api/v1/calibrations", StringComparison.Ordinal, out var remaining) &&
-         remaining.Value?.Contains("/revisions/", StringComparison.Ordinal) == true);
+        path.StartsWithSegments("/api/v1/calibrations/submissions", StringComparison.OrdinalIgnoreCase) ||
+        (path.StartsWithSegments("/api/v1/calibrations", StringComparison.OrdinalIgnoreCase, out var remaining) &&
+         remaining.Value?.Contains("/revisions/", StringComparison.OrdinalIgnoreCase) == true);
+
+    // 单进程公开部署也暴露原先位于 Node 后面的同步计算与规则计算端点。
+    // 仅公共门面启用时纳入边界，保留旧 sidecar 零配置调用的兼容性。
+    internal static bool IsComputation(PathString path) =>
+        path.StartsWithSegments("/api/v1/gcode/analyze", StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWithSegments("/api/v1/analytics", StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWithSegments("/api/v1/calibration", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// The exact middleware used by Program.cs, exposed so the authorization-matrix
@@ -60,11 +68,13 @@ internal static class CallerContextBoundary
     public static Func<HttpContext, RequestDelegate, Task> BuildMiddleware(
         string sharedSecret,
         string previousSharedSecret,
-        DirectAuthOptions? directAuth = null)
+        DirectAuthOptions? directAuth = null,
+        bool publicFacadeEnabled = false)
     {
         return async (context, next) =>
         {
-            if (!AppliesTo(context.Request.Path))
+            if (!AppliesTo(context.Request.Path) &&
+                !(publicFacadeEnabled && IsComputation(context.Request.Path)))
             {
                 await next(context);
                 return;

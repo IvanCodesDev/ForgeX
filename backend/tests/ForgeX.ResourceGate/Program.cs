@@ -18,6 +18,7 @@ try
     ParitySection.Run(gate);
     ConnectionStringSection.Run(gate);
     await ServerProviderSection.RunAsync(gate);
+    await HealthSection.RunAsync(gate);
     await FileCollectionSection.RunAsync(gate);
     await SharesSection.RunAsync(gate);
     await DatasourcesSection.RunAsync(gate);

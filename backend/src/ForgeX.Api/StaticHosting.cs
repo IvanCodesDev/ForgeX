@@ -125,7 +125,7 @@ internal static class StaticFileHosting
 
             // Node parity: unmatched /api/* stays an API 404 (handled by UseStatusCodePages
             // upstream), the static plane never claims it.
-            if ((context.Request.Path.Value ?? string.Empty).StartsWith("/api/", StringComparison.Ordinal))
+            if (context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase))
             {
                 await next(context);
                 return;

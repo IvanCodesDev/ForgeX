@@ -54,7 +54,7 @@ const string ReviewKey = "review-key";
 try
 {
     // ── 被测应用：与 Program.cs 相同的边界中间件 + 回声端点 ─────────────
-    async Task<WebApplication> StartApiAsync(Dictionary<string, string?> settings, string secret, string previousSecret)
+    async Task<WebApplication> StartApiAsync(Dictionary<string, string?> settings, string secret, string previousSecret, bool publicFacadeEnabled = false)
     {
         var builder = WebApplication.CreateBuilder();
         builder.Logging.ClearProviders();
@@ -63,7 +63,8 @@ try
         var app = builder.Build();
         apps.Add(app);
         var directAuth = DirectAuthOptions.FromConfiguration(app.Configuration);
-        app.Use(CallerContextBoundary.BuildMiddleware(secret, previousSecret, directAuth));
+        app.Use(CallerContextBoundary.BuildMiddleware(secret, previousSecret, directAuth, publicFacadeEnabled));
+        app.MapPost("/api/v1/gcode/analyze", () => Results.Ok());
         app.MapGet("/api/v1/jobs/whoami", (HttpContext context) =>
         {
             var caller = CallerContextBoundary.GetRequired(context);
@@ -178,6 +179,16 @@ try
     Check("apikey-accepted-when-auth-required",
         Parse(requiredKeyBody).GetProperty("tenantId").GetString() == Tenant("key:" + Sha(BetaKey, 8)),
         requiredKeyBody);
+    var (upperAnon, _) = await SendAsync(requireOrigin, HttpMethod.Get, "/API/V1/JOBS/whoami");
+    Check("uppercase-owner-route-requires-key", upperAnon.StatusCode == HttpStatusCode.Unauthorized);
+    var (upperKey, upperKeyBody) = await SendAsync(requireOrigin, HttpMethod.Get, "/API/V1/JOBS/whoami", ("X-API-Key", AlphaKey));
+    Check("uppercase-owner-route-keeps-key-identity", upperKey.StatusCode == HttpStatusCode.OK &&
+        Parse(upperKeyBody).GetProperty("tenantId").GetString() == alphaTenant, upperKeyBody);
+    var (upperTrusted, upperTrustedBody) = await SendAsync(requireOrigin, HttpMethod.Get, "/API/V1/JOBS/whoami",
+        ("X-ForgeX-Internal-Token", InternalSecret), ("X-ForgeX-Tenant-Id", trustedTenant), ("X-ForgeX-Owner-Id", trustedOwner));
+    Check("uppercase-owner-route-keeps-trusted-identity", upperTrusted.StatusCode == HttpStatusCode.OK &&
+        Parse(upperTrustedBody).GetProperty("tenantId").GetString() == trustedTenant &&
+        Parse(upperTrustedBody).GetProperty("trusted").GetBoolean(), upperTrustedBody);
     var noReviewConfig = DirectAuthOptions.FromConfiguration(appRequire.Configuration);
     var reviewOnRequire = new Microsoft.AspNetCore.Http.DefaultHttpContext();
     reviewOnRequire.Request.Headers.Authorization = $"Bearer {ReviewKey}";
@@ -216,6 +227,39 @@ try
     // ── RequireAuth 缺 key 时降级（Node auth.js 警告语义） ──────────────────────
     var degraded = new DirectAuthOptions([], requireAuth: true);
     Check("config-require-auth-without-keys-degrades", degraded is { Enabled: false, RequireAuth: false }, degraded.RequireAuth);
+
+    // ═══ 单进程计算端点：强制鉴权、匿名模式与旧 sidecar 兼容 ═══════════════
+    const string ComputePath = "/api/v1/gcode/analyze";
+    var (sidecarCompute, _) = await SendAsync(requireOrigin, HttpMethod.Post, ComputePath);
+    Check("sidecar-computation-retains-existing-boundary", sidecarCompute.StatusCode == HttpStatusCode.OK);
+    var appCompute = await StartApiAsync(new Dictionary<string, string?>
+    {
+        ["DirectAuth:ApiKeys"] = AlphaKey,
+        ["DirectAuth:RequireAuth"] = "true",
+    }, InternalSecret, "previous-auth-gate-internal-secret", publicFacadeEnabled: true);
+    var computeOrigin = Origin(appCompute);
+    var (computeAnon, _) = await SendAsync(computeOrigin, HttpMethod.Post, ComputePath);
+    Check("public-computation-requires-api-key", computeAnon.StatusCode == HttpStatusCode.Unauthorized);
+    var (computeKey, _) = await SendAsync(computeOrigin, HttpMethod.Post, ComputePath, ("Authorization", $"Bearer {AlphaKey}"));
+    Check("public-computation-accepts-api-key", computeKey.StatusCode == HttpStatusCode.OK);
+    var (computeForged, _) = await SendAsync(computeOrigin, HttpMethod.Post, ComputePath,
+        ("X-API-Key", AlphaKey), ("X-ForgeX-Internal-Token", "forged"));
+    Check("public-computation-forged-token-cannot-fall-back", computeForged.StatusCode == HttpStatusCode.Unauthorized);
+    foreach (var token in new[] { InternalSecret, "previous-auth-gate-internal-secret" })
+    {
+        var (trustedCompute, _) = await SendAsync(computeOrigin, HttpMethod.Post, ComputePath,
+            ("X-ForgeX-Internal-Token", token), ("X-ForgeX-Tenant-Id", trustedTenant), ("X-ForgeX-Owner-Id", trustedOwner));
+        Check("public-computation-trusted-rotation-token-accepted", trustedCompute.StatusCode == HttpStatusCode.OK);
+    }
+    var appComputeAnon = await StartApiAsync(new Dictionary<string, string?>
+    {
+        ["DirectAuth:ApiKeys"] = AlphaKey,
+    }, InternalSecret, string.Empty, publicFacadeEnabled: true);
+    var (optionalCompute, _) = await SendAsync(Origin(appComputeAnon), HttpMethod.Post, ComputePath);
+    Check("public-computation-keeps-optional-anonymous-mode", optionalCompute.StatusCode == HttpStatusCode.OK);
+    var appComputeOpen = await StartApiAsync([], string.Empty, string.Empty, publicFacadeEnabled: true);
+    var (openCompute, _) = await SendAsync(Origin(appComputeOpen), HttpMethod.Post, ComputePath);
+    Check("public-computation-zero-config-local-mode", openCompute.StatusCode == HttpStatusCode.OK);
 
     // ═══ 错租户 / 非 owner：资源级隔离（与 JobGate 同一仓储语义，key/ip 派生 id） ══
     var repository = new FileGCodeJobRepository(Path.Combine(root, "jobs"));

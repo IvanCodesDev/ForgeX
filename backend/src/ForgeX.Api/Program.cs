@@ -355,7 +355,7 @@ if (publicFacade.Enabled)
 
 // Stage 8.2：直连身份（API key / 匿名 IP）与可信 Node 代理并行受理；
 // 未配置 DirectAuth:ApiKeys 时行为与迁移前完全一致。
-app.Use(CallerContextBoundary.BuildMiddleware(internalSharedSecret, previousInternalSharedSecret, directAuth));
+app.Use(CallerContextBoundary.BuildMiddleware(internalSharedSecret, previousInternalSharedSecret, directAuth, publicFacade.Enabled));
 
 if (allowedOrigins.Length > 0)
 {
@@ -365,6 +365,12 @@ if (allowedOrigins.Length > 0)
 app.UseStatusCodePages(async statusCodeContext =>
 {
     var context = statusCodeContext.HttpContext;
+    if (publicFacade.Enabled && PublicFacade.IsPublicApiPath(context.Request.Path) &&
+        context.Response.StatusCode is StatusCodes.Status404NotFound or StatusCodes.Status405MethodNotAllowed)
+    {
+        await PublicFacade.WriteRouteNotFoundAsync(context);
+        return;
+    }
     var (code, title) = context.Response.StatusCode switch
     {
         StatusCodes.Status400BadRequest => ("invalid_request", "Invalid request"),
@@ -480,6 +486,7 @@ app.MapPost("/api/v1/gcode/analyze", GCodeEndpoints.AnalyzeAsync)
     .Accepts<Stream>("application/x-gcode")
     .Produces<GCodeAnalysisResponse>()
     .Produces<ApiProblem>(StatusCodes.Status400BadRequest, "application/problem+json")
+    .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status413PayloadTooLarge, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status415UnsupportedMediaType, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status422UnprocessableEntity, "application/problem+json")
@@ -492,6 +499,7 @@ app.MapPost(
     .Accepts<AnalyticsReportRequestDto>("application/json")
     .Produces<AnalyticsAuthorityResponseDto>()
     .Produces<ApiProblem>(StatusCodes.Status400BadRequest, "application/problem+json")
+    .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status413PayloadTooLarge, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status415UnsupportedMediaType, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status500InternalServerError, "application/problem+json");
@@ -503,6 +511,7 @@ app.MapPost(
     .Accepts<CalibrationTrainingRequestDto>("application/json")
     .Produces<CalibrationAuthorityResponseDto>()
     .Produces<ApiProblem>(StatusCodes.Status400BadRequest, "application/problem+json")
+    .Produces<ApiProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status413PayloadTooLarge, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status415UnsupportedMediaType, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status422UnprocessableEntity, "application/problem+json")

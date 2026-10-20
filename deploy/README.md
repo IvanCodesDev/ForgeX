@@ -19,6 +19,8 @@ curl --fail http://127.0.0.1:8787/react/
 
 C# 镜像分前端构建、.NET 发布、最终运行三个阶段，运行层没有 Node 服务。Compose 使用非 root 用户、只读根文件系统、独立 `/app/data` 卷及临时目录，保留能力限制与日志轮换。旧版文件存储不会自动转换为 PostgreSQL；既有 Node file 部署须先制定并验证数据迁移方案。
 
+部署探针 `/healthz` 覆盖业务数据库（含分享）与 G-code 存储、作业仓库和宿主就绪状态。返回 503 `gcode_unavailable` 时检查 `/health/ready`、数据卷权限及作业仓库；`persistence_unavailable` 时检查数据库连接和迁移。开启强制 API Key 后，同步计算与内部规则计算接口也会拒绝匿名请求。
+
 ### Render
 
 `render.yaml` 使用 `deploy/Dockerfile.api`，需提供已迁移的 `POSTGRES_URL`、`DirectAuth__ApiKeys` 和 `PublicFacade__PublicBase`。默认关闭外部 AI 配置；有需要时另填 `OpenAi__BaseUrl`、`OpenAi__ApiKey`、`OpenAi__Model`。

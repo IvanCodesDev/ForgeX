@@ -348,6 +348,15 @@ try
     Check("api-unknown-not-claimed-by-static",
         apiUnknown.StatusCode == HttpStatusCode.NotFound && apiUnknownBody != NotFoundJson,
         $"{(int)apiUnknown.StatusCode} body={apiUnknownBody}");
+    var (uppercaseJob, uppercaseJobBody) = await SendAsync(origin, "/API/V1/JOBS/abc");
+    Check("uppercase-api-boundary-still-guards", uppercaseJob.StatusCode == HttpStatusCode.Unauthorized &&
+        uppercaseJobBody.Contains("internal_auth_required"), uppercaseJobBody);
+    foreach (var apiPath in new[] { "/API/V1/definitely-not-a-route", "/api" })
+    {
+        var (response, body) = await SendAsync(origin, apiPath);
+        Check("api-namespace-not-claimed-by-static:" + apiPath,
+            response.StatusCode == HttpStatusCode.NotFound && body != NotFoundJson, body);
+    }
     var (postRoot, postRootBody) = await SendAsync(origin, "/", HttpMethod.Post);
     Check("post-not-claimed-by-static",
         postRoot.StatusCode == HttpStatusCode.NotFound && postRootBody != NotFoundJson,

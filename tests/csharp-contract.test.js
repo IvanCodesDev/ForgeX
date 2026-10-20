@@ -17,6 +17,7 @@ const root = path.resolve(__dirname, "..");
 const artifact = path.join(root, "backend/artifacts/csharp-server-contract.json");
 const keyA = "contract-owner-" + crypto.randomBytes(12).toString("hex");
 const keyB = "contract-other-" + crypto.randomBytes(12).toString("hex");
+const reviewKey = "contract-review-" + crypto.randomBytes(12).toString("hex");
 const internalSecret = "contract-internal-" + crypto.randomBytes(20).toString("hex");
 const csv =
   "machine_id,material,status,date,duration_min,cost_fen,job_id\nM1,PLA,success,2026-10-01,100,300,JOB-1\nM1,PLA,fail,2026-10-02,90,250,JOB-2\nM2,ABS,success,2026-10-03,120,400,JOB-3\n";
@@ -301,7 +302,10 @@ async function main() {
       "他人知识不可检索",
       (await call(api, "/api/knowledge/search", { question: "翘边" }, other)).json.hits.length === 0
     );
-    const strict = await spawn("auth", { DirectAuth__RequireAuth: "true" });
+    const strict = await spawn("auth", {
+      DirectAuth__RequireAuth: "true",
+      DirectAuth__CalibrationReviewKeys: reviewKey,
+    });
     check(
       "匿名强制鉴权 401",
       (await call(strict, "/api/datasource", { csv }, { headers: { "X-API-Key": "" } })).status === 401
@@ -321,6 +325,89 @@ async function main() {
           { headers: { "X-API-Key": "", Authorization: "Bearer " + keyA } }
         )
       ).status === 201
+    );
+    for (const pathname of [
+      "/api/v1/gcode/analyze",
+      "/api/v1/analytics/reports",
+      "/api/v1/calibration/train",
+      "/api/v1/analytics/datasets/normalize",
+      "/api/v1/analytics/briefs",
+      "/api/v1/calibration/validate",
+      "/API/V1/GCODE/ANALYZE",
+      "/API/V1/ANALYTICS/REPORTS",
+      "/API/V1/CALIBRATION/TRAIN",
+    ]) {
+      const body =
+        pathname.toLowerCase() === "/api/v1/gcode/analyze"
+          ? "G90\nM82\nG92 E0\nG1 Z0.2 F600\nG1 X20 Y10 E1 F1200\n"
+          : {};
+      const requestOptions =
+        typeof body === "string" ? { raw: true, headers: { "Content-Type": "application/x-gcode" } } : {};
+      for (const headers of [{ "X-API-Key": "" }, { "X-API-Key": "wrong" }]) {
+        const denied = await call(strict, pathname, body, {
+          ...requestOptions,
+          headers: { ...requestOptions.headers, ...headers },
+        });
+        check(pathname + " 拒绝匿名或错误 key", denied.status === 401, denied.text);
+      }
+      const accepted = await call(strict, pathname, body, requestOptions);
+      check(pathname + " 正确 key 进入计算或参数校验", [200, 400].includes(accepted.status), accepted.text);
+      const forged = await call(strict, pathname, body, {
+        ...requestOptions,
+        headers: { ...requestOptions.headers, "X-ForgeX-Internal-Token": "forged" },
+      });
+      check(pathname + " 伪造内部令牌不回退 key", forged.status === 401, forged.text);
+    }
+    for (const pathname of ["/api/v1/analytics/datasets/meta", "/api/v1/analytics/datasets/farm"]) {
+      check(
+        pathname + " 匿名受保护",
+        (await call(strict, pathname, undefined, { headers: { "X-API-Key": "" } })).status === 401
+      );
+      check(pathname + " 正确 key 可访问", (await call(strict, pathname)).status === 200);
+    }
+    check(
+      "公开校准目录保留匿名访问",
+      (await call(strict, "/api/v1/calibrations", undefined, { headers: { "X-API-Key": "" } })).status === 200
+    );
+    for (const pathname of [
+      "/API/DATASOURCE",
+      "/API/KNOWLEDGE",
+      "/API/ANALYZE",
+      "/API/SHARE/missing",
+      "/API/V1/DATASOURCES",
+      "/API/V1/KNOWLEDGE",
+      "/API/V1/ANALYSIS-TASKS",
+      "/API/V1/SHARES",
+      "/API/V1/GCODE/ANALYSES",
+    ]) {
+      const anonymous = await call(strict, pathname, {}, { headers: { "X-API-Key": "" } });
+      check(pathname + " 大写路径执行强制鉴权", anonymous.status === 401, anonymous.text);
+    }
+    const uppercaseUpload = await call(strict, "/API/DATASOURCE", { csv });
+    check("大写公共路径正确 key 可上传", uppercaseUpload.status === 201, uppercaseUpload.text);
+    const uppercaseMissingJob = await call(strict, "/API/V1/JOBS/missing");
+    check("大写作业路径正确 key 返回资源错误", uppercaseMissingJob.status === 404, uppercaseMissingJob.text);
+    const uppercaseResult = await call(strict, `/API/ANALYZE/${sample.id}/result`);
+    check(
+      "大写路由保持资源 ID 与所属用户",
+      uppercaseResult.status === 200 && uppercaseResult.text === sample.result.text
+    );
+    check(
+      "大写路由不放宽资源隔离",
+      (await call(strict, `/API/ANALYZE/${sample.id}/result`, undefined, other)).status === 404
+    );
+    check(
+      "大写公开校准目录保持匿名访问",
+      (await call(strict, "/API/CALIBRATIONS", undefined, { headers: { "X-API-Key": "" } })).status === 200
+    );
+    for (const pathname of ["/API/CALIBRATIONS/SUBMISSIONS", "/API/V1/CALIBRATIONS/SUBMISSIONS"]) {
+      const submissions = await call(strict, pathname, undefined, { headers: { "X-API-Key": reviewKey } });
+      check(pathname + " 独立审核 key 保持权限", submissions.status === 200, submissions.text);
+    }
+    const uppercaseShare = await call(strict, "/SHARE/missing", undefined, { headers: { "X-API-Key": "" } });
+    check(
+      "大写公开分享错误仍为公共方言",
+      uppercaseShare.status === 404 && typeof uppercaseShare.json?.error === "string"
     );
     await strict.stop();
 
@@ -458,6 +545,48 @@ async function main() {
       signal: AbortSignal.timeout(10000),
     });
     check("作业伪造内部身份被拒绝", spoofed.status === 401, spoofed.status + " " + (await spoofed.text()));
+
+    section(24, "路由错误不被公共门面吞掉");
+    for (const pathname of ["/api/v1/gcode/analyze", "/api/v1/analytics/reports", "/api/v1/calibration/train"]) {
+      const unsupported = await call(api, pathname, "not supported", {
+        raw: true,
+        headers: { "Content-Type": "text/plain" },
+      });
+      check(pathname + " 内容类型错误保留 415", unsupported.status === 415, unsupported.text);
+      check(
+        pathname + " 内容类型错误保留问题契约",
+        /application\/problem\+json/.test(unsupported.headers.get("content-type")) &&
+          unsupported.json?.code === "unsupported_media_type"
+      );
+      const method = await call(api, pathname);
+      check(
+        pathname + " 方法错误保留 405 与 Allow",
+        method.status === 405 && method.headers.get("allow") === "POST",
+        method.text
+      );
+      check(pathname + " 方法错误保留问题契约", method.json?.code === "method_not_allowed");
+    }
+    for (const method of ["GET", "POST", "DELETE", "HEAD"]) {
+      for (const pathname of ["/api/route-missing", "/API/ROUTE-MISSING", "/api/datasource"]) {
+        // 数据源的 POST 是有效路由，只测其余不支持的方法。
+        if (method === "POST" && pathname === "/api/datasource") continue;
+        const missing = await call(api, pathname, undefined, { method });
+        check(
+          method + " " + pathname + " 保留公共 404",
+          missing.status === 404 && (method === "HEAD" ? missing.text === "" : missing.json?.error === "接口不存在"),
+          missing.text
+        );
+        check(method + " " + pathname + " 不遗留 Allow", !missing.headers.has("allow"));
+      }
+      const internal = await call(api, "/API/V1/ROUTE-MISSING", undefined, { method });
+      check(
+        method + " 内部未知路径保持问题契约",
+        internal.status === 404 &&
+          /application\/problem\+json/.test(internal.headers.get("content-type")) &&
+          (method === "HEAD" ? internal.text === "" : internal.json?.code === "route_not_found"),
+        internal.text
+      );
+    }
   } catch (exception) {
     error = exception;
   } finally {
