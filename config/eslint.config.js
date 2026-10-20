@@ -7,8 +7,16 @@
 
 const js = require("@eslint/js");
 const tseslint = require("typescript-eslint");
+const declareVirtualInitFields = require("./eslint-rules/declare-virtual-init-fields.js");
 
 const TS_RECOMMENDED_RULES = Object.assign({}, ...tseslint.configs.recommended.map((config) => config.rules || {}));
+
+/** 项目自有规则（Stage 10.2）：机型子类字段必须 declare，见 eslint-rules/ 内各规则头注释。 */
+const forgexPlugin = {
+  rules: {
+    "declare-virtual-init-fields": declareVirtualInitFields,
+  },
+};
 
 /** 前端模块通过 window 互相引用（经典脚本，无 import）。
     这份清单必须与各模块底部的 `root.FXxxx = ...` 一一对应——
@@ -168,7 +176,7 @@ module.exports = [
         ecmaFeatures: { jsx: true },
       },
     },
-    plugins: { "@typescript-eslint": tseslint.plugin },
+    plugins: { "@typescript-eslint": tseslint.plugin, forgex: forgexPlugin },
     rules: {
       ...COMMON_RULES,
       ...TS_RECOMMENDED_RULES,
@@ -183,12 +191,21 @@ module.exports = [
           caughtErrors: "none",
         },
       ],
+      /* 机型子类（extends FXPrinterBase）的字段一律 declare：基类构造期虚调用 _buildMachine() 赋值，
+         普通类字段会在 super() 返回后被 ES2022 [[Define]] 抹回 undefined（2026-08-23 四机型事故）。 */
+      "forgex/declare-virtual-init-fields": ["error", { bases: ["FXPrinterBase"] }],
     },
   },
 
   // ── 后端 / 测试 / 工具：Node CommonJS ──
   {
-    files: ["server/**/*.js", "tests/**/*.js", "tools/**/*.js", "config/eslint.config.js"],
+    files: [
+      "server/**/*.js",
+      "tests/**/*.js",
+      "tools/**/*.js",
+      "config/eslint.config.js",
+      "config/eslint-rules/**/*.js",
+    ],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "commonjs",
