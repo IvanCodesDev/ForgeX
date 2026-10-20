@@ -591,13 +591,14 @@ async function main() {
     const aiCreated = await postJson(
       base,
       "/api/analyze",
-      { question: "x", aiBaseUrl: " http://ai.example/v1/ ", aiApiKey: "sk-test-secret-0123456789", aiModel: "m-1" },
+      // 假密钥故意不用 sk- 前缀：security-audit 的 secret-pattern-scan 会把任何 sk-… 当成真密钥拦下。
+      { question: "x", aiBaseUrl: " http://ai.example/v1/ ", aiApiKey: "test-secret-0123456789", aiModel: "m-1" },
       alphaAuth
     );
     const aiSeen = last();
     check(
       "自带端点作为 ai 字段转发（baseUrl 去尾斜杠）",
-      aiCreated.status === 202 && aiSeen && aiSeen.body && deepEqual(aiSeen.body.ai, { baseUrl: "http://ai.example/v1", apiKey: "sk-test-secret-0123456789", model: "m-1" }),
+      aiCreated.status === 202 && aiSeen && aiSeen.body && deepEqual(aiSeen.body.ai, { baseUrl: "http://ai.example/v1", apiKey: "test-secret-0123456789", model: "m-1" }),
       JSON.stringify(aiSeen && aiSeen.body)
     );
     check(

@@ -207,7 +207,8 @@ internal static class AnalysisTasksSection
         gate.Check("analysis-fresh-running-kept", afterFresh.StatusCode == HttpStatusCode.Accepted && fresh is { Status: "running" }, fresh?.Status);
 
         // ── AI leg (8.6c-2b-ii): caller-supplied endpoint → C# provider, cost gate, cache ──
-        const string aiKey = "sk-gate-fake-key-0123456789";
+        // Deliberately not sk-prefixed: the repo's secret-pattern-scan treats any sk-… as a live key.
+        const string aiKey = "gate-fake-key-0123456789";
         var aiTenant = RandomTenant();
         var aiOwner = "ow_" + aiTenant[3..];
         var trustedAi = Gate.Trusted(aiTenant, aiOwner);
