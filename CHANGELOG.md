@@ -9,6 +9,13 @@
 
 ## [Unreleased]
 
+### Stage 8.6d-2：C# 单进程部署配置与验收（2026-10-20）
+
+- C# 镜像同时构建 React 与 API，默认开启静态托管和公共门面，对外端口 8787；业务资源要求已迁移 PostgreSQL，G-code 作业保留文件卷。
+- Compose 默认只启动 C#，Node 移到 `legacy-node` 回滚 profile；保留共同数据库、身份与内部通道开关，旧镜像端口变更须连同对应编排一起回滚。
+- Render 改用 C# Docker 镜像及持久磁盘；E2E 默认直接启动 ForgeX.Api，CI 提供 PostgreSQL 和迁移步骤。
+- 增加公共分析/SSE、分享撤销、重启持久化的单进程部署演练及容器配置检查。生产发布与 7 天观察仍须实际执行，本条不代表已完成线上切流。
+
 ### Stage 8.6d-1：C# 公共门面——ForgeX.Api 直接说 Node 的公共方言（2026-09-09）
 - Node 退场三步走的第一步（可回滚：不开 `PublicFacade__Enabled` 就零变化）。新增 `PublicFacade.cs`：把 Node 形状的公共路由
   接到现有 handler——`POST /api/analyze`（Node 的 `aiBaseUrl/aiApiKey/aiModel` 字段、202 `{taskId, engine, authenticated,

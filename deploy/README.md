@@ -1,38 +1,40 @@
 # FORGE·X container deployment
 
-This deployment runs the Node gateway and the .NET 10 authority as separate containers. The gateway
-is the only published service; authority port `8788` stays on the Compose network. The default file
-provider remains lightweight; the optional PostgreSQL profile loads the pinned `pg` driver.
+默认部署由 **ForgeX.Api 单进程**承载 React 静态文件、公共 API、SSE、身份、分析和 G-code 作业，对外端口为 `8787`。Node 镜像只保留为 `legacy-node` 回滚入口。
 
 ## First start
 
-1. Copy `deploy/.env.example` to `deploy/.env`.
-2. Generate a unique random secret of at least 32 bytes and set
-   `GCODE_AUTHORITY_INTERNAL_SECRET`. Never reuse the example text from CI or documentation.
-   Leave `GCODE_AUTHORITY_INTERNAL_SECRET_PREVIOUS` empty outside a documented rotation window.
-3. Set `FORGEX_NODE_IMAGE` and `FORGEX_API_IMAGE` to immutable release tags for reversible deploys.
-4. Build and start both services:
+1. 复制 `deploy/.env.example` 为 `deploy/.env`，填写 `POSTGRES_URL`。公共分析任务目前只支持 PostgreSQL；所有业务资源默认使用同一数据库。G-code 作业仍使用独立的文件卷，暂不支持多副本。
+2. 先在受控环境运行 `npm ci`，设置同一 `POSTGRES_URL` 后执行 `npm run postgres:migrate -- --require`，确认六个迁移成功。迁移脚本幂等；部署不会自动改写既有数据库。
+3. 生成至少 32 字节的 `GCODE_AUTHORITY_INTERNAL_SECRET`（仅用于观察期 Node 回滚通道）；保留空的 previous secret，除非正在轮换。配置 `API_KEYS`、`REQUIRE_AUTH` 和公开地址 `PUBLIC_BASE`。`TRUST_PROXY` 只在可信反向代理后启用。
+4. 固定不可变镜像标签，启动默认 C# 服务：
 
 ```sh
-docker compose --env-file deploy/.env -f deploy/docker-compose.yml build --pull
-docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml build --pull forgex-api
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d forgex-api
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml ps
 curl --fail http://127.0.0.1:8787/healthz
 curl --fail http://127.0.0.1:8787/react/
 ```
 
-The images are multi-stage builds pinned to explicit Node/.NET Alpine tags. Runtime containers use
-UID `1000` and `1654`, read-only root filesystems, writable service-specific `/app/data` volumes,
-`tmpfs` for `/tmp`, no Linux capabilities, and `no-new-privileges`.
+C# 镜像分前端构建、.NET 发布、最终运行三个阶段，运行层没有 Node 服务。Compose 使用非 root 用户、只读根文件系统、独立 `/app/data` 卷及临时目录，保留能力限制与日志轮换。旧版文件存储不会自动转换为 PostgreSQL；既有 Node file 部署须先制定并验证数据迁移方案。
+
+### Render
+
+`render.yaml` 使用 `deploy/Dockerfile.api`，需提供已迁移的 `POSTGRES_URL`、`DirectAuth__ApiKeys` 和 `PublicFacade__PublicBase`。默认关闭外部 AI 配置；有需要时另填 `OpenAi__BaseUrl`、`OpenAi__ApiKey`、`OpenAi__Model`。
+
+现有 Render 服务同步蓝图时，新增的 `sync: false` 变量不会再次弹窗，须先在 Dashboard 手动补齐上述变量，再应用运行时切换。配置字段与行为见 [Render Blueprint 官方规范](https://render.com/docs/blueprint-spec)。
+
+为保留 G-code 作业，蓝图使用 `starter` 与挂载在 `/app/data` 的 1 GB 持久磁盘；这不同于原来的免费 Node 配置，发布前须确认实际平台套餐和费用。这里只更新部署配置，不会创建或发布云端服务。
 
 ## Operations and evidence
 
 ```sh
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml logs --tail=200 forgex forgex-api
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml exec forgex-api \
-  wget -qO- http://127.0.0.1:8788/health/ready
+  wget -qO- http://127.0.0.1:8787/health/ready
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml exec forgex-api \
-  wget -qO- http://127.0.0.1:8788/metrics
+  wget -qO- http://127.0.0.1:8787/metrics
 npm run containers:check
 ```
 
@@ -57,25 +59,31 @@ authority metrics, and restart readiness.
 
 ## Rollback
 
-1. Keep the current named volumes and the verified authority backup; do not delete or recreate them.
-2. Set `GCODE_ASYNC_JOBS_ENABLED=0` if only the asynchronous authority path must be disabled.
-3. If only retry behavior is being rolled back, restore the previous retry environment values first;
-   persisted Stage 6-A fields are additive and older readers ignore them.
-4. Restore the previously tagged `forgex-insight` and `forgex-authority` images in the Compose file.
-5. Run `docker compose ... up -d`, then verify `/healthz`, `/react/`, and authority `/health/ready`.
-6. If the authority is being removed entirely, set the React build to browser authority before
-   stopping `forgex-api`; the legacy `/` page remains the product rollback boundary.
+发布后观察 **7 天**，保留两个不可变镜像、PostgreSQL 备份和 `/app/data` 卷；观察窗口从实际部署并验收成功后开始，不能以本地开发日期代替。
 
-The Node gateway now supports an optional PostgreSQL runtime for calibration governance, datasources,
-knowledge documents, share snapshots, and Node analysis task history.
-The default Compose profile remains `PERSISTENCE_PROVIDER=file` for the single-host rollback path. To
-enable the shared stores, apply `backend/database/postgresql/migrations/` in order, set
-`PERSISTENCE_PROVIDER=postgres`, `POSTGRES_URL`, and (for managed TLS) `POSTGRES_SSL=1` in the Node
-environment, then verify `/healthz` reports `persistence=postgres`. Running tasks that are interrupted by
-a process restart are recovered as explicit failed tasks; their event history and terminal reports remain
-available until the configured TTL. `npm run postgres:migrate` applies the migrations with the pinned
-`pg` driver (reads `POSTGRES_URL`, no `psql` needed); it is the same script CI uses against its
-PostgreSQL service.
+```sh
+# 构建并在 8786 验证回滚网关；C# 仍在 8787，资源代理使用相同数据库。
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml --profile legacy-node build forgex
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml --profile legacy-node up -d forgex
+curl --fail http://127.0.0.1:8786/healthz
+```
+
+Windows 可使用 `deploy/drills/rehearse-version-rollback.ps1 -PreviousNodeImage <TAG> -PreviousApiImage <TAG> -LegacyGateway` 先检查配置；确认标签后追加 `-Apply` 执行。该开关将入口切回 8787 的 Node 网关，C# 对外改为 8788。
+
+如需将公网入口切回 Node，在部署环境设置 `FORGEX_PORT=8788`、`FORGEX_LEGACY_PORT=8787`，然后运行同一 profile 的 `up -d --no-build`，同时更新负载均衡探针。C# 容器内端口仍为 8787，Node 的内部代理地址不变。切回 C# 时恢复原端口并停止 `forgex` 服务。
+
+网关默认将业务资源继续转发至 C#，保证调用身份和 PostgreSQL 数据归属一致。回滚 C# 自身时使用上一份已验证、支持单进程公共门面的镜像，按 [`RUNBOOK.md`](./RUNBOOK.md) 验证数据库兼容性；保留所有卷，禁止通过删卷回滚。若回到更早的 8788 sidecar 镜像，必须同时恢复对应版本的编排文件，不能直接混用当前端口配置。
+
+`npm run dotnet:single-process` 在本地起一个 C# 服务，验证上传、分析、公共 SSE、分享/撤销和重启持久化。需要已构建的 React、Release API 与已迁移的 `POSTGRES_URL`。E2E 默认也直连 C#：
+
+```sh
+npm run frontend:build
+npm run dotnet:build
+npm run dotnet:single-process
+npm run test:e2e:chromium
+```
+
+需要专门验证旧网关时显式设置 `E2E_SERVER=node`。以下 Stage 8.6a～8.6d-1 内容记录迁移期开关；当前部署默认值以本页和 `.env.example` 为准。
 
 ### Stage 8.6a: moving datasources, knowledge and calibration governance to the C# authority
 

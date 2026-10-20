@@ -38,3 +38,6 @@ Thumbs.db
 .DS_Store
 server/.env
 .env
+**/.env
+**/.env.*
+软件著作权申请资料

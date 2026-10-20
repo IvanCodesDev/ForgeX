@@ -1,20 +1,29 @@
-# Render 一键部署蓝图（Blueprint）— New + → Blueprint → 选本仓库即可
-# 零 npm 依赖：无 install / 无 build；Render 自动注入 PORT，config.js 会读取。
+# C# 单进程部署；POSTGRES_URL 必须指向已执行 0001～0006 迁移的数据库。
+# 回滚时选择 deploy/Dockerfile，并沿用已备份的 Node 环境配置。
 services:
   - type: web
     name: forgex-insight
-    runtime: node
-    plan: free
-    buildCommand: "echo zero-dependency, nothing to build"
-    startCommand: node server/index.js
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./deploy/Dockerfile.api
+    dockerContext: .
     healthCheckPath: /healthz
+    disk:
+      name: forgex-job-data
+      mountPath: /app/data
+      sizeGB: 1
     envVars:
-      - key: HOST
-        value: 0.0.0.0
-      # 经 Render 反代，限流需读 X-Forwarded-For 才能区分真实访客
-      - key: TRUST_PROXY
-        value: "1"
+      - key: POSTGRES_URL
+        sync: false
+      - key: PublicFacade__TrustProxy
+        value: "true"
+      - key: PublicFacade__PublicBase
+        sync: false
+      - key: DirectAuth__ApiKeys
+        sync: false
+      - key: DirectAuth__RequireAuth
+        value: "true"
       # 默认不配置云端 AI 密钥，仅使用本地规则引擎，无外部计费。
       # 启用云端 AI 前请按 .github/SECURITY.md 配置鉴权、额度与并发保护。
-      # 确需启用时在 Render 控制台补 OpenAI 兼容端点：OPENAI_API_KEY /
-      # OPENAI_BASE_URL / OPENAI_MODEL；用户也可在工作台「AI 设置」自带端点。
+      # AI 可在控制台配置 OpenAi__ApiKey / OpenAi__BaseUrl / OpenAi__Model，
+      # 也可由用户在工作台提供；内部通道密钥不注入浏览器构建。

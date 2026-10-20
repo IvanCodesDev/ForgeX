@@ -69,8 +69,8 @@ module.exports = defineConfig({
   ],
 
   webServer: {
-    // serve.js 默认以 browser authority 构建；G-code / Analytics 专项门禁可显式切到 dotnet，
-    // 再由调用方启动 loopback sidecar。临时 Node 数据目录不会污染仓库数据。
+    // 默认启动真实 C# 单进程（需已迁移 POSTGRES_URL）；浏览器计算模式可按专项门禁切到 dotnet。
+    // E2E_SERVER=node 显式验证回滚网关；文件仓库始终使用系统临时目录。
     command: "node tests/e2e/serve.js",
     cwd: path.resolve(__dirname, ".."),
     url: "http://127.0.0.1:8899/healthz",

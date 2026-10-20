@@ -8,30 +8,40 @@ services:
     image: "${FORGEX_API_IMAGE:-forgex-authority:local}"
     restart: unless-stopped
     user: "1654:1654"
-    expose:
-      - "8788"
+    ports:
+      - "${FORGEX_PORT:-8787}:8787"
     volumes:
       - forgex-authority-data:/app/data
     environment:
-      Kestrel__Endpoints__Http__Url: "http://0.0.0.0:8788"
-      # 网关经服务别名访问，Host 头为 forgex-api；不加入白名单会被主机过滤拒为 400。
-      AllowedHosts: "localhost;127.0.0.1;forgex-api"
-      # Stage 8 工作项 5：ForgeX.Api 已支持 StaticHosting__Enabled/StaticHosting__Root
-      # 静态托管（默认关闭）。本编排仍由 forgex(Node) 服务承担静态与入口；
-      # 切换单进程交付随工作项 6「Node 退场」收口，此处暂不启用。
+      Kestrel__Endpoints__Http__Url: "http://0.0.0.0:8787"
+      # 公网域名可通过 FORGEX_ALLOWED_HOSTS 限定（分号分隔）。
+      AllowedHosts: "${FORGEX_ALLOWED_HOSTS:-*}"
+      StaticHosting__Enabled: "true"
+      StaticHosting__Root: "/app/wwwroot"
+      PublicFacade__Enabled: "true"
+      PublicFacade__TrustProxy: "${TRUST_PROXY:-false}"
+      PublicFacade__AllowOrigins: "${ALLOW_ORIGINS:-}"
+      PublicFacade__PublicBase: "${PUBLIC_BASE:-}"
+      DirectAuth__ApiKeys: "${API_KEYS:-}"
+      DirectAuth__CalibrationReviewKeys: "${CALIBRATION_REVIEW_KEYS:-}"
+      DirectAuth__RequireAuth: "${REQUIRE_AUTH:-false}"
+      Analysis__Provider: "${ANALYSIS_PROVIDER:-auto}"
+      OpenAi__BaseUrl: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+      OpenAi__ApiKey: "${OPENAI_API_KEY:-}"
+      OpenAi__Model: "${OPENAI_MODEL:-}"
+      Analysis__AiConcurrency: "${AI_CONCURRENCY:-2}"
+      Analysis__AiQueueMax: "${AI_QUEUE_MAX:-8}"
+      Analysis__AiDailyPerCaller: "${AI_DAILY_PER_CALLER:-20}"
+      Analysis__AiDailyGlobal: "${AI_DAILY_GLOBAL:-200}"
       Storage__Root: "/app/data"
       Persistence__Provider: "file"
-      # Stage 8.6a：C# 资源存储腿（分享 / 数据源 / 知识库 / 校准治理）默认 disabled = 不注册端点、
-      # 行为与迁移前一致。切 C# 权威时先把对应 Provider 置 file（落 /app/data）或 postgres
-      # （与 Node 共用同一 POSTGRES_URL、同表同 RLS），再把下方 Node 侧 *_AUTHORITY 切到 csharp。
-      Shares__Provider: "${CSHARP_SHARES_PROVIDER:-disabled}"
-      Datasources__Provider: "${CSHARP_DATASOURCES_PROVIDER:-disabled}"
-      Knowledge__Provider: "${CSHARP_KNOWLEDGE_PROVIDER:-disabled}"
-      Calibrations__Provider: "${CSHARP_CALIBRATIONS_PROVIDER:-disabled}"
-      # Stage 8.6c-1：分析任务历史只读腿只有 postgres（读 Node 落库的 forgex.node_analysis_tasks），
-      # 与 Node 的 ANALYSIS_TASKS_AUTHORITY=csharp 配套；PERSISTENCE_PROVIDER 必须同时是 postgres。
-      AnalysisTasks__Provider: "${CSHARP_ANALYSIS_TASKS_PROVIDER:-disabled}"
-      POSTGRES_URL: "${POSTGRES_URL:-}"
+      # 公共门面的分析任务依赖已迁移 PostgreSQL；G-code 文件仓库仍使用 /app/data。
+      Shares__Provider: "${CSHARP_SHARES_PROVIDER:-postgres}"
+      Datasources__Provider: "${CSHARP_DATASOURCES_PROVIDER:-postgres}"
+      Knowledge__Provider: "${CSHARP_KNOWLEDGE_PROVIDER:-postgres}"
+      Calibrations__Provider: "${CSHARP_CALIBRATIONS_PROVIDER:-postgres}"
+      AnalysisTasks__Provider: "postgres"
+      POSTGRES_URL: "${POSTGRES_URL:?Set a migrated PostgreSQL connection URL}"
       InternalAuth__SharedSecret: "${GCODE_AUTHORITY_INTERNAL_SECRET:?Set a random secret of at least 32 bytes}"
       InternalAuth__PreviousSharedSecret: "${GCODE_AUTHORITY_INTERNAL_SECRET_PREVIOUS:-}"
       GCodeJobs__QueueCapacity: "${GCODE_JOB_QUEUE_CAPACITY:-64}"
@@ -40,14 +50,7 @@ services:
       Logging__LogLevel__Default: "Information"
       Logging__LogLevel__Microsoft.AspNetCore: "Warning"
     healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--quiet",
-          "--output-document=/dev/null",
-          "http://127.0.0.1:8788/health/ready",
-        ]
+      test: ["CMD", "wget", "--quiet", "--output-document=/dev/null", "http://127.0.0.1:8787/healthz"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -67,6 +70,7 @@ services:
         max-file: "3"
 
   forgex:
+    profiles: [legacy-node]
     build:
       context: ..
       dockerfile: deploy/Dockerfile
@@ -77,7 +81,7 @@ services:
       forgex-api:
         condition: service_healthy
     ports:
-      - "${FORGEX_PORT:-8787}:8787"
+      - "${FORGEX_LEGACY_PORT:-8786}:8787"
     volumes:
       - forgex-node-data:/app/data
     environment:
@@ -85,25 +89,32 @@ services:
       PORT: "8787"
       NODE_ENV: "production"
       DATA_DIR: "/app/data"
-      PERSISTENCE_PROVIDER: "${PERSISTENCE_PROVIDER:-file}"
-      POSTGRES_URL: "${POSTGRES_URL:-}"
+      PERSISTENCE_PROVIDER: "${PERSISTENCE_PROVIDER:-postgres}"
+      POSTGRES_URL: "${POSTGRES_URL:?Set a migrated PostgreSQL connection URL}"
       POSTGRES_POOL_MAX: "${POSTGRES_POOL_MAX:-10}"
       POSTGRES_SSL: "${POSTGRES_SSL:-0}"
       LOG_LEVEL: "info"
-      TRUST_PROXY: "0"
-      GCODE_AUTHORITY_URL: "http://forgex-api:8788"
+      TRUST_PROXY: "${TRUST_PROXY:-0}"
+      API_KEYS: "${API_KEYS:-}"
+      CALIBRATION_REVIEW_KEYS: "${CALIBRATION_REVIEW_KEYS:-}"
+      REQUIRE_AUTH: "${REQUIRE_AUTH:-0}"
+      PUBLIC_BASE: "${PUBLIC_BASE:-}"
+      ALLOW_ORIGINS: "${ALLOW_ORIGINS:-}"
+      ANALYSIS_PROVIDER: "${ANALYSIS_PROVIDER:-auto}"
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_MODEL: "${OPENAI_MODEL:-}"
+      GCODE_AUTHORITY_URL: "http://forgex-api:8787"
       GCODE_AUTHORITY_ALLOW_REMOTE: "1"
       GCODE_AUTHORITY_INTERNAL_SECRET: "${GCODE_AUTHORITY_INTERNAL_SECRET:?Set a random secret of at least 32 bytes}"
       GCODE_ASYNC_JOBS_ENABLED: "1"
-      # Stage 8.1 / 8.6a：按资源逐个切流的迁移期开关，默认 node（零变化）；csharp 经上面的
-      # GCODE_AUTHORITY_URL 可信通道代理到 forgex-api，任一资源异常改回 node 重启即回滚。
-      SHARES_AUTHORITY: "${SHARES_AUTHORITY:-node}"
-      DATASOURCES_AUTHORITY: "${DATASOURCES_AUTHORITY:-node}"
-      KNOWLEDGE_AUTHORITY: "${KNOWLEDGE_AUTHORITY:-node}"
-      CALIBRATION_GOVERNANCE_AUTHORITY: "${CALIBRATION_GOVERNANCE_AUTHORITY:-node}"
-      # Stage 8.6c-1/2a：分析任务只读切流——csharp 时 GET result / 轮询 / SSE 进度流读 forgex-api 的任务快照与事件，
-      # 创建仍在 Node；要求 PERSISTENCE_PROVIDER=postgres 且 CSHARP_ANALYSIS_TASKS_PROVIDER=postgres。
-      ANALYSIS_TASKS_AUTHORITY: "${ANALYSIS_TASKS_AUTHORITY:-node}"
+      # 观察期回滚网关复用 C# 数据与身份，保留各资源的迁移期开关。
+      SHARES_AUTHORITY: "${SHARES_AUTHORITY:-csharp}"
+      DATASOURCES_AUTHORITY: "${DATASOURCES_AUTHORITY:-csharp}"
+      KNOWLEDGE_AUTHORITY: "${KNOWLEDGE_AUTHORITY:-csharp}"
+      CALIBRATION_GOVERNANCE_AUTHORITY: "${CALIBRATION_GOVERNANCE_AUTHORITY:-csharp}"
+      # 包括 AI 创建、读取与 SSE 均经 C#，同一 POSTGRES_URL 保持任务历史。
+      ANALYSIS_TASKS_AUTHORITY: "${ANALYSIS_TASKS_AUTHORITY:-csharp}"
       AI_CONCURRENCY: "2"
       AI_QUEUE_MAX: "8"
       AI_DAILY_PER_CALLER: "20"

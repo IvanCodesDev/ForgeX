@@ -7,6 +7,7 @@ COPY frontend/package.json ./frontend/package.json
 RUN npm ci --no-audit --no-fund
 COPY frontend ./frontend
 RUN npm run frontend:build
+RUN npm prune --omit=dev --ignore-scripts
 
 FROM node:22.13.1-alpine3.21 AS runtime
 WORKDIR /app
@@ -18,6 +19,7 @@ ENV HOST=0.0.0.0 \
 RUN mkdir -p /app/data && chown -R node:node /app
 COPY --chown=node:node index.html README.md ./
 COPY --chown=node:node server ./server
+COPY --from=frontend-build --chown=node:node /src/node_modules ./node_modules
 COPY --chown=node:node frontend/classic ./frontend/classic
 COPY --chown=node:node contracts/profiles ./contracts/profiles
 COPY --chown=node:node contracts/calibration ./contracts/calibration

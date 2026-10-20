@@ -65,3 +65,7 @@ first, start one authority replica, then verify record count, tenant isolation, 
 4. Verify `/healthz`, `/react/`, authority readiness, metrics, and one synthetic job. If contract
    compatibility is uncertain, set `GCODE_ASYNC_JOBS_ENABLED=0` before replacing the authority.
 5. Record image tags, commands, outputs, exit statuses, and the decision to resume or stay rolled back.
+
+### Stage 8.6d-2 公共入口回滚
+
+默认入口是 C#。先用 `--profile legacy-node` 在 8786 验证 Node 网关；需要将 8787 切回 Node 时，设置 `FORGEX_PORT=8788`、`FORGEX_LEGACY_PORT=8787` 后执行 `up -d --no-build`。保持 C# 容器内端口 8787 与数据库不变。操作细节见 `deploy/README.md`；切回历史 8788 sidecar 版本时须连同其编排文件一起回滚。实际发布后观察 7 天，再决定下一阶段删除，开发验证不计入观察期。

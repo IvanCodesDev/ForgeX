@@ -31,8 +31,8 @@ check(
 );
 check(
   "multi-stage-builds",
-  count(nodeDockerfile, /^FROM /gm) === 2 && count(apiDockerfile, /^FROM /gm) === 2,
-  "both images have separate build and runtime stages"
+  count(nodeDockerfile, /^FROM /gm) === 2 && count(apiDockerfile, /^FROM /gm) === 3,
+  "C# image builds frontend and API before the runtime stage"
 );
 check(
   "nonroot-runtime-users",
@@ -57,16 +57,18 @@ check(
 check(
   "compose-services",
   /^ {2}forgex-api:$/m.test(compose) && /^ {2}forgex:$/m.test(compose),
-  "gateway and authority are separate services"
+  "C# service and explicit legacy-node rollback gateway are defined"
 );
 check(
-  "compose-private-sidecar",
-  /^ {4}expose:\n {6}- "8788"$/m.test(compose) && !/^ {6}- "\$\{[^\n]+:8788"$/m.test(compose),
-  "authority is exposed only to the compose network"
+  "compose-single-process-public-port",
+  compose.includes("${FORGEX_PORT:-8787}:8787") &&
+    compose.includes("profiles: [legacy-node]") &&
+    compose.includes("${FORGEX_LEGACY_PORT:-8786}:8787"),
+  "C# publishes 8787; Node is opt-in with a separate rollback port"
 );
 check(
   "compose-trusted-boundary",
-  compose.includes('GCODE_AUTHORITY_URL: "http://forgex-api:8788"') &&
+  compose.includes('GCODE_AUTHORITY_URL: "http://forgex-api:8787"') &&
     count(compose, /\$\{GCODE_AUTHORITY_INTERNAL_SECRET:\?/g) === 2,
   "gateway and authority share a required internal secret"
 );
@@ -89,8 +91,8 @@ check(
 );
 check(
   "compose-health-ordering",
-  compose.includes("condition: service_healthy") && compose.includes("http://127.0.0.1:8788/health/ready"),
-  "gateway waits for the authority readiness probe"
+  compose.includes("condition: service_healthy") && compose.includes("http://127.0.0.1:8787/healthz"),
+  "rollback gateway waits for the C# public health probe"
 );
 check(
   "dockerignore-sensitive-state",
@@ -120,6 +122,32 @@ check(
     smoke.includes("/metrics") &&
     smoke.includes("/react/"),
   "runtime drill checks identity, restart, metrics and UI"
+);
+
+check(
+  "single-process-runtime-assets",
+  apiDockerfile.includes("StaticHosting__Root=/app/wwwroot") &&
+    apiDockerfile.includes("PublicFacade__Enabled=true") &&
+    apiDockerfile.includes("/src/dist/react ./wwwroot/dist/react") &&
+    apiDockerfile.includes("VITE_GCODE_AUTHORITY=dotnet") &&
+    apiDockerfile.includes("VITE_ANALYTICS_AUTHORITY=dotnet") &&
+    !apiDockerfile.includes("COPY --chown=1654:1654 server"),
+  "C# runtime contains static assets and authority-enabled frontend, with no Node runtime"
+);
+check(
+  "public-resources-require-postgres",
+  apiDockerfile.includes("AnalysisTasks__Provider=postgres") &&
+    compose.includes("${POSTGRES_URL:?Set a migrated PostgreSQL connection URL}"),
+  "public analysis cannot silently start with missing PostgreSQL"
+);
+const render = read("render.yaml");
+check(
+  "render-csharp-persistent-deployment",
+  render.includes("runtime: docker") &&
+    render.includes("dockerfilePath: ./deploy/Dockerfile.api") &&
+    render.includes("mountPath: /app/data") &&
+    !render.includes("startCommand: node"),
+  "Render uses the C# image and preserves the durable G-code volume"
 );
 
 const failed = checks.filter((item) => !item.pass);

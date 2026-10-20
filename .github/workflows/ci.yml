@@ -196,6 +196,9 @@ jobs:
       - name: 静态托管单进程部署实测（构建前端 → 静态 → 上传 → 分析 → 分享走 postgres 腿 → 重启持久化）
         run: node tools/verify-static-hosting.js
 
+      - name: 公共门面单进程上传、分析、分享与重启验收
+        run: npm run dotnet:single-process
+
       - uses: actions/upload-artifact@v4
         with:
           name: gcode-golden-diff-dotnet-10.0.302
@@ -260,11 +263,12 @@ jobs:
             backend/artifacts/resource-authority-gate.json
             backend/artifacts/resource-authority-dualrun.json
             backend/artifacts/public-facade-contract.json
+            backend/artifacts/single-process-deployment.json
           if-no-files-found: error
           retention-days: 14
 
   containers:
-    name: Hardened Node + .NET containers
+    name: C# deployment + legacy Node rollback containers
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -281,9 +285,10 @@ jobs:
           docker build --file deploy/Dockerfile --tag forgex-node:ci .
           docker build --file deploy/Dockerfile.api --tag forgex-api:ci .
 
-      - name: Validate Compose resolution without exposing the authority port
+      - name: Validate single-process Compose and rollback profile
         env:
           GCODE_AUTHORITY_INTERNAL_SECRET: ci-compose-contract-secret-0123456789abcdef
+          POSTGRES_URL: postgres://forgex:forgex@postgres:5432/forgex
         run: docker compose --file deploy/docker-compose.yml config --quiet
 
       - name: Exercise non-root, read-only, health, metrics and restart contracts
@@ -419,8 +424,24 @@ jobs:
           "
 
   e2e:
-    name: E2E（DOM 层）
+    name: E2E（C# 单进程与 DOM 层）
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: forgex
+          POSTGRES_PASSWORD: forgex
+          POSTGRES_DB: forgex
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U forgex"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      POSTGRES_URL: postgres://forgex:forgex@localhost:5432/forgex
     steps:
       - uses: actions/checkout@v4
 
@@ -428,10 +449,17 @@ jobs:
         with:
           node-version: "22"
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.302"
+
       - name: 安装工具链与浏览器
         run: |
           npm install --no-audit --no-fund
           npx playwright install --with-deps chromium firefox webkit
+
+      - name: 构建 C# 服务并迁移 E2E 数据库
+        run: npm run dotnet:build && npm run postgres:migrate -- --require
 
       # Chromium 跑全量；Firefox / WebKit 跑启动与 G-code→日志关键链路。
       # React 工作台与旧入口的一致性由 react-parity 门禁把关。
