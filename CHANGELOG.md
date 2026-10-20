@@ -9,6 +9,32 @@
 
 ## [Unreleased]
 
+### Stage 8.6d-1：C# 公共门面——ForgeX.Api 直接说 Node 的公共方言（2026-09-08）
+- Node 退场三步走的第一步（可回滚：不开 `PublicFacade__Enabled` 就零变化）。新增 `PublicFacade.cs`：把 Node 形状的公共路由
+  接到现有 handler——`POST /api/analyze`（Node 的 `aiBaseUrl/aiApiKey/aiModel` 字段、202 `{taskId, engine, authenticated,
+  willUseAi, quota}`）、`GET /api/analyze/{id}[/result|/stream]`（**无名 `data:` 帧**，`: connected` 起头，终态收口，
+  重启恢复的 failed 任务合成 `_fail` 帧）、`POST /api/datasource`、`POST /api/knowledge`（补 `retrievalEnabled/note`）、
+  `POST /api/knowledge/search`、`POST /api/share/{taskId}`（`PUBLIC_BASE || Origin` 拼 `publicUrl`，缺省带 `note`）、
+  `POST /api/share/{token}/revoke`、`/api/calibrations/*`、`/api/auth/infini/me` 墓碑。内部 handler 的 problem+json
+  经「缓冲捕获」改写为 Node 的 `{error: title}`（`/share/{token}` 404 亦然），`Analysis task not found` → 「任务不存在或已过期」。
+- 服务器层语义逐条移植：CORS（`PublicFacade__AllowOrigins` 白名单、`OPTIONS → 204`、同一组允许头）、每 IP 冷却限流
+  （`PublicFacade__RateLimitMs`，只作用于创建分析，429「请求过于频繁，请 N 秒后重试」）、公共 `/api/*` 未命中任何方法 404「接口不存在」
+  （内部 `/api/v1/*` 仍 problem+json）、未捕获异常 500「服务器内部错误」、`PublicFacade__TrustProxy` 下取 `X-Forwarded-For` 第一跳、
+  IPv4-mapped IPv6 折叠为 IPv4 文本。直连身份沿用 Stage 8.2 `DirectCallerAuthentication`（API key → `key:{id8}`、匿名 → `ip:{addr}`，
+  `REQUIRE_AUTH` 401 文案同 Node；校准路由不受 `REQUIRE_AUTH` 影响，与 Node 从不 `resolveIdentity` 一致），
+  `ForgeXCallerContext.CallerKind` 给出 `authenticated`。`/healthz` 改为前端探测的 Node 形状（engine / provider / label /
+  capabilities / quota / auth / persistence / calibrations，探活失败 503 `persistence_unavailable`）；`/metrics` 追加 Node 命名的
+  `forgex_tasks_total/_failed/_degraded/_cached`、`forgex_task_duration_ms`、`forgex_ai_*`（资源 gauge 8.6a 已同名）。
+  `AnalysisTaskEndpoints.TryCreateAsync` 抽成共享创建核，内部端点与门面各自渲染错误方言。
+- 证据：双跑工具在 postgres 腿再起**第二个 ForgeX.Api 进程**（公共门面 + 直连 key），同一份 93 例语料第三次打到 **C# 直连**并与
+  Node A 比对（`results[].via = csharp-direct`，`schemaVersion 1.2`）：**93 × 3 = 262 一致 / 17 豁免 / 0 失败**——公共门面与
+  Node 逐字段一致，唯一差异仍是 A7 同源的他人 403 vs 404。key 每次运行随机后缀，本机反复跑同一 PG 不再串上一轮的知识文档。
+  新增 `tools/verify-public-facade.js`（`npm run dotnet:public-facade`，17 项）覆盖语料覆盖不到的服务器层语义：CORS 白名单 / OPTIONS、
+  404 文案与内部 problem+json 并存、限流只作用于创建分析、`/healthz` 形状、`/metrics` 系列、墓碑、`TRUST_PROXY` 匿名身份隔离、
+  `REQUIRE_AUTH` 401 与公开目录例外。ResourceGate 367、静态演练 23、`npm test` 不回归。CI 增加公共门面步骤与产物。
+- 下一步 8.6d-2：`Dockerfile.api` 多阶段（前端产物进镜像 + 静态托管 + 公共门面）、render.yaml / compose / CI E2E 切单进程，
+  Node 服务移到 `legacy-node` profile 观察 7 天；8.6d-3 删除 `server/`。
+
 ### Stage 8.6c-2b-ii：创建链 AI 腿迁 C#——OpenAI 兼容 provider / 成本闸门 / 结果缓存（2026-09-08）
 - `ANALYSIS_TASKS_AUTHORITY=csharp` 时 **所有** `POST /api/analyze` 交给 C#：Node 只剩身份 / 限流 / question / 自带端点入口校验，
   自带端点（`aiBaseUrl/aiApiKey/aiModel`）作为请求体 `ai` 字段转发一次，Node 不落日志、不进快照；202 透传 C# 的 `willUseAi` / `quota`

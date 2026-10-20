@@ -268,7 +268,13 @@ of p-values). On the file leg C# has no analysis-task provider and both instance
 (recorded in the artifact's `authority.analysisTasks`). The ResourceGate section
 `analysis-tasks-postgres` covers the C# side alone: validation messages, execution to `done`, the JS
 report shape, event replay, foreign-tenant 404s, stale-running recovery, the BYO endpoint (bearer
-header, prompt, key never persisted), cache hits and quota degradation. The fake-sidecar contract tests live in
+header, prompt, key never persisted), cache hits and quota degradation. Since Stage 8.6d-1 the postgres
+leg also starts a second ForgeX.Api with `PublicFacade__Enabled=true` and replays the corpus a third
+time **directly against the C# public facade** (`results[].via = csharp-direct`): Node's public routes,
+`{error}` bodies, unnamed SSE frames and 202 shapes served by C# alone must equal Node's;
+`npm run dotnet:public-facade` (`tools/verify-public-facade.js`) adds the server-layer contract the
+corpus cannot express — CORS / OPTIONS, `/api/*` 404 text, per-IP rate limiting, `/healthz`,
+`/metrics`, `REQUIRE_AUTH`, `TRUST_PROXY`. The fake-sidecar contract tests live in
 `tests/resource-authority.test.js`, `tests/shares-authority.test.js` and
 `tests/analysis-tasks-authority.test.js`.
 CI provides a PostgreSQL service and applies the migrations with `npm run postgres:migrate -- --require`

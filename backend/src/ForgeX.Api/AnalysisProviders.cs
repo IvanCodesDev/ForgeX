@@ -123,6 +123,7 @@ internal sealed class AnalysisCostGate(AnalysisGateOptions options)
     private readonly Queue<TaskCompletionSource<Action>> _queue = new();
     private string _day = DayKey(DateTimeOffset.UtcNow);
     private int _global;
+    private long _totalEver;
     private int _running;
 
     public sealed record Verdict(bool Ok, string? Code, string? Reason, long? Remaining);
@@ -164,6 +165,7 @@ internal sealed class AnalysisCostGate(AnalysisGateOptions options)
             Rollover();
             _perCaller[caller] = _perCaller.GetValueOrDefault(caller) + 1;
             _global++;
+            _totalEver++;
         }
     }
 
@@ -211,6 +213,62 @@ internal sealed class AnalysisCostGate(AnalysisGateOptions options)
         _perCaller.Clear();
         _global = 0;
     }
+
+    /// <summary>Node CostGate.snapshot(): what /healthz and /metrics expose.</summary>
+    public sealed record GateSnapshot(
+        int Running,
+        int Queued,
+        int ConcurrencyLimit,
+        int QueueLimit,
+        string Day,
+        int GlobalUsed,
+        int? GlobalLimit,
+        int? PerCallerLimit,
+        int Callers,
+        long TotalEver,
+        bool Persisted);
+
+    public GateSnapshot Snapshot()
+    {
+        lock (_lock)
+        {
+            Rollover();
+            return new GateSnapshot(
+                _running,
+                _queue.Count,
+                options.AiConcurrency,
+                options.AiQueueMax,
+                _day,
+                _global,
+                options.DailyGlobal > 0 ? options.DailyGlobal : null,
+                options.DailyPerCaller > 0 ? options.DailyPerCaller : null,
+                _perCaller.Count,
+                _totalEver,
+                false);
+        }
+    }
+}
+
+/// <summary>Node metrics counters for analysis tasks (forgex_tasks_* on /metrics).</summary>
+internal sealed class AnalysisTaskMetrics
+{
+    private long _tasks;
+    private long _failed;
+    private long _degraded;
+    private long _cached;
+    private long _lastDurationMs;
+
+    public long Tasks => Interlocked.Read(ref _tasks);
+    public long Failed => Interlocked.Read(ref _failed);
+    public long Degraded => Interlocked.Read(ref _degraded);
+    public long Cached => Interlocked.Read(ref _cached);
+    public long LastDurationMs => Interlocked.Read(ref _lastDurationMs);
+
+    public void RecordCreated() => Interlocked.Increment(ref _tasks);
+    public void RecordFailed() => Interlocked.Increment(ref _failed);
+    public void RecordDegraded() => Interlocked.Increment(ref _degraded);
+    public void RecordCached() => Interlocked.Increment(ref _cached);
+    public void RecordDuration(long milliseconds) => Interlocked.Exchange(ref _lastDurationMs, milliseconds);
 }
 
 internal sealed class AnalysisQueueFullException(string message) : Exception(message)

@@ -57,6 +57,7 @@ internal static class AnalysisTasksSection
                 builder.Services.AddSingleton<AnalysisCostGate>();
                 builder.Services.AddSingleton<AnalysisResultCache>();
                 builder.Services.AddSingleton<OpenAiNarrativeClient>();
+                builder.Services.AddSingleton<AnalysisTaskMetrics>();
                 builder.Services.AddSingleton<AnalysisTaskExecutor>();
                 builder.Services.AddHostedService<AnalysisTaskWorker>();
             },

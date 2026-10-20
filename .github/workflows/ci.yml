@@ -187,8 +187,11 @@ jobs:
       - name: 资源夹具新鲜度（Node 语义快照与 C# 门禁输入一致）
         run: npm run resources:fixtures:check
 
-      - name: 资源权威真实双跑（datasources / knowledge / calibrations / shares / analysis-tasks 只读，Node 权威 vs C# 权威，file + postgres 双腿）
+      - name: 资源权威真实双跑（datasources / knowledge / calibrations / shares / analysis-tasks，Node 权威 vs C# 权威 vs C# 公共门面直连，file + postgres 双腿）
         run: npm run dotnet:resource-authority
+
+      - name: 公共门面契约演练（CORS / OPTIONS / 404 文案 / 限流 / healthz / metrics / REQUIRE_AUTH / TRUST_PROXY）
+        run: npm run dotnet:public-facade
 
       - name: 静态托管单进程部署实测（构建前端 → 静态 → 上传 → 分析 → 分享走 postgres 腿 → 重启持久化）
         run: node tools/verify-static-hosting.js
@@ -256,6 +259,7 @@ jobs:
           path: |
             backend/artifacts/resource-authority-gate.json
             backend/artifacts/resource-authority-dualrun.json
+            backend/artifacts/public-facade-contract.json
           if-no-files-found: error
           retention-days: 14
 

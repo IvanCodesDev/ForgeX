@@ -199,6 +199,19 @@ if (calibrationsProvider.Enabled)
 var directAuth = DirectAuthOptions.FromConfiguration(builder.Configuration);
 builder.Services.AddSingleton(directAuth);
 
+// ── Stage 8.6d-1：公共门面——ForgeX.Api 直接说 Node 的公共方言（/api/analyze 等、{error} 文案、无名 SSE 帧、
+// 限流 / CORS / OPTIONS 204 / 404「接口不存在」、/healthz 形状、/metrics Node 命名）。默认关闭 = 零变化。
+var publicFacade = PublicFacadeOptions.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(publicFacade);
+builder.Services.AddSingleton(new PublicRateLimiter(publicFacade.RateLimitMs));
+builder.Services.AddSingleton<AnalysisTaskMetrics>();
+if (publicFacade.Enabled &&
+    (!analysisTasksEnabled || !datasourcesProvider.Enabled || !knowledgeProvider.Enabled || !sharesEnabled || !calibrationsProvider.Enabled))
+{
+    throw new InvalidOperationException(
+        "PublicFacade:Enabled requires AnalysisTasks:Provider=postgres and the Datasources / Knowledge / Shares / Calibrations providers to be enabled.");
+}
+
 // Stage 8.6a: every enabled TTL-bearing repository joins the periodic sweeper (Node: 60 s setInterval)
 // and the resource gauges on /metrics.
 if (sharesEnabled)
@@ -327,6 +340,19 @@ app.Use(async (context, next) =>
     }
 });
 
+if (publicFacade.Enabled)
+{
+    if (publicFacade.TrustProxy)
+    {
+        // Node TRUST_PROXY=1：客户端 IP 取 X-Forwarded-For 第一跳；这里信任任何上游（与 Node 语义一致）。
+        var forwarded = new ForwardedHeadersOptions { ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor };
+        forwarded.KnownIPNetworks.Clear();
+        forwarded.KnownProxies.Clear();
+        app.UseForwardedHeaders(forwarded);
+    }
+    app.Use(PublicFacade.BuildMiddleware(publicFacade, directAuth));
+}
+
 // Stage 8.2：直连身份（API key / 匿名 IP）与可信 Node 代理并行受理；
 // 未配置 DirectAuth:ApiKeys 时行为与迁移前完全一致。
 app.Use(CallerContextBoundary.BuildMiddleware(internalSharedSecret, previousInternalSharedSecret, directAuth));
@@ -408,19 +434,38 @@ app.MapGet("/health/ready", async (IGCodeAnalyzer analyzer, IContentObjectStore 
     .WithName("GetReadiness")
     .Produces<HealthResponse>();
 
-app.MapGet("/healthz", () => Results.Ok(new LegacyHealthResponse(
-        true,
-        "csharp-authoritative",
-        "local",
-        new LegacyCapabilities(false, true, true, true),
-        "system",
-        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())))
-    .WithName("GetLegacyHealth")
-    .Produces<LegacyHealthResponse>();
+if (publicFacade.Enabled)
+{
+    // Node /healthz 形状（前端启动探测读 engine / provider / quota / auth / persistence / calibrations）。
+    app.MapGet("/healthz", (Func<HttpContext, Task<IResult>>)PublicFacade.HealthzAsync)
+        .WithName("GetLegacyHealth")
+        .ExcludeFromDescription();
+}
+else
+{
+    app.MapGet("/healthz", () => Results.Ok(new LegacyHealthResponse(
+            true,
+            "csharp-authoritative",
+            "local",
+            new LegacyCapabilities(false, true, true, true),
+            "system",
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())))
+        .WithName("GetLegacyHealth")
+        .Produces<LegacyHealthResponse>();
+}
 
-app.MapGet("/metrics", async (IGCodeJobQueue queue, IGCodeJobRepository repository, ResourceGaugeSampler gauges, CancellationToken ct) => Results.Text(
-        metrics.Render(serviceVersion, queue, await repository.ListAsync(ct), await gauges.SampleAsync(ct)),
-        "text/plain; version=0.0.4; charset=utf-8"))
+app.MapGet("/metrics", async (IGCodeJobQueue queue, IGCodeJobRepository repository, ResourceGaugeSampler gauges, HttpContext context, CancellationToken ct) =>
+    {
+        var rendered = metrics.Render(serviceVersion, queue, await repository.ListAsync(ct), await gauges.SampleAsync(ct));
+        if (publicFacade.Enabled)
+        {
+            // Node 命名的任务 / AI 系列追加在 C# 自有指标之后（资源 gauge 已由 ResourceGaugeSampler 以 Node 命名输出）。
+            rendered += PublicFacade.NodeMetrics(
+                context.RequestServices.GetRequiredService<AnalysisTaskMetrics>(),
+                context.RequestServices.GetRequiredService<AnalysisCostGate>());
+        }
+        return Results.Text(rendered, "text/plain; version=0.0.4; charset=utf-8");
+    })
     .WithName("GetMetrics")
     .ExcludeFromDescription();
 
@@ -540,6 +585,11 @@ if (calibrationsProvider.Enabled)
 if (analysisTasksEnabled)
 {
     AnalysisTaskEndpoints.Map(app);
+}
+
+if (publicFacade.Enabled)
+{
+    PublicFacade.Map(app);
 }
 
 app.Run();
