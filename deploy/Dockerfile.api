@@ -29,7 +29,7 @@ RUN dotnet publish backend/src/ForgeX.Api/ForgeX.Api.csproj \
     -m:1 \
     -nr:false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.10-alpine3.23 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.12-alpine3.23 AS runtime
 WORKDIR /app
 ENV Kestrel__Endpoints__Http__Url=http://0.0.0.0:8787 \
     AllowedHosts=* \
