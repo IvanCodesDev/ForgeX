@@ -556,6 +556,18 @@ app.MapPost(
     .WithName("ValidateCalibrationBundle")
     .ExcludeFromDescription();
 
+app.MapPost("/api/v1/gcode/analyses/{id}/cost-estimates", GCodeCostEndpoints.EstimateAsync)
+    .WithName("EstimateGCodeCost")
+    .Accepts<ForgeX.Domain.GCodeCostInputs>("application/json")
+    .Produces<ForgeX.Domain.GCodeCostEstimate>()
+    .Produces<ApiProblem>(400, "application/problem+json")
+    .Produces<ApiProblem>(401, "application/problem+json")
+    .Produces<ApiProblem>(404, "application/problem+json")
+    .Produces<ApiProblem>(409, "application/problem+json")
+    .Produces<ApiProblem>(413, "application/problem+json")
+    .Produces<ApiProblem>(415, "application/problem+json")
+    .Produces<ApiProblem>(422, "application/problem+json");
+
 app.MapPost("/api/v1/gcode/analyses", GCodeJobEndpoints.CreateAsync)
     .WithName("CreateGCodeAnalysisJob")
     .Accepts<Stream>("application/x-gcode")

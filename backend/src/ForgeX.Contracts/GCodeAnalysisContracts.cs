@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace ForgeX.Contracts;
 
 public sealed record GCodeAnalysisResponse(
@@ -68,8 +70,8 @@ public sealed record GCodeMaterialEstimateDto(
 public sealed record GCodeRiskAssessmentDto(
     string Level,
     int Score,
-    double? NozzleTemperatureC,
-    double? BedTemperatureC,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] double? NozzleTemperatureC,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] double? BedTemperatureC,
     double MaxExtrusionSpeedMmPerSecond,
     double MaxVolumetricFlowMm3PerSecond,
     IReadOnlyList<GCodeRiskFindingDto> Findings);
@@ -78,10 +80,10 @@ public sealed record GCodeRiskFindingDto(
     string Code,
     string Severity,
     string Message,
-    double? Observed,
-    double? Minimum,
-    double? Maximum,
-    string? Unit);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] double? Observed,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] double? Minimum,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] double? Maximum,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] string? Unit);
 
 public sealed record GCodeBoundsDto(double MinX, double MaxX, double MinY, double MaxY);
 

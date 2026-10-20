@@ -12,6 +12,116 @@
     }
   ],
   "paths": {
+    "/api/v1/gcode/analyses/{id}/cost-estimates": {
+      "post": {
+        "operationId": "estimateGCodeCost",
+        "summary": "Estimate energy and itemized CNY cost for a completed owned G-code job",
+        "description": "Only a succeeded owner-scoped job may be used. Time, mass and fingerprints come from its stored C# result, never the request. Supply all four nullable numeric inputs plus evidence; null means unknown, explicit zero is valid. Evidence is required when any number is supplied. Average power is a declared job average; machine hourly rate must exclude material and electricity. Duration excludes unmodeled warm-up, idle and holding time. No meter measurement or invoice is claimed. Energy rounds to 9 decimals, each cost to 6 using midpoint-to-even, total sums rounded components only when all inputs are known. The cost/2 SHA-256 binds model, basis and normalized inputs. No cost scenario is persisted. Request limit 16 KiB.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GCodeCostInputs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Declared-input estimate bound to the stored job result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GCodeCostEstimate"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inputs, caller, job state or stored source",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid inputs, caller, job state or stored source",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid inputs, caller, job state or stored source",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid inputs, caller, job state or stored source",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Invalid inputs, caller, job state or stored source",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Invalid inputs, caller, job state or stored source",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid inputs, caller, job state or stored source",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/meshes/analyze": {
       "post": {
         "operationId": "analyzeMesh",
@@ -679,6 +789,211 @@
       }
     },
     "schemas": {
+      "GCodeCostInputs": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "averagePowerWatts",
+          "electricityCnyPerKwh",
+          "machineCnyPerHour",
+          "materialCnyPerKg",
+          "evidence"
+        ],
+        "properties": {
+          "averagePowerWatts": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "electricityCnyPerKwh": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "machineCnyPerHour": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "materialCnyPerKg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 5000
+          },
+          "evidence": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      },
+      "GCodeCostBasis": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "jobId",
+          "inputSha256",
+          "profileFingerprint",
+          "analysisEngineVersion",
+          "durationSeconds",
+          "filamentMassG"
+        ],
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "inputSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "profileFingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "analysisEngineVersion": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "durationSeconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 31536000
+          },
+          "filamentMassG": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000
+          }
+        }
+      },
+      "GCodeCostTotals": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "isComplete",
+          "energyKwh",
+          "materialCostCny",
+          "electricityCostCny",
+          "machineTimeCostCny",
+          "totalCostCny"
+        ],
+        "properties": {
+          "isComplete": {
+            "type": "boolean"
+          },
+          "energyKwh": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "materialCostCny": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "electricityCostCny": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "machineTimeCostCny": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "totalCostCny": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
+      },
+      "GCodeCostEstimate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "modelVersion",
+          "currency",
+          "fingerprint",
+          "basis",
+          "inputs",
+          "totals",
+          "missingInputs",
+          "warnings"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "1.0"
+          },
+          "modelVersion": {
+            "type": "string",
+            "const": "forgex-gcode-cost/2"
+          },
+          "currency": {
+            "type": "string",
+            "const": "CNY"
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "basis": {
+            "$ref": "#/components/schemas/GCodeCostBasis"
+          },
+          "inputs": {
+            "$ref": "#/components/schemas/GCodeCostInputs"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/GCodeCostTotals"
+          },
+          "missingInputs": {
+            "type": "array",
+            "uniqueItems": true,
+            "maxItems": 4,
+            "items": {
+              "type": "string",
+              "enum": [
+                "averagePowerWatts",
+                "electricityCnyPerKwh",
+                "machineCnyPerHour",
+                "materialCnyPerKg"
+              ]
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "type": "string",
+              "maxLength": 500
+            }
+          }
+        }
+      },
       "MeshAnalysisResult": {
         "type": "object",
         "additionalProperties": false,

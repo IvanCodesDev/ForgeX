@@ -364,6 +364,46 @@ async function main() {
     validatePackedToolpath(snapshot.result, "async analysis");
     validateMaterialRisk(snapshot.result, "async analysis");
 
+    const costUrl = baseUrl + operationPaths.get("estimateGCodeCost").replace("{id}", accepted.jobId);
+    const costInputs = {
+      averagePowerWatts: 200,
+      electricityCnyPerKwh: 1,
+      machineCnyPerHour: 5,
+      materialCnyPerKg: 100,
+      evidence: "isolated runtime gate scenario",
+    };
+    const costRequest = {
+      method: "POST",
+      headers: { ...callerA, "Content-Type": "application/json" },
+      body: JSON.stringify(costInputs),
+    };
+    const costResponse = await request(costUrl, costRequest);
+    if (costResponse.status !== 200)
+      throw new Error(`cost scenario returned ${costResponse.status}: ${await costResponse.text()}`);
+    const cost = await costResponse.json();
+    if (
+      cost.modelVersion !== "forgex-gcode-cost/2" ||
+      cost.basis.inputSha256 !== snapshot.result.input.sha256 ||
+      cost.basis.profileFingerprint !== snapshot.result.profile.fingerprint ||
+      cost.basis.durationSeconds !== snapshot.result.summary.estimatedTimeSeconds ||
+      !cost.totals.isComplete ||
+      Math.abs(
+        cost.totals.totalCostCny -
+          cost.totals.materialCostCny -
+          cost.totals.electricityCostCny -
+          cost.totals.machineTimeCostCny
+      ) > 0.000002
+    )
+      throw new Error("cost scenario source or arithmetic drifted");
+    const repeatedCost = await request(costUrl, costRequest);
+    if ((await repeatedCost.json()).fingerprint !== cost.fingerprint)
+      throw new Error("cost scenario fingerprint is not reproducible");
+    if (
+      (await request(costUrl, { ...costRequest, headers: { ...callerB, "Content-Type": "application/json" } }))
+        .status !== 404
+    )
+      throw new Error("cost scenario leaked across tenants");
+
     await waitForTerminal(baseUrl, acceptedB.links.status, callerB);
     await readTerminalSse(baseUrl + accepted.links.events, callerA);
     const cancelResponse = await request(baseUrl + accepted.links.cancel, { method: "POST", headers: callerA });
@@ -382,6 +422,7 @@ async function main() {
       "forgex_job_repository_ready 1",
       'forgex_http_requests_total{method="POST",route="/api/v1/gcode/analyses",status="202"} 2',
       'forgex_http_request_duration_seconds_count{method="POST",route="/api/v1/gcode/analyses"}',
+      'forgex_http_requests_total{method="POST",route="/api/v1/gcode/analyses/{id}/cost-estimates",status="200"} 2',
     ]) {
       if (!metrics.includes(required)) throw new Error(`metrics missing: ${required}`);
     }

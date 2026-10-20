@@ -9,6 +9,7 @@ import {
   type MachineLogState,
 } from "../../../legacy/engine";
 import { Slider } from "../../controls/Slider";
+import { GcodeCostPanel } from "../GcodeCostPanel";
 import type { GcodeImportPhase } from "../gcode-import";
 import type { MeshImportPhase } from "../mesh-import";
 import type { ImportAssets, MeshImportState } from "../useImportAssets";
@@ -395,6 +396,16 @@ function GcodeSection(ctx: PageContext) {
         <>
           <GcodeSummary gcode={gcode} />
           <AuthoritySummary ctx={ctx} />
+          {assets.authority.mode === "dotnet" &&
+            assets.authority.status === "done" &&
+            assets.authority.jobId &&
+            assets.authority.result && (
+              <GcodeCostPanel
+                key={assets.authority.jobId}
+                jobId={assets.authority.jobId}
+                source={assets.authority.result}
+              />
+            )}
           {gcode.parsed.warnings.map((warning) => (
             <div className="note" key={warning}>{`⚠ ${warning}`}</div>
           ))}

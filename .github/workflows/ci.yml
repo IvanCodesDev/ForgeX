@@ -479,7 +479,7 @@ jobs:
       - run: xvfb-run --auto-servernum -- npm run test:e2e
 
       - name: React 工作台 C# 权威接线专项
-        run: npm run test:e2e:chromium -- tests/e2e/workbench-authority.spec.js
+        run: npm run test:e2e:chromium -- tests/e2e/workbench-authority.spec.js tests/e2e/gcode-cost.spec.js
         env:
           E2E_GCODE_AUTHORITY: dotnet
 
@@ -495,6 +495,7 @@ jobs:
           path: |
             backend/artifacts/mesh-authority-panel.png
             backend/artifacts/mesh-topology-panel.png
+            backend/artifacts/gcode-cost-panel.png
           if-no-files-found: warn
           retention-days: 7
 

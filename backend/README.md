@@ -61,6 +61,19 @@ the immediate preview used by `browser` and `shadow` modes.
 
 `ForgeX.ResourceGate` 覆盖几何解析和真实 HTTP 拒绝路径；前端单测覆盖文件绑定、结构漂移、取消、超时与 ZIP 限制；CI 增加 `E2E_MESH_AUTHORITY=dotnet` 的真实 C# Chromium 专项。
 
+## G-code 能耗与成本模型 v2
+
+`POST /api/v1/gcode/analyses/{id}/cost-estimates` 基于当前用户已成功完成的异步 G-code 作业计算成本。请求只包含 `averagePowerWatts`、`electricityCnyPerKwh`、`machineCnyPerHour`、`materialCnyPerKg`（四个字段均须提供，未知填 `null`）及 `evidence` 文本；未知字段拒绝，不能覆盖原件指纹、耗材或时长。源作业不存在或不属于调用方均为 404，未成功完成为 409，存储结果与文件/分析参数指纹不一致为 422。
+
+- 数值为显式声明：0 是已知零值，`null` 是未知。任一数值非空时，必须填写 1–500 个 UTF-16 代码单元的依据；只做文本记录与指纹绑定，不核实现场功率、账单或费率真实性。
+- 平均功率 0–100000 W、电价 0–100 CNY/kWh、纯机时费率 0–100000 CNY/h、材料单价 0–5000 CNY/kg。作业运动估算时长上限 365 天，耗材上限 1000000 g，非有限值或超限源数据拒绝。请求上限 16 KiB，包含无 Content-Length 的流式请求；只接受 JSON。
+- 能耗 = 平均功率 × 秒数 / 3600000；电费 = 未舍入能耗 × 电价；机时费 = 秒数 / 3600 × 纯机时费率；材料费 = 耗材克数 × 单价 / 1000。能耗保留 9 位小数，费用分项保留 6 位小数，采用十进制中点取偶数舍入；总成本为已舍入分项之和，仅在全部输入已知时提供，否则返回显式 `null` 并列出缺失项。
+- 模型版本 `forgex-gcode-cost/2` 的 SHA-256 绑定 `modelVersion`、源作业 ID、原件 SHA-256、Profile 指纹、分析引擎版本、时长/耗材及规范化的输入和依据。依据统一 CRLF→LF 并 trim，十进制去除无意义尾零；按 Domain 记录顺序以 `JsonSerializerDefaults.Web` 序列化上述对象并对 UTF-8 字节取哈希。同一作业同一输入结果可复现，任一绑定项改变后指纹改变。
+- 成本场景不修改或另存作业文件，不改变原 G-code 引擎 1.4.0 或分析 Profile 指纹。React 对响应的作业、原件、Profile、时长/耗材、声明输入、缺失状态和分项公式做绑定校验；修改输入清除结果，切换模型取消在途请求。可下载包含完整依据、公式结果和指纹的 JSON，自行保存。
+- 面板仅在 dotnet 模式的真实异步作业成功后出现；browser / shadow、离线或同步回退不显示此面板，也不发出成本请求。机时费率应排除材料和电费；估算不补齐 G-code 运动时长之外的预热、保温、待机或换料，不是电表实测或最终账单。现场实测与更完整的设备能耗模型仍待接入。
+
+`ForgeX.ResourceGate` 包含成本公式、舍入、零值/缺失、指纹与真实 HTTP 隔离验证；OpenAPI 运行时门禁请求实际作业成本；CI 的 `E2E_GCODE_AUTHORITY=dotnet` 专项验证真实作业、输入失效、审计下载和取消。
+
 ## Stage 5-A G-code Profile authority
 
 Both `POST /api/v1/gcode/analyze` and `POST /api/v1/gcode/analyses` accept optional
@@ -359,4 +372,4 @@ The old page remains at `/`, the React page remains at `/react/`, and the defaul
 23. G-code → 公共契约第 23 组验证直接权威端点和作业身份边界，异步持久化由单进程部署演练/JobGate 补齐。Node 的流式代理实现测试在代理删除后才退役，不能用直连接口通过来宣称这些代理分支已逐条迁移。
 24. 单进程路由错误 → 公共契约第 24 组验证内部 405/415、`Allow`、公共中文 404，以及 GET/POST/DELETE/HEAD 和大小写路径。
 
-公共 HTTP 契约现为 196 项；ResourceGate 为 569 项（file + postgres 双腿，包含 provider 等内部契约 59 项、部署健康故障验证 16 项和网格解析/HTTP 验证 127 项）。CI 分别保存 `csharp-server-contract.json` 与 `resource-authority-gate.json`。测试数量不能替代删除审批、真实容器验收和生产观察；现阶段仍保留 Node、经典前端及原测试链。
+公共 HTTP 契约现为 196 项；ResourceGate 为 629 项（file + postgres 双腿，包含 provider 等内部契约 59 项、部署健康故障验证 16 项、网格解析/HTTP 验证 127 项和成本模型/HTTP/前置契约验证 60 项）。CI 分别保存 `csharp-server-contract.json` 与 `resource-authority-gate.json`。测试数量不能替代删除审批、真实容器验收和生产观察；现阶段仍保留 Node、经典前端及原测试链。
