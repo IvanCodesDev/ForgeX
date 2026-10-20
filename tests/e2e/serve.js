@@ -36,6 +36,7 @@ function buildReactFixture() {
       VITE_NODE_API_KEY: "",
       VITE_NODE_BEARER: "",
       VITE_GCODE_AUTHORITY: authorityMode,
+      VITE_MESH_AUTHORITY: process.env.E2E_MESH_AUTHORITY === "dotnet" ? "dotnet" : "browser",
       VITE_GCODE_JOB_API: "1",
       VITE_REACT_SIMULATOR_ENABLED: "1",
       VITE_REACT_GCODE_ENABLED: "1",

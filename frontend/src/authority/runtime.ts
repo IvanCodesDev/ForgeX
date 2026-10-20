@@ -1,4 +1,4 @@
-/* Node API 边界的运行模式与请求装配（自旧 app/runtime 与 app/api 收拢至此）。 */
+/* 公开服务 API 的运行模式与请求装配；兼容 Node 网关和 C# 单进程入口。 */
 
 export type RuntimeMode =
   | { kind: "offline"; apiBase: null; reason: "file-protocol" | "forced-offline" }
@@ -13,8 +13,8 @@ export function detectRuntimeMode(location: Pick<Location, "protocol">, env: Imp
 }
 
 /**
- * 只用于 Node API 边界：浏览器凭据保持同源，显式配置的服务凭据以
- * Node 认可的请求头附加。不得用于 sidecar 或第三方 URL。
+ * 只用于公开 API 边界：浏览器凭据保持同源，显式配置的服务凭据以
+ * 服务认可的请求头附加。不得用于私有 sidecar 或第三方 URL。
  */
 export function createNodeRequestInit(env: ImportMetaEnv, init: RequestInit = {}): RequestInit {
   const headers = new Headers(init.headers);

@@ -66,11 +66,15 @@ test.describe("P7 校准运营", () => {
       mimeType: "application/json",
       buffer: Buffer.from(JSON.stringify(bundle)),
     });
-    await page.waitForFunction(() => window.FXCalibrationRegistry.list().length === 1);
+    await page.waitForFunction(() =>
+      window.FXCalibrationRegistry.list().some((model) => model.id === "e2e-fx-calibration-pla")
+    );
 
     await page.reload();
     await waitBooted(page);
-    const persisted = await page.evaluate(() => window.FXCalibrationRegistry.list()[0]);
+    const persisted = await page.evaluate(() =>
+      window.FXCalibrationRegistry.list().find((model) => model.id === "e2e-fx-calibration-pla")
+    );
     expect(persisted.id).toBe("e2e-fx-calibration-pla");
     expect(persisted.status).toBe("active");
 
@@ -95,19 +99,21 @@ test.describe("P7 校准运营", () => {
     await page.locator("#machine-log-input").setInputFiles({
       name: "p7-calibration.machine-log.json",
       mimeType: "application/json",
-      buffer: Buffer.from(JSON.stringify({
-        format: "forgex-machine-log",
-        version: 1,
-        job: {
-          jobId: "P7-E2E-001",
-          machineId: "FX-E2E-CAL",
-          firmware: "Klipper 0.12",
-          durationSec: 130,
-          completedLayers: 1,
-          status: "success",
-        },
-        telemetry: [],
-      })),
+      buffer: Buffer.from(
+        JSON.stringify({
+          format: "forgex-machine-log",
+          version: 1,
+          job: {
+            jobId: "P7-E2E-001",
+            machineId: "FX-E2E-CAL",
+            firmware: "Klipper 0.12",
+            durationSec: 130,
+            completedLayers: 1,
+            status: "success",
+          },
+          telemetry: [],
+        })
+      ),
     });
 
     await expect(page.locator("#machine-log-summary")).toContainText("e2e-fx-calibration-pla r1");

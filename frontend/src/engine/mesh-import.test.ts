@@ -240,6 +240,13 @@ const TF: SliceTransform = { scale: 1, rotZ: 0, offX: 0, offY: 0 };
 /* ── STL ──────────────────────────────────── */
 
 describe("STL 解析与归一化", () => {
+  it("ASCII STL 的 UTF-8 BOM 不会被误判为二进制", async () => {
+    const bytes = new TextEncoder().encode("\uFEFF" + stlAscii(box(0, 0, 0, 20, 20, 10)));
+    const mesh = await parseMeshBuffer(bytes.buffer as ArrayBuffer, "bom.stl");
+    expect(mesh.format).toBe("stl-ascii");
+    expect(mesh.triangleCount).toBe(12);
+    expect(mesh.volumeCm3).toBeCloseTo(4, 12);
+  });
   const BOX = box(5, 7, 3, 25, 27, 13); // 20×20×10，故意偏离原点
 
   it("二进制 STL：12 个三角形，包围盒居中、Z 归零，体积 4 cm³", async () => {
@@ -319,6 +326,55 @@ describe("STL 解析与归一化", () => {
 /* ── 3MF ──────────────────────────────────── */
 
 describe("3MF 解析（ZIP + XML，零依赖）", () => {
+  it("限制 ZIP 条目数和声明的总解压大小", async () => {
+    const many = await zip(Array.from({ length: 257 }, (_, i) => ({ name: `${i}.model`, data: new Uint8Array() })));
+    await expect(parse3mf(many)).rejects.toThrow(/条目超过/);
+    const oversized = await zip([{ name: "3D/3dmodel.model", data: modelXml("millimeter", "") }]);
+    const view = new DataView(oversized.buffer, oversized.byteOffset, oversized.byteLength);
+    for (let p = 0; p < oversized.length - 46; p++) {
+      if (view.getUint32(p, true) === 0x02014b50) {
+        view.setUint32(p + 24, 64 * 1024 * 1024 + 1, true);
+        break;
+      }
+    }
+    await expect(parse3mf(oversized)).rejects.toThrow(/总解压大小超过/);
+  });
+  it("独立限制模型 XML 声明大小", async () => {
+    const oversized = await zip([{ name: "3D/3dmodel.model", data: modelXml("millimeter", "") }]);
+    const view = new DataView(oversized.buffer, oversized.byteOffset, oversized.byteLength);
+    for (let p = 0; p < oversized.length - 46; p++) {
+      if (view.getUint32(p, true) === 0x02014b50) {
+        view.setUint32(p + 24, 16 * 1024 * 1024 + 1, true);
+        break;
+      }
+    }
+    await expect(parse3mf(oversized)).rejects.toThrow(/模型 XML 超过/);
+  });
+  it("实际解压量超过上限时取消流，不信任伪造的目录大小", async () => {
+    const bytes = await zip([
+      { name: "3D/3dmodel.model", data: new Uint8Array(16 * 1024 * 1024 + 1).fill(32), deflate: true },
+    ]);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    for (let p = 0; p < bytes.length - 46; p++) {
+      if (view.getUint32(p, true) === 0x02014b50) {
+        view.setUint32(p + 24, 1, true);
+        break;
+      }
+    }
+    await expect(parse3mf(bytes)).rejects.toThrow(/实际解压模型超过/);
+  });
+  it("限制无几何组件的指数展开", async () => {
+    let objects = '<object id="0" type="model"/>';
+    for (let i = 1; i <= 16; i++)
+      objects += `<object id="${i}" type="model"><components><component objectid="${i - 1}"/><component objectid="${i - 1}"/></components></object>`;
+    const bytes = await zip([
+      {
+        name: "3D/3dmodel.model",
+        data: modelXml("millimeter", `<resources>${objects}</resources><build><item objectid="16"/></build>`),
+      },
+    ]);
+    await expect(parse3mf(bytes)).rejects.toThrow(/构建实例超过/);
+  });
   it("stored 条目：components 复用 + item 变换 + 对象计数", async () => {
     const model = modelXml(
       "millimeter",

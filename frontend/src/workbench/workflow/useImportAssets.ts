@@ -1,4 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  MESH_AUTHORITY_IDLE,
+  meshAuthorityEnabled,
+  requestMeshAuthority,
+  type MeshAuthorityState,
+} from "../../authority/mesh-authority";
 import {
   resolveAuthorityMode,
   type AuthorityAnalysisResponse,
@@ -65,12 +71,13 @@ export interface GcodeImportProgressState {
 
 const GCODE_IMPORT_IDLE: GcodeImportProgressState = { status: "idle", phase: null, progress: 0 };
 
-/** 已载入的 STL / 3MF 网格（浏览器预览解析口径；C# 权威解析待 Stage 9.3 后半）。 */
+/** 浏览器网格与按原始文件指纹绑定的 C# 几何校验结果。 */
 export interface MeshImportState {
   readonly name: string;
   readonly sha256: string;
   readonly via: "worker" | "main";
   readonly mesh: MeshImportPayload;
+  readonly authority: MeshAuthorityState;
 }
 
 export interface MeshImportProgressState {
@@ -128,6 +135,16 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
   const authorityAbort = useRef<AbortController | null>(null);
   const gcodeImportHandle = useRef<GcodeImportHandle | null>(null);
   const meshImportHandle = useRef<MeshImportHandle | null>(null);
+  const meshAuthorityAbort = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      meshImportHandle.current?.cancel();
+      meshAuthorityAbort.current?.abort();
+      meshImportHandle.current = null;
+      meshAuthorityAbort.current = null;
+    },
+    []
+  );
 
   const sim = handles?.sim ?? null;
   const ui = handles?.ui ?? null;
@@ -203,6 +220,7 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
   }, [authorityMode]);
 
   const clearMeshChain = useCallback(() => {
+    meshAuthorityAbort.current?.abort();
     meshImportHandle.current?.cancel();
     meshImportHandle.current = null;
     setMeshImport(MESH_IMPORT_IDLE);
@@ -340,7 +358,43 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
           if (meshImportHandle.current !== handle) return; // 已被更新的导入替换
           clearGcodeChain();
           sim.setModel(createMeshModel(payload, { name: file.name }), true);
-          setMesh({ name: file.name, sha256, via, mesh: payload });
+          meshAuthorityAbort.current?.abort();
+          const controller = new AbortController();
+          meshAuthorityAbort.current = controller;
+          const enabled = meshAuthorityEnabled(import.meta.env);
+          setMesh({
+            name: file.name,
+            sha256,
+            via,
+            mesh: payload,
+            authority: { ...MESH_AUTHORITY_IDLE, status: enabled ? "running" : "idle" },
+          });
+          if (enabled) {
+            requestMeshAuthority(file, sha256, import.meta.env, controller.signal)
+              .then((result) => {
+                if (controller.signal.aborted) return;
+                setMesh((current) =>
+                  current?.sha256 === sha256
+                    ? { ...current, authority: { status: "done", result, error: null } }
+                    : current
+                );
+              })
+              .catch((error: unknown) => {
+                if (controller.signal.aborted) return;
+                setMesh((current) =>
+                  current?.sha256 === sha256
+                    ? {
+                        ...current,
+                        authority: {
+                          status: "error",
+                          result: null,
+                          error: error instanceof Error ? error.message : String(error),
+                        },
+                      }
+                    : current
+                );
+              });
+          }
           const size = `${payload.sizeMm.x.toFixed(1)} × ${payload.sizeMm.y.toFixed(1)} × ${payload.sizeMm.z.toFixed(1)} mm`;
           ui.toast(
             `已导入 ${payload.format.toUpperCase()} · ${payload.triangleCount.toLocaleString()} 面 · ${size} · SHA-256 ${sha256.slice(0, 12)}…`,

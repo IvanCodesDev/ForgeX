@@ -227,7 +227,18 @@ test.describe("STL / 3MF 导入（Worker 浏览器预览解析）", () => {
     await expect(summary).toContainText("12 面 · 20.0 × 20.0 × 10.0 mm");
     await expect(summary).toContainText("4.00 cm³ · 16.0 cm²");
     await expect(summary).toContainText("无需支撑");
-    await expect(page.locator('[data-mesh-authority="pending"]')).toBeVisible();
+    if (process.env.E2E_MESH_AUTHORITY === "dotnet") {
+      await expect(page.locator('[data-mesh-authority="done"]')).toBeVisible();
+      await expect(page.locator("#mesh-authority-summary")).toContainText("4.00 cm³");
+      await expect(page.locator("#mesh-authority-summary")).toContainText("边界 0");
+      const artifactDir = path.resolve(__dirname, "../../backend/artifacts");
+      fs.mkdirSync(artifactDir, { recursive: true });
+      await page
+        .locator('[data-react-only="stage-9.3 mesh-import"]')
+        .screenshot({ path: path.join(artifactDir, "mesh-authority-panel.png") });
+    } else {
+      await expect(page.locator('[data-mesh-authority="pending"]')).toBeVisible();
+    }
 
     const state = await page.evaluate(() => ({
       via: window.__forgexMeshImportVia,
@@ -316,6 +327,10 @@ test.describe("STL / 3MF 导入（Worker 浏览器预览解析）", () => {
       return layer.paths.filter((p) => p.type === "perimeter").length;
     });
     expect(midLayerLoops).toBe(4); // 2 个外环 × 2 圈周界
+    if (process.env.E2E_MESH_AUTHORITY === "dotnet") {
+      await expect(page.locator('[data-mesh-authority="done"]')).toBeVisible();
+      await expect(page.locator("#mesh-authority-summary")).toContainText("24 面");
+    }
 
     // 选择内置模型 → 导入链整体清空（网格摘要消失、模型换回内置）
     await page.locator(".model-card", { hasText: "行星齿轮" }).click();
@@ -343,5 +358,43 @@ test.describe("STL / 3MF 导入（Worker 浏览器预览解析）", () => {
     expect(after.errors).toHaveLength(1);
     expect(after.errors[0]).toMatch(/^网格导入失败：二进制 STL 声明 400000000 个三角形，但文件长度不足$/);
     await expect(page.locator("#mesh-summary")).toHaveCount(0);
+  });
+
+  test("后端校验失败保留预览，后到的旧结果不覆盖新模型", async ({ page }) => {
+    test.skip(process.env.E2E_MESH_AUTHORITY !== "dotnet", "专项使用真实 C# 网格校验模式");
+    await openImportPage(page);
+    await page.route("**/api/v1/meshes/analyze?*", async (route) => {
+      await route.fulfill({
+        status: 422,
+        contentType: "application/problem+json",
+        body: JSON.stringify({ title: "必需扩展暂不支持" }),
+      });
+    });
+    await importMesh(page, path.join(fixtureDir, "box.stl"));
+    await expect(page.locator('[data-mesh-authority="error"]')).toContainText("必需扩展暂不支持");
+    await expect(page.locator("#mesh-summary")).toContainText("box.stl");
+    expect(await page.evaluate(() => window.FX.sim.model.id)).toBe("mesh-import");
+    await page.unroute("**/api/v1/meshes/analyze?*");
+    let release;
+    const held = new Promise((resolve) => {
+      release = resolve;
+    });
+    let started;
+    const requestStarted = new Promise((resolve) => {
+      started = resolve;
+    });
+    await page.route("**/api/v1/meshes/analyze?*", async (route) => {
+      const response = await route.fetch();
+      started();
+      await held;
+      await route.fulfill({ response }).catch(() => {});
+    });
+    await importMesh(page, path.join(fixtureDir, "box.stl"));
+    await requestStarted;
+    await page.locator(".model-card", { hasText: "行星齿轮" }).click();
+    release();
+    await expect(page.locator("#mesh-summary")).toHaveCount(0);
+    await expect(page.locator("#mesh-authority-summary")).toHaveCount(0);
+    expect(await page.evaluate(() => window.FX.sim.model.id)).toBe("gear");
   });
 });

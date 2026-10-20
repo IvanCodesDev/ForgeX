@@ -483,6 +483,19 @@ jobs:
         env:
           E2E_GCODE_AUTHORITY: dotnet
 
+      - name: STL / 3MF C# 几何校验与取消链路
+        run: npm run test:e2e:chromium -- tests/e2e/mesh-import.spec.js
+        env:
+          E2E_MESH_AUTHORITY: dotnet
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mesh-authority-ui
+          path: backend/artifacts/mesh-authority-panel.png
+          if-no-files-found: warn
+          retention-days: 7
+
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

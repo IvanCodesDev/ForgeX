@@ -13,6 +13,8 @@ import type { Point2 } from "./util.ts";
 import type { BuiltModel } from "./models.ts";
 
 export const MAX_MESH_BYTES = 64 * 1024 * 1024;
+const MAX_MESH_XML_BYTES = 16 * 1024 * 1024;
+const MAX_PREVIEW_TRIANGLES = 1_000_000;
 /** 超过该三角面数仍可导入，但切片与预览会明显变慢，提示用户精简 */
 export const HEAVY_TRIANGLES = 500_000;
 /** 悬垂判据：法向与 −Z 夹角 < 45°（nz < −cos45°）且不贴打印面 */
@@ -79,19 +81,14 @@ export function detectMeshFormat(fileName: string, bytes: Uint8Array): MeshForma
 function isBinaryStl(bytes: Uint8Array): boolean {
   if (bytes.length < STL_HEADER_BYTES + 4) return false;
   const n = readU32(bytes, STL_HEADER_BYTES);
+  if (n > MAX_PREVIEW_TRIANGLES && 84 + n * 50 <= bytes.length)
+    throw new Error("预览三角面超过 1000000 个，请先精简模型");
   return STL_HEADER_BYTES + 4 + n * STL_TRIANGLE_BYTES === bytes.length;
 }
 
 function looksLikeAsciiStl(bytes: Uint8Array): boolean {
-  const head = asciiPrefix(bytes, 512).trimStart().toLowerCase();
+  const head = new TextDecoder("utf-8").decode(bytes.subarray(0, 512)).trimStart().toLowerCase();
   return head.startsWith("solid") && (head.includes("facet") || head.includes("endsolid") || head.length < 300);
-}
-
-function asciiPrefix(bytes: Uint8Array, n: number): string {
-  let s = "";
-  const end = Math.min(n, bytes.length);
-  for (let i = 0; i < end; i++) s += String.fromCharCode(bytes[i]!);
-  return s;
 }
 
 function readU16(bytes: Uint8Array, off: number): number {
@@ -108,6 +105,7 @@ export function parseStlBinary(bytes: Uint8Array): Float32Array {
   const n = readU32(bytes, STL_HEADER_BYTES);
   const need = STL_HEADER_BYTES + 4 + n * STL_TRIANGLE_BYTES;
   if (need > bytes.length) throw new Error(`二进制 STL 声明 ${n} 个三角形，但文件长度不足`);
+  if (n > MAX_PREVIEW_TRIANGLES) throw new Error("预览三角面超过 1000000 个，请先精简模型");
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const out = new Float32Array(n * 9);
   let off = STL_HEADER_BYTES + 4;
@@ -129,6 +127,7 @@ export function parseStlAscii(text: string): Float32Array {
   ASCII_VERTEX_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = ASCII_VERTEX_RE.exec(text)) !== null) {
+    if (coords.length >= MAX_PREVIEW_TRIANGLES * 9) throw new Error("预览三角面超过 1000000 个，请先精简模型");
     coords.push(parseFloat(m[1]!), parseFloat(m[2]!), parseFloat(m[3]!));
   }
   if (!coords.length) throw new Error("ASCII STL 中没有 vertex 记录");
@@ -160,6 +159,8 @@ function readZipDirectory(bytes: Uint8Array): ZipEntry[] {
   const cdOffset = readU32(bytes, eocd + 16);
   if (total === 0xffff || cdOffset === 0xffffffff) throw new Error("暂不支持 ZIP64 格式的 3MF");
   const entries: ZipEntry[] = [];
+  if (total > 256) throw new Error("3MF ZIP 条目超过 256 个");
+  let expanded = 0;
   let p = cdOffset;
   for (let i = 0; i < total; i++) {
     if (p + 46 > bytes.length || readU32(bytes, p) !== ZIP_CENTRAL_SIG) throw new Error("3MF 中央目录损坏");
@@ -170,6 +171,9 @@ function readZipDirectory(bytes: Uint8Array): ZipEntry[] {
     const extraLen = readU16(bytes, p + 30);
     const commentLen = readU16(bytes, p + 32);
     const localHeaderOffset = readU32(bytes, p + 42);
+    if (p + 46 + nameLen + extraLen + commentLen > bytes.length) throw new Error("3MF 中央目录长度损坏");
+    expanded += uncompressedSize;
+    if (expanded > MAX_MESH_BYTES) throw new Error("3MF 总解压大小超过 64 MB");
     const name = new TextDecoder("utf-8").decode(bytes.subarray(p + 46, p + 46 + nameLen));
     entries.push({ name, method, compressedSize, uncompressedSize, localHeaderOffset });
     p += 46 + nameLen + extraLen + commentLen;
@@ -183,16 +187,41 @@ async function readZipEntry(bytes: Uint8Array, entry: ZipEntry): Promise<Uint8Ar
   const nameLen = readU16(bytes, h + 26);
   const extraLen = readU16(bytes, h + 28);
   const start = h + 30 + nameLen + extraLen;
+  if (start + entry.compressedSize > bytes.length) throw new Error("3MF 压缩条目长度损坏");
+  if (entry.uncompressedSize > MAX_MESH_XML_BYTES) throw new Error("3MF 单个模型 XML 超过 16 MB");
   const raw = bytes.subarray(start, start + entry.compressedSize);
-  if (entry.method === 0) return raw;
+  if (entry.method === 0) {
+    if (raw.length > MAX_MESH_XML_BYTES || raw.length !== entry.uncompressedSize)
+      throw new Error("3MF 条目长度不符或超过限制");
+    return raw;
+  }
   if (entry.method !== 8) throw new Error(`3MF 条目 ${entry.name} 使用了不支持的压缩方式 ${entry.method}`);
   if (typeof DecompressionStream !== "function")
     throw new Error("当前运行环境不支持 deflate 解压（DecompressionStream）");
   const copy = new Uint8Array(raw); // 独立缓冲：Blob 不能引用共享大缓冲的子视图
   const stream = new Blob([copy]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-  const inflated = new Uint8Array(await new Response(stream).arrayBuffer());
-  if (entry.uncompressedSize && inflated.length !== entry.uncompressedSize)
-    throw new Error(`3MF 条目 ${entry.name} 解压后长度不符`);
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      size += chunk.value.length;
+      if (size > MAX_MESH_XML_BYTES) throw new Error("3MF 实际解压模型超过 16 MB");
+      chunks.push(chunk.value);
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+  const inflated = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    inflated.set(chunk, offset);
+    offset += chunk.length;
+  }
+  if (inflated.length !== entry.uncompressedSize) throw new Error(`3MF 条目 ${entry.name} 解压后长度不符`);
   return inflated;
 }
 
@@ -340,9 +369,11 @@ export async function parse3mf(bytes: Uint8Array): Promise<Parsed3mf> {
   const warnings: string[] = [];
   const coords: number[] = [];
   let objectCount = 0;
+  let expandedObjects = 0;
   const visiting = new Set<string>();
 
   const emit = (path: string, id: string, m: Mat, depth: number): void => {
+    if (++expandedObjects > 4096) throw new Error("3MF 构建实例超过 4096 个");
     const file = files.get(path);
     const obj = file?.objects.get(id);
     if (!obj) {
@@ -362,6 +393,7 @@ export async function parse3mf(bytes: Uint8Array): Promise<Parsed3mf> {
       const t = obj.triangles;
       const nv = v.length / 3;
       for (let i = 0; i < t.length; i += 3) {
+        if (coords.length >= MAX_PREVIEW_TRIANGLES * 9) throw new Error("预览三角面超过 1000000 个，请先精简模型");
         for (let k = 0; k < 3; k++) {
           const vi = t[i + k]!;
           if (vi >= nv) throw new Error(`3MF 对象 ${id} 的三角形引用了不存在的顶点 ${vi}`);

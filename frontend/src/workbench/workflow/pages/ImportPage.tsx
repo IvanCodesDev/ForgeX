@@ -426,10 +426,17 @@ const MESH_FORMAT_LABEL: Readonly<Record<MeshImportState["mesh"]["format"], stri
   "3mf": "3MF",
 };
 
-/** 网格摘要：全部数字均为浏览器预览口径，C# 权威解析（Stage 9.3 后半）就位后在旁并列权威值。 */
+/** 浏览器预览与原始文件绑定的后端几何校验分开展示。 */
 function MeshSummary({ state }: { readonly state: MeshImportState }) {
   const m = state.mesh;
   const size = `${m.sizeMm.x.toFixed(1)} × ${m.sizeMm.y.toFixed(1)} × ${m.sizeMm.z.toFixed(1)} mm`;
+  const authoritative = state.authority.result;
+  const differs =
+    authoritative &&
+    (authoritative.triangleCount !== m.triangleCount ||
+      (["x", "y", "z"] as const).some(
+        (axis) => Math.abs(authoritative.sizeMm[axis] - m.sizeMm[axis]) > Math.max(0.001, m.sizeMm[axis] * 1e-5)
+      ));
   return (
     <>
       <div className="gcode-summary" id="mesh-summary" data-mesh-via={state.via}>
@@ -450,7 +457,7 @@ function MeshSummary({ state }: { readonly state: MeshImportState }) {
           <span className="v hl">{`${m.triangleCount.toLocaleString()} 面 · ${size}`}</span>
         </div>
         <div className="kv">
-          <span className="k">体积 / 表面积</span>
+          <span className="k">预览体积 / 表面积</span>
           <span className="v">{`${m.volumeCm3.toFixed(2)} cm³ · ${m.surfaceAreaCm2.toFixed(1)} cm²`}</span>
         </div>
         <div className="kv">
@@ -464,9 +471,55 @@ function MeshSummary({ state }: { readonly state: MeshImportState }) {
           <span className="v">{`${state.sha256.slice(0, 16)}…`}</span>
         </div>
       </div>
-      <div className="note" data-mesh-authority="pending">
-        以上为浏览器预览解析（体积、尺寸、悬垂为几何估算）；C# 权威解析接入后将在此并列权威数值。
+      <div
+        className="note"
+        data-mesh-authority={state.authority.status === "idle" ? "pending" : state.authority.status}
+        role="status"
+      >
+        {state.authority.status === "idle" && "以上为浏览器预览解析；当前模式未启用后端网格校验。"}
+        {state.authority.status === "running" && "C# 权威几何校验中；可继续查看本地预览。"}
+        {state.authority.status === "error" && `后端校验未完成：${state.authority.error}。当前保留浏览器预览。`}
+        {state.authority.status === "done" &&
+          "C# 几何校验完成，已核对原始文件 SHA-256；结果对应导入原件，切片与悬垂仍使用浏览器预览。"}
       </div>
+      {differs && (
+        <div className="note" data-mesh-diff="true">
+          预览与后端几何数值不同，请核对尺寸、单位和对象构建关系后再使用切片结果。
+        </div>
+      )}
+      {state.authority.result && (
+        <div className="gcode-summary" id="mesh-authority-summary">
+          <div className="kv">
+            <span className="k">C# 权威解析</span>
+            <span className="v hl">
+              {state.authority.result.triangleCount.toLocaleString()} 面 · {state.authority.result.sizeMm.x.toFixed(1)}{" "}
+              × {state.authority.result.sizeMm.y.toFixed(1)} × {state.authority.result.sizeMm.z.toFixed(1)} mm
+            </span>
+          </div>
+          <div className="kv">
+            <span className="k">几何体积 / 表面积</span>
+            <span className="v">
+              {state.authority.result.volumeCm3 === null
+                ? "体积不可用"
+                : `${state.authority.result.volumeCm3.toFixed(2)} cm³`}{" "}
+              · {state.authority.result.surfaceAreaCm2.toFixed(2)} cm²
+            </span>
+          </div>
+          <div className="kv">
+            <span className="k">边检查</span>
+            <span className="v">
+              边界 {state.authority.result.topology.boundaryEdges} · 非流形边{" "}
+              {state.authority.result.topology.nonManifoldEdges} · 朝向冲突{" "}
+              {state.authority.result.topology.inconsistentEdges}
+            </span>
+          </div>
+          {state.authority.result.warnings.map((warning) => (
+            <div className="note" key={warning}>
+              {warning}
+            </div>
+          ))}
+        </div>
+      )}
       {m.warnings.map((warning) => (
         <div className="note" key={warning}>{`⚠ ${warning}`}</div>
       ))}

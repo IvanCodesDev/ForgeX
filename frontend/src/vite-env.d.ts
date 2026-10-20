@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  readonly VITE_MESH_AUTHORITY?: "browser" | "dotnet";
   readonly VITE_API_BASE?: string;
   readonly VITE_NODE_API_KEY?: string;
   readonly VITE_NODE_BEARER?: string;

@@ -2,12 +2,13 @@
 "use strict";
 
 const { test, expect } = require("@playwright/test");
+const crypto = require("crypto");
 
-function candidateBundle() {
+function candidateBundle(suffix) {
   return {
     format: "forgex-calibration-bundle",
     version: 1,
-    id: "e2e-server-calibration",
+    id: "e2e-server-calibration-" + suffix,
     revision: 1,
     createdAt: "2026-07-28T00:00:00Z",
     provenance: "real-anonymized",
@@ -17,7 +18,7 @@ function candidateBundle() {
     },
     models: [
       {
-        id: "e2e-server-fx-pla",
+        id: "e2e-server-fx-pla-" + suffix,
         status: "candidate",
         scope: {
           machineId: "FX-SERVER-E2E",
@@ -42,41 +43,41 @@ function candidateBundle() {
 }
 
 test("P8 候选模型经 API Key 审核后同步到浏览器", async ({ page, request }) => {
+  const bundle = candidateBundle(crypto.randomBytes(6).toString("hex"));
+  const modelId = bundle.models[0].id;
   const submitHeaders = { "X-API-Key": "e2e-calibration-submitter" };
   const reviewHeaders = { "X-API-Key": "e2e-calibration-reviewer" };
   const submitted = await request.post("/api/calibrations/submissions", {
     headers: submitHeaders,
     data: {
-      bundle: candidateBundle(),
+      bundle,
       note: "E2E submit for approval workflow",
     },
   });
   expect(submitted.status()).toBe(201);
 
-  const reviewed = await request.post(
-    "/api/calibrations/e2e-server-calibration/revisions/1/review",
-    {
-      headers: reviewHeaders,
-      data: {
-        decision: "approve",
-        reason: "Holdout metrics and anonymized source reviewed by E2E.",
-      },
-    }
-  );
+  const reviewed = await request.post(`/api/calibrations/${bundle.id}/revisions/1/review`, {
+    headers: reviewHeaders,
+    data: {
+      decision: "approve",
+      reason: "Holdout metrics and anonymized source reviewed by E2E.",
+    },
+  });
   expect(reviewed.status()).toBe(200);
 
   await page.goto("/legacy");
   await page.waitForFunction(
-    () =>
-      window.FX &&
-      window.FXCalibrationRegistry.list().some((model) => model.id === "e2e-server-fx-pla"),
-    null,
+    (id) => window.FX && window.FXCalibrationRegistry.list().some((model) => model.id === id),
+    modelId,
     { timeout: 30_000 }
   );
-  const synced = await page.evaluate(() => ({
-    model: window.FXCalibrationRegistry.list().find((item) => item.id === "e2e-server-fx-pla"),
-    sync: window.FXApiClient.calibrationSync,
-  }));
+  const synced = await page.evaluate(
+    (id) => ({
+      model: window.FXCalibrationRegistry.list().find((item) => item.id === id),
+      sync: window.FXApiClient.calibrationSync,
+    }),
+    modelId
+  );
   expect(synced.model.status).toBe("active");
   expect(synced.model.bundleRevision).toBe(1);
   expect(synced.sync.status).toBe("ready");

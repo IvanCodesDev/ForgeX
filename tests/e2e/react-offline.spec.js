@@ -23,8 +23,12 @@ const ARCHIVE_DIR = path.join(ROOT, "optimization", "stage7-classic-retirement",
 
 /** 与 serve.js 的 buildReactFixture 同一策略：不信任磁盘上可能过期的产物，验收前重新打包。 */
 function buildOfflineArtifact() {
-  const npmCli = process.env.npm_execpath;
-  const command = npmCli ? process.execPath : process.platform === "win32" ? "npm.cmd" : "npm";
+  const npmCli = [
+    process.env.npm_execpath,
+    path.join(path.dirname(process.execPath), "node_modules/npm/bin/npm-cli.js"),
+  ].find((candidate) => candidate && fs.existsSync(candidate));
+  if (!npmCli && process.platform === "win32") throw new Error("无法定位 npm CLI，请通过 npm run test:e2e 启动。");
+  const command = npmCli ? process.execPath : "npm";
   const args = npmCli ? [npmCli, "run", "frontend:build:offline"] : ["run", "frontend:build:offline"];
   const result = childProcess.spawnSync(command, args, { cwd: ROOT, stdio: "inherit" });
   if (result.error) throw result.error;
