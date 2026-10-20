@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:22.13.1-alpine3.21 AS frontend-build
+FROM node:25.2.1-alpine3.21 AS frontend-build
 WORKDIR /src
 COPY package.json package-lock.json ./
 COPY frontend/package.json ./frontend/package.json
@@ -9,7 +9,7 @@ COPY frontend ./frontend
 RUN npm run frontend:build
 RUN npm prune --omit=dev --ignore-scripts
 
-FROM node:22.13.1-alpine3.21 AS runtime
+FROM node:25.2.1-alpine3.21 AS runtime
 WORKDIR /app
 ENV HOST=0.0.0.0 \
     PORT=8787 \
