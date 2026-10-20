@@ -7,6 +7,8 @@
     "durationSec": 4380,
     "filamentMm": 8240,
     "filamentG": 24.7,
+    "energyKwh": 0.26,
+    "energyEvidence": "演示数据，非真实测量。实际使用时填写计量设备、任务起止区间和消耗电量的取得方式。",
     "completedLayers": 120,
     "status": "success"
   },

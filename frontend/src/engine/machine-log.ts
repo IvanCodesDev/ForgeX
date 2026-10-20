@@ -1,5 +1,4 @@
 /* FORGE·X — 真机任务日志解析与 G-code 计划/实测对比（纯逻辑）。
-   自 js/machine-log.js 机械迁移：算法逐行保留，仅换模块壳并加类型。
 
    支持：
      1. forgex-machine-log v1 JSON（完整契约见 contracts/logs/machine-log.schema.json）；
@@ -29,6 +28,10 @@ export interface MachineLogResult {
   filamentG: number | null;
   completedLayers: number | null;
   status: string;
+  energyKwh: number | null;
+  energyEvidence: string;
+  /** 原始日志文件摘要，由导入入口按字节计算；纯文本解析不代填。 */
+  sourceSha256: string;
   samples: LogSample[];
   warnings: string[];
   source: string;
@@ -48,7 +51,7 @@ export interface ComparisonRow {
   planned: number;
   actual: number;
   unit: string;
-  relDiff: number;
+  relDiff: number | null;
   agrees: boolean;
   note: string;
 }
@@ -56,8 +59,13 @@ export interface ComparisonRow {
 type RawRecord = Record<string, unknown>;
 
 function finite(v: unknown): number | null {
+  if (v == null || (typeof v === "string" && !v.trim())) return null;
+  if (typeof v !== "number" && typeof v !== "string") throw new Error("日志数值必须是有限数字");
+  if (typeof v === "string" && !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(v.trim()))
+    throw new Error("日志数值必须是十进制数字");
   const n = Number(v);
-  return isFinite(n) ? n : null;
+  if (!Number.isFinite(n)) throw new Error("日志数值必须是有限数字");
+  return n;
 }
 
 function firstFinite(...args: unknown[]): number | null {
@@ -80,6 +88,16 @@ function csvRows(text: string): string[][] {
   let row: string[] = [];
   let field = "";
   let quoted = false;
+  let closed = false;
+  const finishRow = () => {
+    row.push(field);
+    if (row.some((x) => x.trim())) rows.push(row);
+    row = [];
+    field = "";
+    closed = false;
+    // 一行表头 + MAX_ROWS 行数据，最后一行同样受限。
+    if (rows.length > MAX_ROWS + 1) throw new Error("真机日志行数超过上限");
+  };
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (quoted) {
@@ -88,27 +106,30 @@ function csvRows(text: string): string[][] {
         i++;
       } else if (ch === '"') {
         quoted = false;
+        closed = true;
       } else {
         field += ch;
       }
     } else if (ch === '"') {
+      if (field || closed) throw new Error("CSV 引号位置无效");
       quoted = true;
     } else if (ch === ",") {
       row.push(field);
       field = "";
+      closed = false;
     } else if (ch === "\n" || ch === "\r") {
       if (ch === "\r" && text[i + 1] === "\n") i++;
-      row.push(field);
-      if (row.some((x) => x.trim())) rows.push(row);
-      row = [];
-      field = "";
-      if (rows.length > MAX_ROWS) throw new Error("真机日志行数超过上限");
+      finishRow();
     } else {
+      if (closed) {
+        if (ch === " " || ch === "\t") continue;
+        throw new Error("CSV 引号后存在多余字符");
+      }
       field += ch;
     }
   }
-  row.push(field);
-  if (row.some((x) => x.trim())) rows.push(row);
+  if (quoted) throw new Error("CSV 引号未闭合");
+  finishRow();
   return rows;
 }
 
@@ -122,37 +143,59 @@ function key(v: unknown): string {
 function at(obj: RawRecord, names: string[]): unknown {
   for (let i = 0; i < names.length; i++) {
     const name = names[i]!;
-    if (obj[name] != null && obj[name] !== "") return obj[name];
+    if (Object.hasOwn(obj, name) && obj[name] != null && obj[name] !== "") return obj[name];
   }
   return null;
 }
 
 function normalizeSample(raw: RawRecord): LogSample {
+  const timeSec = firstFinite(
+    at(raw, ["timeSec", "time_s", "elapsed_s", "elapsedSec", "timestamp_sec", "timestamp_s"])
+  );
+  if (timeSec !== null && timeSec < 0) throw new Error("遥测时间不得为负数");
   return {
-    timeSec: firstFinite(at(raw, ["timeSec", "time_s", "elapsed_s", "elapsedSec", "timestamp_sec", "timestamp_s"])),
+    timeSec,
     nozzleC: firstFinite(at(raw, ["nozzleC", "nozzle_c", "hotend_c", "tool0_c", "extruder_c"])),
     bedC: firstFinite(at(raw, ["bedC", "bed_c", "bed_temp_c"])),
   };
 }
 
 function durationFromSamples(samples: LogSample[]): number | null {
-  const times = samples.map((s) => s.timeSec).filter((v): v is number => v != null);
-  if (!times.length) return null;
-  return Math.max(...times) - Math.min(...times);
+  let min = Infinity,
+    max = -Infinity;
+  for (const { timeSec } of samples) {
+    if (timeSec !== null) {
+      min = Math.min(min, timeSec);
+      max = Math.max(max, timeSec);
+    }
+  }
+  return min === Infinity ? null : max - min;
+}
+
+function record(value: unknown, label: string): RawRecord {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label}必须是对象`);
+  return value as RawRecord;
 }
 
 function normalize(data: RawRecord, name?: string): MachineLogResult {
-  const job = (data.job || data.summary || data) as RawRecord;
-  const rawSamples = (data.telemetry || data.samples || []) as unknown;
-  const samples = Array.isArray(rawSamples) ? rawSamples.map((s) => normalizeSample(s as RawRecord)) : [];
+  const job = record(data.job ?? data.summary ?? data, "任务汇总");
+  const rawSamples = data.telemetry ?? data.samples ?? [];
+  if (!Array.isArray(rawSamples)) throw new Error("遥测样本必须是数组");
+  if (rawSamples.length > MAX_ROWS) throw new Error("真机日志行数超过上限");
+  const samples = rawSamples.map((s: unknown) => normalizeSample(record(s, "遥测样本")));
+  const minutes = (value: unknown) => {
+    const number = finite(value);
+    return number === null ? null : number * 60;
+  };
   let duration = firstFinite(
     job.durationSec,
     job.duration_s,
     job.elapsedSec,
     job.elapsed_s,
-    job.durationMin != null ? Number(job.durationMin) * 60 : null,
-    job.duration_min != null ? Number(job.duration_min) * 60 : null
+    minutes(job.durationMin),
+    minutes(job.duration_min)
   );
+  const hasSummaryDuration = duration !== null;
   if (duration == null) duration = durationFromSamples(samples);
   const result: MachineLogResult = {
     name: name || firstText(data.id, job.jobId, job.job_id, "machine-log"),
@@ -167,10 +210,34 @@ function normalize(data: RawRecord, name?: string): MachineLogResult {
     filamentG: firstFinite(job.filamentG, job.filament_g),
     completedLayers: firstFinite(job.completedLayers, job.completed_layers, job.layers),
     status: firstText(job.status, data.status, "unknown"),
+    energyKwh: firstFinite(job.energyKwh, job.energy_kwh),
+    energyEvidence: firstText(job.energyEvidence, job.energy_evidence).replace(/\r\n/g, "\n"),
+    sourceSha256: "",
     samples,
     warnings: [],
     source: "machine-log",
   };
+  const rawEnergyEvidence = job.energyEvidence ?? job.energy_evidence;
+  if (rawEnergyEvidence != null && typeof rawEnergyEvidence !== "string") throw new Error("能耗依据必须为文本");
+  for (const field of ["actualTimeSec", "filamentMm", "filamentG", "completedLayers", "energyKwh"] as const) {
+    const value = result[field];
+    if (value !== null && (!Number.isFinite(value) || value < 0)) throw new Error(`${field} 必须为有限非负数`);
+  }
+  if (result.completedLayers !== null && !Number.isSafeInteger(result.completedLayers))
+    throw new Error("完成层数必须是安全整数");
+  if (result.energyKwh !== null && result.energyKwh > 1_000_000) throw new Error("单任务能耗不得超过 1000000 kWh");
+  if (
+    result.energyEvidence.length > 500 ||
+    [...result.energyEvidence].some((char) => {
+      const code = char.charCodeAt(0);
+      return (code < 32 && char !== "\n" && char !== "\t") || (code >= 127 && code <= 159);
+    })
+  )
+    throw new Error("能耗依据不得超过 500 字或包含控制字符");
+  if (result.energyKwh !== null && !result.energyEvidence)
+    result.warnings.push("日志含能耗数值但缺少计量依据，不参与成本对账");
+  if (!hasSummaryDuration && duration !== null)
+    result.warnings.push("时长取遥测时间范围的跨度，样本可能未覆盖完整任务");
   if (result.actualTimeSec == null) result.warnings.push("日志没有任务时长，无法比较打印时间");
   if (result.filamentMm == null && result.filamentG == null) result.warnings.push("日志没有耗材汇总，无法比较用料");
   if (!samples.length) result.warnings.push("日志没有温度遥测样本");
@@ -181,8 +248,10 @@ function parseCsvLog(text: string, name?: string): MachineLogResult {
   const rows = csvRows(text);
   if (rows.length < 2) throw new Error("CSV 真机日志至少需要表头和一行数据");
   const headers = rows[0]!.map(key);
+  if (headers.some((h) => !h) || new Set(headers).size !== headers.length) throw new Error("CSV 表头为空或存在重复列");
   const objects = rows.slice(1).map((cells) => {
-    const obj: RawRecord = {};
+    if (cells.length !== headers.length) throw new Error("CSV 数据列数与表头不一致");
+    const obj: RawRecord = Object.create(null) as RawRecord;
     headers.forEach((h, i) => {
       obj[h] = cells[i] == null ? "" : cells[i]!.trim();
     });
@@ -190,26 +259,33 @@ function parseCsvLog(text: string, name?: string): MachineLogResult {
   });
   const samples = objects.map(normalizeSample);
   const last = objects[objects.length - 1]!;
-  const declaredDigests: string[] = [];
-  objects.forEach((obj) => {
-    const declared = firstText(at(obj, ["gcode_sha256", "gcode_sha", "gcode_hash"])).toLowerCase();
-    if (declared && declaredDigests.indexOf(declared) < 0) declaredDigests.push(declared);
-  });
-  if (declaredDigests.length > 1) throw new Error("CSV 真机日志中的 gcode_sha256 在不同行之间不一致");
+  const consistentText = (names: string[], lowercase = false) => {
+    let declared = "";
+    for (const obj of objects) {
+      const raw = firstText(at(obj, names));
+      const value = lowercase ? raw.toLowerCase() : raw;
+      if (!value) continue;
+      if (declared && declared !== value) throw new Error(`CSV 真机日志中的 ${names[0]} 在不同行之间不一致`);
+      declared = value;
+    }
+    return declared;
+  };
   return normalize(
     {
       format: "generic-machine-log-csv",
       job: {
-        job_id: at(last, ["job_id", "job"]),
-        machine_id: at(last, ["machine_id", "machine", "device_id"]),
-        firmware: at(last, ["firmware", "firmware_version"]),
-        slicer: at(last, ["slicer", "slicer_version"]),
-        gcode_sha256: declaredDigests[0] || "",
-        duration_s: at(last, ["duration_s", "duration_sec", "elapsed_s", "time_s"]),
+        job_id: consistentText(["job_id", "job"]),
+        machine_id: consistentText(["machine_id", "machine", "device_id"]),
+        firmware: consistentText(["firmware", "firmware_version"]),
+        slicer: consistentText(["slicer", "slicer_version"]),
+        gcode_sha256: consistentText(["gcode_sha256", "gcode_sha", "gcode_hash"], true),
+        duration_s: at(last, ["duration_s", "duration_sec"]),
         filament_mm: at(last, ["filament_mm", "filament_used_mm"]),
         filament_g: at(last, ["filament_g", "filament_used_g"]),
         completed_layers: at(last, ["completed_layers", "layer", "layers"]),
         status: at(last, ["status", "state", "result"]),
+        energy_kwh: at(last, ["energy_kwh"]),
+        energy_evidence: at(last, ["energy_evidence"]),
       },
       samples,
     },
@@ -221,13 +297,15 @@ export function parse(text: string, opt?: { name?: string }): MachineLogResult {
   opt = opt || {};
   const src = String(text || "");
   if (!src.trim()) throw new Error("真机日志为空");
-  if (src.length > MAX_BYTES) throw new Error("真机日志超过 " + Math.round(MAX_BYTES / 1024 / 1024) + "MB");
+  if (src.length > MAX_BYTES || new TextEncoder().encode(src).byteLength > MAX_BYTES)
+    throw new Error("真机日志超过 " + Math.round(MAX_BYTES / 1024 / 1024) + "MB");
+  const content = src.replace(/^\uFEFF/, "");
   const name = opt.name || "machine-log";
   const first = src.replace(/^\uFEFF/, "").trim()[0];
   if (first === "{" || first === "[") {
     let data: unknown;
     try {
-      data = JSON.parse(src);
+      data = JSON.parse(content);
     } catch (e) {
       const parseError = new Error("真机日志 JSON 无效：" + (e as Error).message);
       (parseError as Error & { cause?: unknown }).cause = e;
@@ -241,7 +319,7 @@ export function parse(text: string, opt?: { name?: string }): MachineLogResult {
     if (record.version != null && record.version !== 1) throw new Error("不支持的真机日志 version");
     return normalize(record, name);
   }
-  return parseCsvLog(src, name);
+  return parseCsvLog(content, name);
 }
 
 /** 核对当前导入 G-code 的原始字节摘要与真机日志声明。 */
@@ -296,14 +374,14 @@ function comparison(
   tolerance: number,
   note: string
 ): ComparisonRow {
-  const rel = planned > 0 ? Math.abs(actual - planned) / planned : 0;
+  const rel = planned > 0 ? Math.abs(actual - planned) / planned : actual === 0 ? 0 : null;
   return {
     name,
     planned,
     actual,
     unit,
     relDiff: rel,
-    agrees: rel <= tolerance,
+    agrees: rel !== null && rel <= tolerance,
     note,
   };
 }

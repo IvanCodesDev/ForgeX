@@ -140,7 +140,7 @@ export interface MachineLogComparisonRow {
   readonly planned: number;
   readonly actual: number;
   readonly agrees: boolean;
-  readonly relDiff: number;
+  readonly relDiff: number | null;
 }
 
 export interface MachineLogRecord {
@@ -150,6 +150,12 @@ export interface MachineLogRecord {
   readonly firmware?: string;
   readonly jobId?: string;
   readonly warnings: string[];
+  readonly gcodeSha256: string;
+  sourceSha256: string;
+  readonly actualTimeSec: number | null;
+  readonly filamentG: number | null;
+  readonly energyKwh: number | null;
+  readonly energyEvidence: string;
   gcodeBinding?: GcodeBinding;
 }
 

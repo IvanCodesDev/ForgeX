@@ -3,6 +3,8 @@ import { COST_LIMITS, requestCostEstimate, type CostField } from "../../authorit
 import type { AuthorityAnalysisResponse } from "../../authority/gcode-authority";
 import type { GCodeCostEstimate, GCodeCostInputs } from "../../generated/forgex-api";
 import "./gcode-cost.css";
+import type { MachineLogState } from "../../legacy/engine";
+import { MachineCostComparison } from "./MachineCostComparison";
 
 const LABELS: Record<CostField, string> = {
   averagePowerWatts: "平均功率 W",
@@ -16,9 +18,11 @@ const money = (value: number | null) =>
 export function GcodeCostPanel({
   jobId,
   source,
+  machineLog,
 }: {
   readonly jobId: string;
   readonly source: AuthorityAnalysisResponse;
+  readonly machineLog: MachineLogState | null;
 }) {
   const [fields, setFields] = useState<Record<CostField, string>>({
     averagePowerWatts: "",
@@ -171,6 +175,7 @@ export function GcodeCostPanel({
             <button className="btn btn-ghost" type="button" onClick={download}>
               下载成本审计 JSON
             </button>
+            {machineLog && <MachineCostComparison estimate={result} log={machineLog.log} />}
           </div>
         )}
       </form>

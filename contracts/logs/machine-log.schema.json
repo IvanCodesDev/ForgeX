@@ -25,6 +25,17 @@
         "durationSec": { "type": "number", "minimum": 0 },
         "filamentMm": { "type": "number", "minimum": 0 },
         "filamentG": { "type": "number", "minimum": 0 },
+        "energyKwh": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "该任务的消耗电量 kWh；不是累计表读数。缺失保持未知，0 表示明确为零。"
+        },
+        "energyEvidence": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "计量设备、时间区间、读数差额及来源说明；参与成本对账时必须非空，系统不核实真实性。"
+        },
         "completedLayers": { "type": "integer", "minimum": 0 },
         "status": { "type": "string", "minLength": 1 }
       }

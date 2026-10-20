@@ -136,12 +136,15 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
   const gcodeImportHandle = useRef<GcodeImportHandle | null>(null);
   const meshImportHandle = useRef<MeshImportHandle | null>(null);
   const meshAuthorityAbort = useRef<AbortController | null>(null);
+  const machineLogReader = useRef<FileReader | null>(null);
   useEffect(
     () => () => {
       meshImportHandle.current?.cancel();
       meshAuthorityAbort.current?.abort();
       meshImportHandle.current = null;
       meshAuthorityAbort.current = null;
+      machineLogReader.current?.abort();
+      machineLogReader.current = null;
     },
     []
   );
@@ -187,7 +190,14 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
 
   const calibrationFor = useCallback(
     (parsed: ParsedGcode, log: MachineLogRecord, record: boolean): CalibrationInfo | null => {
-      if (!sim) return null;
+      if (
+        !sim ||
+        !log.gcodeBinding?.verified ||
+        log.actualTimeSec === null ||
+        log.actualTimeSec <= 0 ||
+        !(parsed.stats.timeSec > 0)
+      )
+        return null;
       const { calibrationRegistry, timeCalibration } = legacyImportServices();
       const model = calibrationRegistry.match({
         machineId: log.machineId,
@@ -210,10 +220,13 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
   );
 
   const clearGcodeChain = useCallback(() => {
+    machineLogReader.current?.abort();
+    machineLogReader.current = null;
     gcodeImportHandle.current?.cancel();
     gcodeImportHandle.current = null;
     setGcodeImport(GCODE_IMPORT_IDLE);
     setGcode(null);
+    gcodeRef.current = null;
     setMachineLog(null);
     authorityAbort.current?.abort();
     setAuthority({ mode: authorityMode, ...AUTHORITY_IDLE });
@@ -422,32 +435,60 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
       if (!sim || !ui) return;
       const current = gcodeRef.current;
       if (!sim.importedToolpath || !current) return ui.toast("请先导入要复盘的 G-code", "warn");
-      const { machineLog: machineLogService, timeCalibration } = legacyImportServices();
+      const { machineLog: machineLogService, timeCalibration, gcodeParser } = legacyImportServices();
       if (!/\.(json|csv)$/i.test(file.name || "")) return ui.toast("真机日志仅支持 JSON / CSV", "err");
       if (file.size > machineLogService.MAX_BYTES)
         return ui.toast(`真机日志超过 ${Math.round(machineLogService.MAX_BYTES / 1024 / 1024)}MB`, "err");
+      machineLogReader.current?.abort();
+      setMachineLog(null);
       const reader = new FileReader();
-      reader.onerror = () => ui.toast("真机日志读取失败", "err");
-      reader.onload = () => {
-        try {
-          const log = machineLogService.parse(String(reader.result), { name: file.name });
-          const binding = machineLogService.verifyGcodeBinding(current.parsed, log);
-          if (binding.status === "invalid" || binding.status === "unavailable" || binding.status === "mismatch") {
-            throw new Error(binding.message);
-          }
-          log.gcodeBinding = binding;
-          if (!binding.verified) log.warnings.push(binding.message);
-          const comparison = machineLogService.compare(current.parsed, log);
-          const observation = timeCalibration.observation(current.parsed, log);
-          const calibration = calibrationFor(current.parsed, log, true);
-          setMachineLog({ log, comparison, observation, calibration, binding });
-          ui.toast(`真机日志已接入：生成 ${comparison.length} 项计划/实测对比`, "ok");
-        } catch (error) {
-          console.error("[machine-log]", error);
-          ui.toast("真机日志导入失败：" + String((error as Error)?.message ?? error), "err");
+      machineLogReader.current = reader;
+      const isCurrent = () =>
+        machineLogReader.current === reader && gcodeRef.current === current && !!sim.importedToolpath;
+      reader.onerror = () => {
+        if (isCurrent()) {
+          machineLogReader.current = null;
+          ui.toast("真机日志读取失败", "err");
         }
       };
-      reader.readAsText(file);
+      reader.onload = () => {
+        void (async () => {
+          try {
+            if (!isCurrent() || !(reader.result instanceof ArrayBuffer)) return;
+            const bytes = reader.result;
+            const sourceSha256 = await gcodeParser.sha256(bytes);
+            if (!isCurrent()) return;
+            const log = machineLogService.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes), {
+              name: file.name,
+            });
+            log.sourceSha256 = sourceSha256;
+            const binding = machineLogService.verifyGcodeBinding(current.parsed, log);
+            if (binding.status === "invalid" || binding.status === "unavailable" || binding.status === "mismatch") {
+              throw new Error(binding.message);
+            }
+            log.gcodeBinding = binding;
+            if (!binding.verified) log.warnings.push(binding.message);
+            const comparison = machineLogService.compare(current.parsed, log);
+            const observation =
+              binding.verified &&
+              log.actualTimeSec !== null &&
+              log.actualTimeSec > 0 &&
+              current.parsed.stats.timeSec > 0
+                ? timeCalibration.observation(current.parsed, log)
+                : null;
+            const calibration = calibrationFor(current.parsed, log, true);
+            setMachineLog({ log, comparison, observation, calibration, binding });
+            ui.toast(`真机日志已接入：生成 ${comparison.length} 项计划/实测对比`, "ok");
+          } catch (error) {
+            if (!isCurrent()) return;
+            console.error("[machine-log]", error);
+            ui.toast("真机日志导入失败：" + String((error as Error)?.message ?? error), "err");
+          } finally {
+            if (machineLogReader.current === reader) machineLogReader.current = null;
+          }
+        })();
+      };
+      reader.readAsArrayBuffer(file);
     },
     [sim, ui, calibrationFor]
   );
@@ -515,7 +556,13 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
         ? {
             ...previous,
             comparison: machineLogService.compare(parsed, previous.log),
-            observation: timeCalibration.observation(parsed, previous.log),
+            observation:
+              previous.binding.verified &&
+              previous.log.actualTimeSec !== null &&
+              previous.log.actualTimeSec > 0 &&
+              parsed.stats.timeSec > 0
+                ? timeCalibration.observation(parsed, previous.log)
+                : null,
             calibration: calibrationFor(parsed, previous.log, false),
           }
         : previous

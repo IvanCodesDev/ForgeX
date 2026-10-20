@@ -256,12 +256,18 @@ function MachineLogSummary({ state }: { readonly state: MachineLogState }) {
             <span className="v">{`${state.log.machineId} · ${state.log.firmware || "未声明"}`}</span>
           </div>
         ) : null}
+        <div className="kv">
+          <span className="k">日志记录能耗</span>
+          <span className="v">{state.log.energyKwh === null ? "未提供" : `${state.log.energyKwh.toFixed(6)} kWh`}</span>
+        </div>
+        <div className="note">{state.log.energyEvidence || "能耗计量依据未提供"}</div>
+        <div className="note">日志原件 {state.log.sourceSha256.slice(0, 16)}…</div>
         {state.comparison.length ? (
           state.comparison.map((row) => (
             <div className="kv" key={row.name}>
               <span className="k">{row.name}</span>
               <span className={row.agrees ? "v hl" : "v warn"}>
-                {`${value(row, row.planned)} 计划 ↔ ${value(row, row.actual)} 实测 · ${Math.round(row.relDiff * 100)}%`}
+                {`${value(row, row.planned)} 计划 ↔ ${value(row, row.actual)} 实测 · ${row.relDiff === null ? "无百分比基准" : `${Math.round(row.relDiff * 100)}%`}`}
               </span>
             </div>
           ))
@@ -404,6 +410,7 @@ function GcodeSection(ctx: PageContext) {
                 key={assets.authority.jobId}
                 jobId={assets.authority.jobId}
                 source={assets.authority.result}
+                machineLog={assets.machineLog}
               />
             )}
           {gcode.parsed.warnings.map((warning) => (
@@ -413,7 +420,7 @@ function GcodeSection(ctx: PageContext) {
             id="machine-log-zone"
             icon={ICON_MOTION}
             title="追加真机任务日志"
-            subtitle="JSON / CSV · 将实际时长、耗材和完成层数与当前 G-code 计划并列"
+            subtitle="JSON / CSV · 对比实际时长、耗材、层数；可附带任务能耗及计量依据"
             onClick={() => document.getElementById("machine-log-input")?.click()}
             onFile={assets.handleMachineLogFile}
           />

@@ -15,6 +15,17 @@
   color: inherit;
   font: inherit;
 }
+.machine-cost-row {
+  border-bottom: 1px solid currentColor;
+  padding: 5px 0;
+  overflow-wrap: anywhere;
+}
+.machine-cost-evidence {
+  margin: 8px 0;
+}
+#machine-cost-comparison .note {
+  overflow-wrap: anywhere;
+}
 .gcode-cost-form textarea {
   min-height: 64px;
   resize: vertical;

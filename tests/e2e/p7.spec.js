@@ -2,6 +2,7 @@
 "use strict";
 
 const { test, expect } = require("@playwright/test");
+const { createHash } = require("crypto");
 
 async function waitBooted(page) {
   await page.waitForFunction(() => window.FX && window.FX.sim && window.FX.sim.slice, null, {
@@ -105,6 +106,7 @@ test.describe("P7 校准运营", () => {
           version: 1,
           job: {
             jobId: "P7-E2E-001",
+            gcodeSha256: createHash("sha256").update(gcode).digest("hex"),
             machineId: "FX-E2E-CAL",
             firmware: "Klipper 0.12",
             durationSec: 130,
