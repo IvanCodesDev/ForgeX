@@ -269,7 +269,11 @@ async function main() {
       mesh.bytes !== meshBytes.length ||
       mesh.unit !== null ||
       mesh.volumeCm3 !== null ||
+      mesh.schemaVersion !== "1.1" ||
       mesh.topology.boundaryEdges !== 3 ||
+      mesh.topology.nonManifoldVertices !== 0 ||
+      mesh.topology.vertexManifold !== true ||
+      mesh.topology.connectedComponents !== 1 ||
       mesh.topology.selfIntersectionChecked !== false
     ) {
       throw new Error(`mesh raw-byte binding or open-surface contract invalid: ${JSON.stringify(mesh)}`);

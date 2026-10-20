@@ -145,12 +145,11 @@ public sealed partial class MeshAnalyzer
         if (dropped > 0) warnings.Add($"已丢弃 {dropped} 个零面积三角面。");
         var min = new Point(double.MaxValue, double.MaxValue, double.MaxValue);
         var max = new Point(double.MinValue, double.MinValue, double.MinValue);
-        var vertexIds = new Dictionary<Point, int>();
-        var edges = new Dictionary<(int, int), (int Count, int Direction)>();
         var area = 0d;
         // Translate to a nearby reference to avoid catastrophic cancellation for offset models.
         var origin = valid[0].A;
         var volume = 0d;
+        Span<Point> points = stackalloc Point[3];
         for (var i = 0; i < valid.Count; i++)
         {
             if (i % 1024 == 0) ct.ThrowIfCancellationRequested();
@@ -159,38 +158,26 @@ public sealed partial class MeshAnalyzer
             var cross = (b - a).Cross(c - a);
             area += Math.Sqrt(cross.Dot(cross)) / 2;
             volume += a.Dot(b.Cross(c)) / 6;
-            var ids = new int[3];
-            var points = new[] { t.A, t.B, t.C };
+            points[0] = t.A; points[1] = t.B; points[2] = t.C;
             for (var k = 0; k < 3; k++)
             {
                 var p = points[k];
                 min = new Point(Math.Min(min.X, p.X), Math.Min(min.Y, p.Y), Math.Min(min.Z, p.Z));
                 max = new Point(Math.Max(max.X, p.X), Math.Max(max.Y, p.Y), Math.Max(max.Z, p.Z));
-                if (!vertexIds.TryGetValue(p, out var id)) { id = vertexIds.Count; vertexIds.Add(p, id); }
-                ids[k] = id;
-            }
-            for (var k = 0; k < 3; k++)
-            {
-                var x = ids[k]; var y = ids[(k + 1) % 3];
-                var key = (Math.Min(x, y), Math.Max(x, y));
-                var edge = edges.GetValueOrDefault(key);
-                edges[key] = (edge.Count + 1, edge.Direction + (x < y ? 1 : -1));
             }
         }
-        var boundary = edges.Values.Count(e => e.Count == 1);
-        var nonManifold = edges.Values.Count(e => e.Count > 2);
-        var inconsistent = edges.Values.Count(e => e.Count == 2 && e.Direction != 0);
-        var closed = boundary == 0 && nonManifold == 0;
-        var oriented = inconsistent == 0;
-        if (!closed || !oriented) warnings.Add("网格未通过闭合边或朝向一致性检查，不提供体积数值。");
+        var topology = InspectTopology(valid, ct);
+        var canMeasureVolume = topology.ClosedEdgeManifold && topology.OrientationConsistent && topology.VertexManifold && topology.ConnectedComponents == 1 && objects == 1;
+        if (!topology.ClosedEdgeManifold || !topology.OrientationConsistent) warnings.Add("网格未通过闭合边或朝向一致性检查，不提供体积数值。");
+        if (!topology.VertexManifold) warnings.Add($"检测到 {topology.NonManifoldVertices} 个非流形顶点，顶点周围曲面连接异常，不提供体积数值。");
+        if (topology.ConnectedComponents > 1) warnings.Add($"网格包含 {topology.ConnectedComponents} 个面连通分量，未判定壳体包含关系或执行布尔并集，不提供体积数值。");
         if (objects > 1) warnings.Add("多对象未执行布尔并集，不提供聚合体积；表面积为逐三角面累加，可能包含内部面。");
-        if (volume < 0) warnings.Add("网格整体有向体积为负；体积按绝对值展示，请检查面朝向。");
-        warnings.Add("仅检查几何与边邻接，未检查自相交、顶点流形性或组件重叠；体积为几何估算，不是实测材料体积。");
-        return new MeshAnalysisResult("1.0", "forgex-mesh-csharp", "1.1.0",
+        if (volume < 0) warnings.Add(canMeasureVolume ? "网格整体有向体积为负；体积按绝对值展示，请检查面朝向。" : "网格整体有向体积为负；本次不提供体积数值，请检查面朝向。");
+        warnings.Add("已检查边邻接、顶点局部连通性与面连通分量；仅焊接坐标完全相同的顶点，未检查自相交或组件重叠；体积为几何估算，不是实测材料体积。");
+        return new MeshAnalysisResult("1.1", "forgex-mesh-csharp", "1.2.0",
             Convert.ToHexStringLower(SHA256.HashData(bytes.AsSpan(0, length))), length, format, unit,
             valid.Count, dropped, objects, new MeshSize(max.X - min.X, max.Y - min.Y, max.Z - min.Z),
-            closed && oriented && objects == 1 ? Math.Abs(volume) / 1000 : null, area / 100,
-            new MeshTopology(boundary, nonManifold, inconsistent, closed, oriented), warnings);
+            canMeasureVolume ? Math.Abs(volume) / 1000 : null, area / 100, topology, warnings);
     }
 
     [GeneratedRegex(@"\s+", RegexOptions.CultureInvariant)]

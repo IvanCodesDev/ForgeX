@@ -513,6 +513,25 @@ function MeshSummary({ state }: { readonly state: MeshImportState }) {
               {state.authority.result.topology.inconsistentEdges}
             </span>
           </div>
+          <div data-mesh-topology="vertices-components">
+            <div className="kv" data-mesh-topology="vertices">
+              <span className="k">非流形顶点</span>
+              <span className={state.authority.result.topology.vertexManifold ? "v" : "v warn"}>
+                {state.authority.result.topology.nonManifoldVertices}
+              </span>
+            </div>
+            <div className="kv" data-mesh-topology="components">
+              <span className="k">面连通分量</span>
+              <span className={state.authority.result.topology.connectedComponents === 1 ? "v" : "v warn"}>
+                {state.authority.result.topology.connectedComponents}
+              </span>
+            </div>
+          </div>
+          {state.authority.result.volumeCm3 === null && (
+            <div className="note" data-mesh-volume="unavailable">
+              原件未满足后端体积估算条件；浏览器预览体积仅供展示，请先核对以下问题。
+            </div>
+          )}
           {state.authority.result.warnings.map((warning) => (
             <div className="note" key={warning}>
               {warning}

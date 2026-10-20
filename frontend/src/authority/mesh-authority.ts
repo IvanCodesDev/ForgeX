@@ -39,7 +39,7 @@ export function parseMeshAuthorityResponse(
 ): MeshAnalysisResult {
   const root = record(value);
   if (
-    root.schemaVersion !== "1.0" ||
+    root.schemaVersion !== "1.1" ||
     root.engine !== "forgex-mesh-csharp" ||
     typeof root.engineVersion !== "string" ||
     !root.engineVersion.trim() ||
@@ -67,16 +67,22 @@ export function parseMeshAuthorityResponse(
   const topology = record(root.topology);
   for (const key of ["boundaryEdges", "nonManifoldEdges", "inconsistentEdges"])
     numeric(topology[key], true, 0, 3 * (root.triangleCount as number));
+  numeric(topology.nonManifoldVertices, true, 0, 3 * (root.triangleCount as number));
+  numeric(topology.connectedComponents, true, 1, root.triangleCount as number);
   const closed = topology.boundaryEdges === 0 && topology.nonManifoldEdges === 0;
   const oriented = topology.inconsistentEdges === 0;
+  const vertexManifold = topology.nonManifoldVertices === 0;
   if (
     topology.closedEdgeManifold !== closed ||
     topology.orientationConsistent !== oriented ||
+    topology.vertexManifold !== vertexManifold ||
+    ((topology.nonManifoldEdges as number) > 0 && vertexManifold) ||
     topology.selfIntersectionChecked !== false
   )
     throw new Error("网格权威拓扑状态不一致");
-  if (closed && oriented && root.objectCount === 1) numeric(root.volumeCm3);
-  else if (root.volumeCm3 !== null) throw new Error("未闭合或多对象网格不应给出体积数值");
+  if (closed && oriented && vertexManifold && topology.connectedComponents === 1 && root.objectCount === 1)
+    numeric(root.volumeCm3);
+  else if (root.volumeCm3 !== null) throw new Error("未通过拓扑检查或包含多对象/多分量的网格不应给出体积数值");
   if (
     !Array.isArray(root.warnings) ||
     root.warnings.length > 16 ||

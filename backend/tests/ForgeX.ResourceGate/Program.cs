@@ -20,6 +20,7 @@ try
     await ServerProviderSection.RunAsync(gate);
     await HealthSection.RunAsync(gate);
     await MeshSection.RunAsync(gate);
+    await MeshTopologySection.RunAsync(gate);
     await FileCollectionSection.RunAsync(gate);
     await SharesSection.RunAsync(gate);
     await DatasourcesSection.RunAsync(gate);

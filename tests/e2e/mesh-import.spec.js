@@ -222,6 +222,14 @@ test.describe("STL / 3MF 导入（Worker 浏览器预览解析）", () => {
     fs.writeFileSync(path.join(fixtureDir, "box.stl"), binaryStl(boxTriangles(5, 7, 3, 25, 27, 13)));
     fs.writeFileSync(path.join(fixtureDir, "pair.3mf"), threeMf());
     fs.writeFileSync(path.join(fixtureDir, "production.3mf"), threeMf(true));
+    fs.writeFileSync(
+      path.join(fixtureDir, "pinched.stl"),
+      binaryStl([...boxTriangles(0, 0, 0, 10, 10, 10), ...boxTriangles(-10, -10, -10, 0, 0, 0)])
+    );
+    fs.writeFileSync(
+      path.join(fixtureDir, "shells.stl"),
+      binaryStl([...boxTriangles(0, 0, 0, 10, 10, 10), ...boxTriangles(20, 0, 0, 30, 10, 10)])
+    );
     // 扩展名对但内容坏：声明 4 亿个三角形的 100 字节文件
     const broken = Buffer.alloc(100);
     broken.writeUInt32LE(400_000_000, 80);
@@ -380,6 +388,34 @@ test.describe("STL / 3MF 导入（Worker 浏览器预览解析）", () => {
       await expect(page.locator("#mesh-authority-summary")).toContainText("24 面");
       await expect(page.locator('[data-mesh-diff="true"]')).toHaveCount(0);
     }
+  });
+
+  test("点接触与分离壳体：闭合边不再误报可用体积，界面显示顶点及连通分量", async ({ page }) => {
+    test.skip(process.env.E2E_MESH_AUTHORITY !== "dotnet", "专项使用真实 C# 拓扑检查");
+    await openImportPage(page);
+    for (const [file, vertices] of [
+      ["pinched.stl", 1],
+      ["shells.stl", 0],
+    ]) {
+      await importMesh(page, path.join(fixtureDir, file));
+      await expect(page.locator("#mesh-summary")).toContainText(file);
+      await expect(page.locator('[data-mesh-authority="done"]')).toBeVisible();
+      const authority = page.locator("#mesh-authority-summary");
+      await expect(authority).toContainText("体积不可用");
+      await expect(authority).toContainText("边界 0 · 非流形边 0 · 朝向冲突 0");
+      await expect(authority.locator('[data-mesh-topology="vertices"] .v')).toHaveText(String(vertices));
+      await expect(authority.locator('[data-mesh-topology="components"] .v')).toHaveText("2");
+      await expect(authority.locator('[data-mesh-volume="unavailable"]')).toContainText("预览体积仅供展示");
+      await expect(authority).toContainText("未判定壳体包含关系");
+      if (vertices) {
+        const artifactDir = path.resolve(__dirname, "../../backend/artifacts");
+        fs.mkdirSync(artifactDir, { recursive: true });
+        await page
+          .locator('[data-react-only="stage-9.3 mesh-import"]')
+          .screenshot({ path: path.join(artifactDir, "mesh-topology-panel.png") });
+      }
+    }
+    expect(await page.evaluate(() => window.__meshGate.errors)).toEqual([]);
   });
 
   test("坏文件：只给错误 toast，当前模型与切片保持不变", async ({ page }) => {

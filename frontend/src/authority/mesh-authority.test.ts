@@ -10,9 +10,9 @@ const env: ImportMetaEnv = {
   VITE_NODE_API_KEY: "mesh-key",
 };
 const fixture = () => ({
-  schemaVersion: "1.0",
+  schemaVersion: "1.1",
   engine: "forgex-mesh-csharp",
-  engineVersion: "1.0.0",
+  engineVersion: "1.2.0",
   sha256: digest,
   bytes: 1,
   format: "stl-binary",
@@ -29,6 +29,9 @@ const fixture = () => ({
     inconsistentEdges: 0,
     closedEdgeManifold: true,
     orientationConsistent: true,
+    nonManifoldVertices: 0,
+    vertexManifold: true,
+    connectedComponents: 1,
     selfIntersectionChecked: false,
   },
   warnings: ["未检查自相交"],
@@ -67,6 +70,7 @@ describe("mesh authority boundary", () => {
   it.each([
     ["engine", { engine: "browser" }],
     ["schema", { schemaVersion: "2" }],
+    ["old-schema", { schemaVersion: "1.0" }],
     ["hash", { sha256: "b".repeat(64) }],
     ["bytes", { bytes: 2 }],
     ["format", { format: "3mf" }],
@@ -78,9 +82,34 @@ describe("mesh authority boundary", () => {
     ["volume", { volumeCm3: Infinity }],
     ["topology", { topology: { ...fixture().topology, closedEdgeManifold: false } }],
     ["intersections", { topology: { ...fixture().topology, selfIntersectionChecked: true } }],
+    ["missing-vertex-check", { topology: { ...fixture().topology, nonManifoldVertices: undefined } }],
+    ["vertex-manifold-state", { topology: { ...fixture().topology, vertexManifold: false } }],
+    ["negative-vertex-count", { topology: { ...fixture().topology, nonManifoldVertices: -1 } }],
+    ["too-many-vertices", { topology: { ...fixture().topology, nonManifoldVertices: 13 } }],
+    ["empty-components", { topology: { ...fixture().topology, connectedComponents: 0 } }],
+    ["too-many-components", { topology: { ...fixture().topology, connectedComponents: 5 } }],
+    ["fractional-components", { topology: { ...fixture().topology, connectedComponents: 1.5 } }],
     ["warnings", { warnings: [42] }],
   ])("rejects response drift: %s", (_name, patch) => {
     expect(() => parseMeshAuthorityResponse({ ...fixture(), ...patch }, digest, 1, "stl")).toThrow();
+  });
+  it("withholds volume for pinched vertices and disconnected shells despite closed edges", () => {
+    const pinched = {
+      ...fixture(),
+      volumeCm3: null,
+      topology: { ...fixture().topology, nonManifoldVertices: 1, vertexManifold: false, connectedComponents: 2 },
+    };
+    const shells = { ...fixture(), volumeCm3: null, topology: { ...fixture().topology, connectedComponents: 2 } };
+    for (const response of [pinched, shells]) {
+      expect(parseMeshAuthorityResponse(response, digest, 1, "stl").volumeCm3).toBeNull();
+      expect(() => parseMeshAuthorityResponse({ ...response, volumeCm3: 1 }, digest, 1, "stl")).toThrow(/不应给出体积/);
+    }
+  });
+  it("rejects a non-manifold edge incorrectly paired with manifold vertices", () => {
+    const topology = { ...fixture().topology, nonManifoldEdges: 1, closedEdgeManifold: false };
+    expect(() => parseMeshAuthorityResponse({ ...fixture(), volumeCm3: null, topology }, digest, 1, "stl")).toThrow(
+      /拓扑状态/
+    );
   });
   it("posts original bytes with API key and generated endpoint", async () => {
     const fetcher = vi.fn().mockResolvedValue(Response.json(fixture()));

@@ -16,7 +16,7 @@
       "post": {
         "operationId": "analyzeMesh",
         "summary": "Inspect bounded STL and 3MF geometry with Production part references",
-        "description": "Requires the caller boundary. Raw bytes are not persisted. STL assumes millimeters. 3MF supports core geometry and Production namespace part references declared by the root model relationships. Object IDs are scoped by model part; part units are converted into parent units before applying reference transforms. Only the root build is executed; cross-part components in child models and unknown required extensions are rejected. This is geometry inspection, not full schema or UUID certification. Edge adjacency is checked; self-intersection, vertex manifoldness and overlaps are not checked. Volume is a geometric estimate and is null when edge closure or orientation fails or multiple objects require an unimplemented boolean union. Limits: 64 MiB upload/declared ZIP expansion/actual XML expansion, 16 MiB XML, 256 ZIP entries, 250000 triangles, 4096 resource objects/instances and nesting depth 32. One request per process, 20 second timeout.",
+        "description": "Requires the caller boundary. Raw bytes are not persisted. STL assumes millimeters. 3MF supports core geometry and Production namespace part references declared by the root model relationships. Object IDs are scoped by model part; part units are converted into parent units before applying reference transforms. Only the root build is executed; cross-part components in child models and unknown required extensions are rejected. This is geometry inspection, not full schema or UUID certification. Schema 1.1 checks edge adjacency, vertex fans and face-connected components using exact-coordinate welding. Self-intersection and overlaps are not checked. Volume is a geometric estimate and is null unless there is exactly one object and one face-connected component with closed edges, manifold vertices and consistent orientation. Shell containment and boolean union are not implemented. Limits: 64 MiB upload/declared ZIP expansion/actual XML expansion, 16 MiB XML, 256 ZIP entries, 250000 triangles, 4096 resource objects/instances and nesting depth 32. One request per process, 20 second timeout.",
         "parameters": [
           {
             "name": "format",
@@ -702,7 +702,7 @@
         "properties": {
           "schemaVersion": {
             "type": "string",
-            "const": "1.0"
+            "const": "1.1"
           },
           "engine": {
             "type": "string",
@@ -802,6 +802,9 @@
           "inconsistentEdges",
           "closedEdgeManifold",
           "orientationConsistent",
+          "nonManifoldVertices",
+          "vertexManifold",
+          "connectedComponents",
           "selfIntersectionChecked"
         ],
         "properties": {
@@ -822,6 +825,20 @@
           },
           "orientationConsistent": {
             "type": "boolean"
+          },
+          "nonManifoldVertices": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Vertices with multiple incident face fans, invalid boundary degree or incident non-manifold edges after exact-coordinate welding."
+          },
+          "vertexManifold": {
+            "type": "boolean",
+            "description": "True when nonManifoldVertices is zero; boundary vertices are allowed. This is not a self-intersection or watertightness certification."
+          },
+          "connectedComponents": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Connected components of valid triangles joined by shared undirected edges. A shared vertex alone does not connect faces."
           },
           "selfIntersectionChecked": {
             "type": "boolean",
