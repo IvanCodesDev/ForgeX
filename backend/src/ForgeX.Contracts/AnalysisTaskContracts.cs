@@ -42,7 +42,24 @@ public sealed record AnalysisTaskListResponseDto(
 /// </summary>
 public sealed record AnalysisTaskCreateRequestDto(
     [property: JsonPropertyName("question")] string? Question,
-    [property: JsonPropertyName("datasourceId")] string? DatasourceId);
+    [property: JsonPropertyName("datasourceId")] string? DatasourceId,
+    [property: JsonPropertyName("ai")] AnalysisAiOverrideDto? Ai = null);
+
+/// <summary>
+/// Stage 8.6c-2b-ii: a caller-supplied OpenAI-compatible endpoint for this task only (Node
+/// aiBaseUrl / aiApiKey / aiModel). The key lives in the request and the in-memory work item —
+/// never in the persisted snapshot, a log line or any response.
+/// </summary>
+public sealed record AnalysisAiOverrideDto(
+    [property: JsonPropertyName("baseUrl")] string? BaseUrl,
+    [property: JsonPropertyName("apiKey")] string? ApiKey,
+    [property: JsonPropertyName("model")] string? Model);
+
+/// <summary>Node gate.check verdict as returned in the 202 (remaining null = unlimited).</summary>
+public sealed record AnalysisQuotaDto(
+    [property: JsonPropertyName("ok")] bool Ok,
+    [property: JsonPropertyName("remaining")] long? Remaining,
+    [property: JsonPropertyName("reason")] string? Reason);
 
 /// <summary>
 /// 202 body for a created task. Field names follow Node's POST /api/analyze response so the
@@ -52,5 +69,5 @@ public sealed record AnalysisTaskAcceptedDto(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("engine")] string Engine,
     [property: JsonPropertyName("willUseAi")] bool WillUseAi,
-    [property: JsonPropertyName("quota")] JsonElement? Quota,
+    [property: JsonPropertyName("quota")] AnalysisQuotaDto? Quota,
     [property: JsonPropertyName("links")] AnalysisTaskLinksDto Links);

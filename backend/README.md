@@ -255,16 +255,20 @@ page as a full HTML comparison after entity canonicalization (Node's `escapeHtml
 .NET's `HtmlEncoder` writes `&#x27;` and numeric entities for non-ASCII text), wrong-key and foreign
 revocation, revoke / re-revoke / revoked-page semantics. Since Stage 8.6c-1 the postgres leg also
 runs the analysis-task switch (`ANALYSIS_TASKS_AUTHORITY=csharp`): the csharp-authority Node
-instance creates its rules-engine tasks through `POST /api/v1/analysis-tasks` (executed in-process by
-the C# analytics engine since 8.6c-2b-i, persisted per event into `forgex.node_analysis_tasks`) and
-reads result / poll through `GET /api/v1/analysis-tasks/{id}` and the progress stream through
-`/{id}/events` (re-framed by Node into unnamed `data:` frames). The node-authority instance still
-creates in Node with the JS engine, so the comparison proves the C#-created report, event sequence
-and snapshot equal Node's (numbers within a 1e-9 relative tolerance — JS and .NET `exp`/`pow` differ
-in the last digits of p-values). On the file leg C# has no analysis-task provider and both instances
-stay on Node (recorded in the artifact's `authority.analysisTasks`). The ResourceGate section
+instance creates every task through `POST /api/v1/analysis-tasks` (executed in-process since 8.6c-2b:
+the C# analytics engine for the rules leg, the OpenAI-compatible provider with Node's prompt, merge
+rules, cost gate and result cache for the AI leg; persisted per event into
+`forgex.node_analysis_tasks`) and reads result / poll through `GET /api/v1/analysis-tasks/{id}` and
+the progress stream through `/{id}/events` (re-framed by Node into unnamed `data:` frames). The
+node-authority instance still creates in Node with the JS engine and Node's own provider / gate /
+cache, both talking to one fake OpenAI endpoint, so the comparison proves the C#-created report
+(merged narrative, token usage, degrade section), event sequence, quota verdicts and snapshot equal
+Node's (numbers within a 1e-9 relative tolerance — JS and .NET `exp`/`pow` differ in the last digits
+of p-values). On the file leg C# has no analysis-task provider and both instances stay on Node
+(recorded in the artifact's `authority.analysisTasks`). The ResourceGate section
 `analysis-tasks-postgres` covers the C# side alone: validation messages, execution to `done`, the JS
-report shape, event replay, foreign-tenant 404s and stale-running recovery. The fake-sidecar contract tests live in
+report shape, event replay, foreign-tenant 404s, stale-running recovery, the BYO endpoint (bearer
+header, prompt, key never persisted), cache hits and quota degradation. The fake-sidecar contract tests live in
 `tests/resource-authority.test.js`, `tests/shares-authority.test.js` and
 `tests/analysis-tasks-authority.test.js`.
 CI provides a PostgreSQL service and applies the migrations with `npm run postgres:migrate -- --require`

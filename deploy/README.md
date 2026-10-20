@@ -114,12 +114,18 @@ as a full HTML document, so a `csharp` cut-over renders byte-for-byte the same c
 
 `ANALYSIS_TASKS_AUTHORITY=csharp` moves the read routes — `GET /api/analyze/:id/result`, the
 `GET /api/analyze/:id` poll and (since 8.6c-2a) the `/stream` SSE — onto the C# endpoints
-`GET /api/v1/analysis-tasks/{id}` and `/{id}/events`. Since 8.6c-2b-i the switch also moves creation
-for the rules-engine leg: a `POST /api/analyze` that will not use AI (process provider is the rules
-engine and the request brings no BYO endpoint) is validated by Node and created through C#
-`POST /api/v1/analysis-tasks`, where an in-process host executes it with the C# analytics engine and
-persists the same per-event snapshots Node wrote; AI tasks stay in Node until 8.6c-2b-ii brings the
-provider, cost gate and cache over. Host tuning on `forgex-api`: `AnalysisTasks__Concurrency` (2),
+`GET /api/v1/analysis-tasks/{id}` and `/{id}/events`. Since 8.6c-2b the switch also moves creation:
+every `POST /api/analyze` is validated by Node (identity, rate limit, question, BYO endpoint syntax)
+and created through C# `POST /api/v1/analysis-tasks`, where an in-process host executes it — the
+rules engine directly, or the OpenAI-compatible provider with the same prompt, merge rules, cost gate
+and result cache Node had — and persists the same per-event snapshots Node wrote. The AI side of
+`forgex-api` is configured like Node's `OPENAI_*` / `AI_*` / `RESULT_CACHE_*`: `Analysis__Provider`
+(`auto` | `openai` | `rules`), `OpenAi__BaseUrl` / `OpenAi__ApiKey` / `OpenAi__Model` /
+`OpenAi__TimeoutMs` (120000), `Analysis__AiConcurrency` (2), `Analysis__AiQueueMax` (8),
+`Analysis__AiDailyPerCaller` (20), `Analysis__AiDailyGlobal` (200, 0 = unlimited),
+`Analysis__CacheTtlMs` (1800000), `Analysis__CacheMax` (200). The gate and the cache are in-process
+(they reset with the process, like a single Node instance); a caller-supplied endpoint only ever
+lives in the request and the in-memory work item. Host tuning: `AnalysisTasks__Concurrency` (2),
 `AnalysisTasks__QueueCapacity` (256, a full queue back-pressures instead of answering 503),
 `AnalysisTasks__TtlMs` (3600000, Node's `TASK_TTL_MS`), `AnalysisTasks__StaleRunningMs` (60000 — a
 running row nobody updated for that long is recovered as failed「服务重启时任务中断」on the owner's

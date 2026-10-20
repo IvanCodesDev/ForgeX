@@ -3,18 +3,19 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Channels;
 using ForgeX.Analytics;
+using ForgeX.Application;
 using ForgeX.Infrastructure;
 
 namespace ForgeX.Api;
 
 /// <summary>
-/// Stage 8.6c-2b (rules-engine leg) — the in-process host that executes analysis tasks created
-/// through <c>POST /api/v1/analysis-tasks</c>. It mirrors Node's TaskStore step by step: the same
-/// three progress events the local rules provider emits, one full-snapshot upsert per event, the
-/// same terminal event shapes (<c>_finish</c> / <c>_fail</c>), and a report that is the JS report —
-/// engine <c>server-rules</c>, the datasource's provenance attached verbatim, <c>taskId</c> /
-/// <c>cached</c> stamped on. Anything Node's SSE re-framing or share page consumes therefore looks
-/// exactly like it did when Node executed the task.
+/// Stage 8.6c-2b — the in-process host that executes analysis tasks created through
+/// <c>POST /api/v1/analysis-tasks</c>. It mirrors Node's TaskStore step by step: the same progress
+/// events the local rules provider and the OpenAI-compatible provider emit, one full-snapshot upsert
+/// per event, the same terminal event shapes (<c>_finish</c> / <c>_fail</c>), the same cache-hit,
+/// quota-degrade and queue behaviour, and a report that is the JS report — engine id, the
+/// datasource's provenance attached verbatim, <c>taskId</c> / <c>cached</c> stamped on. Anything
+/// Node's SSE re-framing or share page consumes therefore looks exactly like it did when Node ran the task.
 /// </summary>
 internal sealed record AnalysisTaskOptions(long TtlMs, int Concurrency, int QueueCapacity, long StaleRunningMs)
 {
@@ -24,7 +25,18 @@ internal sealed record AnalysisTaskOptions(long TtlMs, int Concurrency, int Queu
     public const long DefaultStaleRunningMs = 60 * 1000;
 }
 
-internal sealed record AnalysisTaskWorkItem(AnalysisTaskRecord Record, JsonElement Rows, JsonElement Provenance);
+/// <summary>
+/// Everything the worker needs, captured at creation time so ownership was checked once. The AI
+/// endpoint (if any) rides only here — never in the persisted record, never in a log line.
+/// </summary>
+internal sealed record AnalysisTaskWorkItem(
+    AnalysisTaskRecord Record,
+    JsonElement Rows,
+    JsonElement Provenance,
+    string DatasourceKey,
+    AiEndpoint? Ai,
+    string ProviderId,
+    string CacheVariant);
 
 internal sealed class AnalysisTaskQueue
 {
@@ -38,7 +50,7 @@ internal sealed class AnalysisTaskQueue
             SingleReader = false,
             SingleWriter = false,
             // Rules-engine tasks are cheap and Node never rejected one: a full queue back-pressures the
-            // create request instead of answering 503.
+            // create request instead of answering 503. AI admission is the cost gate's job, not the queue's.
             FullMode = BoundedChannelFullMode.Wait,
         });
     }
@@ -64,13 +76,17 @@ internal sealed class AnalysisTaskRuntime
 
 internal sealed class AnalysisTaskWorker(
     AnalysisTaskQueue queue,
-    PostgresAnalysisTaskRepository repository,
     AnalysisTaskRuntime runtime,
     AnalysisTaskOptions options,
+    AnalysisTaskExecutor executor,
+    AnalysisProviderSelection providers,
+    OpenAiNarrativeClient openAi,
     ILogger<AnalysisTaskWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Node probes the configured AI endpoint at start-up and demotes to the rules engine when it is dead.
+        await providers.ProbeAsync(openAi, stoppingToken);
         var consumers = new Task[Math.Max(1, options.Concurrency)];
         for (var index = 0; index < consumers.Length; index++)
         {
@@ -86,7 +102,7 @@ internal sealed class AnalysisTaskWorker(
             runtime.Register(item.Record.Id);
             try
             {
-                await AnalysisTaskExecutor.RunAsync(item, repository, stoppingToken);
+                await executor.RunAsync(item, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -105,46 +121,56 @@ internal sealed class AnalysisTaskWorker(
     }
 }
 
-internal static class AnalysisTaskExecutor
+/// <summary>Node TaskStore._run / _runProvider / _degrade with both providers, on top of the persisted snapshot.</summary>
+internal sealed class AnalysisTaskExecutor(
+    PostgresAnalysisTaskRepository repository,
+    AnalysisCostGate gate,
+    AnalysisResultCache cache,
+    AnalysisAiOptions aiOptions,
+    AnalysisGateOptions gateOptions,
+    OpenAiNarrativeClient openAi,
+    IServiceProvider services,
+    ILogger<AnalysisTaskExecutor> logger)
 {
-    public const string Engine = "server-rules";
+    public const string RulesEngine = AnalysisProviderSelection.RulesId;
+    public const string OpenAiEngine = AnalysisProviderSelection.OpenAiId;
 
     /// <summary>Node providers.js localProvider steps — identical stage / message / progress triples.</summary>
-    private static readonly (string Stage, string Message, double Progress)[] Steps =
+    private static readonly (string Stage, string Message, double Progress)[] RulesSteps =
     [
         ("intent", "解析问题意图", 0.2),
         ("aggregate", "聚合与统计检验", 0.6),
         ("generate", "生成结论与建议", 0.9),
     ];
 
-    public static async Task RunAsync(AnalysisTaskWorkItem item, PostgresAnalysisTaskRepository repository, CancellationToken cancellationToken)
+    public async Task RunAsync(AnalysisTaskWorkItem item, CancellationToken cancellationToken)
     {
-        var record = item.Record;
-        var events = new JsonArray();
+        var task = new TaskState(item.Record, repository);
         try
         {
-            foreach (var (stage, message, progress) in Steps)
+            var cacheKey = AnalysisResultCache.Key(
+                item.Record.Question,
+                item.DatasourceKey,
+                item.CacheVariant.Length > 0 ? item.ProviderId + ":" + item.CacheVariant : item.ProviderId,
+                item.Record.CredentialScope);
+            var cached = cache.Get(cacheKey);
+            if (cached is not null)
             {
-                events.Add(Event(events.Count + 1, stage, message, progress));
-                record = Snapshot(record, "running", events, report: null, error: null);
-                await repository.UpsertAsync(record, cancellationToken);
+                // A cache hit is still reported honestly — the user is entitled to know the result was not just computed.
+                await task.EmitAsync("cache", "命中缓存，未重复调用分析引擎", 1, cancellationToken);
+                var hit = (JsonObject)JsonNode.Parse(cached)!;
+                hit["taskId"] = item.Record.Id;
+                hit["cached"] = true;
+                await task.FinishAsync(hit.ToJsonString(), cancellationToken);
+                return;
             }
 
-            var rows = AnalysisTaskRows.Map(item.Rows);
-            var report = AnalyticsReportEngine.AnalyzeMigratedIntent(record.Question, rows, provenance: null);
-            var reportJson = ReportJson(report, item.Provenance, record.Id);
-
-            var done = new JsonObject
-            {
-                ["seq"] = events.Count + 1,
-                ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                ["done"] = true,
-                ["progress"] = 1,
-                ["message"] = "分析完成",
-            };
-            events.Add(done);
-            record = Snapshot(record, "done", events, reportJson, error: null);
-            await repository.UpsertAsync(record, CancellationToken.None);
+            var report = await RunProviderAsync(item, task, cancellationToken);
+            report["taskId"] = item.Record.Id;
+            report["cached"] = false;
+            var json = report.ToJsonString();
+            cache.Set(cacheKey, json);
+            await task.FinishAsync(json, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -153,85 +179,239 @@ internal static class AnalysisTaskExecutor
         catch (Exception exception)
         {
             var error = string.IsNullOrWhiteSpace(exception.Message) ? "分析失败" : exception.Message;
-            var failed = new JsonObject
-            {
-                ["seq"] = events.Count + 1,
-                ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                ["done"] = true,
-                ["error"] = error,
-                ["message"] = "分析失败：" + error,
-            };
-            events.Add(failed);
-            record = Snapshot(record, "failed", events, report: null, error);
-            await repository.UpsertAsync(record, CancellationToken.None);
+            logger.LogError("task failed taskId={TaskId} engine={Engine} error={Error}", item.Record.Id, item.ProviderId,
+                OpenAiNarrativeClient.MaskSecret(error, item.Ai?.ApiKey));
+            await task.FailAsync(OpenAiNarrativeClient.MaskSecret(error, item.Ai?.ApiKey), CancellationToken.None);
         }
     }
 
-    private static JsonObject Event(int seq, string stage, string message, double progress) => new()
+    /// <summary>Node _runProvider: the AI path passes the cost gate first; exhausted budget or a full queue degrades, never errors.</summary>
+    private async Task<JsonObject> RunProviderAsync(AnalysisTaskWorkItem item, TaskState task, CancellationToken cancellationToken)
     {
-        ["seq"] = seq,
-        ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-        ["stage"] = stage,
-        ["message"] = message,
-        ["progress"] = progress,
-    };
-
-    /// <summary>Node PostgresAnalysisStore._snapshot: progress / phase / message are derived from the last event.</summary>
-    private static AnalysisTaskRecord Snapshot(AnalysisTaskRecord record, string status, JsonArray events, string? report, string? error)
-    {
-        var last = events.Count > 0 ? events[events.Count - 1] as JsonObject : null;
-        var progress = Number(last?["progress"]) ?? (status == "done" ? 1 : 0);
-        var stage = last?["stage"]?.GetValue<string>();
-        // Node quirk kept on purpose: a failed task's terminal event has no stage, and the fallback
-        // only knows "done" or "running" — so failed rows carry phase "running".
-        var phase = stage ?? (status == "done" ? "done" : "running");
-        var message = last?["message"]?.GetValue<string>() ?? string.Empty;
-        var now = DateTimeOffset.UtcNow;
-        return record with
+        if (item.Ai is null)
         {
-            Status = status,
-            Progress = Math.Clamp(progress, 0, 1),
-            Phase = phase.Length > 64 ? phase[..64] : phase,
-            Message = message,
-            ReportJson = report,
-            ErrorMessage = error,
-            EventsJson = events.ToJsonString(),
-            FinishedAt = status is "done" or "failed" ? now : null,
-            UpdatedAt = now,
-        };
+            return await RulesAsync(item, task, cancellationToken);
+        }
+
+        var verdict = gate.Check(item.Record.OwnerId);
+        if (!verdict.Ok)
+        {
+            logger.LogInformation("quota exhausted, degrading to rules engine taskId={TaskId} code={Code}", item.Record.Id, verdict.Code);
+            await task.EmitAsync("quota", "AI 额度已用尽，降级为规则引擎", 0.1, cancellationToken);
+            return await DegradeAsync(item, task, verdict.Reason ?? string.Empty, cancellationToken);
+        }
+
+        Task<Action> slot;
+        try
+        {
+            var admission = gate.Acquire();
+            slot = admission.Slot;
+            if (admission.QueuedPosition is { } position)
+            {
+                await task.EmitAsync("queued",
+                    "排队中：前面还有 " + (position - 1) + " 个任务（并发上限 " + gateOptions.AiConcurrency + "）",
+                    0.03, cancellationToken);
+            }
+        }
+        catch (AnalysisQueueFullException exception)
+        {
+            // The queue is full too: degrade rather than fail — the user wants a conclusion, not a 503.
+            logger.LogWarning("ai queue full, degrading taskId={TaskId}", item.Record.Id);
+            return await DegradeAsync(item, task, exception.Message, cancellationToken);
+        }
+
+        var release = await slot;
+        try
+        {
+            gate.Consume(item.Record.OwnerId);
+            return await OpenAiAsync(item, task, cancellationToken);
+        }
+        finally
+        {
+            release();
+        }
     }
 
-    /// <summary>JsonValue keeps the CLR type it was created with (1 is an Int32, 0.2 a Double); read either as a double.</summary>
-    private static double? Number(JsonNode? node)
+    private async Task<JsonObject> RulesAsync(AnalysisTaskWorkItem item, TaskState task, CancellationToken cancellationToken)
     {
-        if (node is not JsonValue value) return null;
-        if (value.TryGetValue<double>(out var asDouble)) return asDouble;
-        if (value.TryGetValue<int>(out var asInt)) return asInt;
-        if (value.TryGetValue<long>(out var asLong)) return asLong;
-        return null;
+        foreach (var (stage, message, progress) in RulesSteps)
+        {
+            await task.EmitAsync(stage, message, progress, cancellationToken);
+        }
+        return LocalReport(item, RulesEngine);
+    }
+
+    /// <summary>Node providers.js openaiProvider.analyze: local stats → brief → chat/completions → merge, numbers always local.</summary>
+    private async Task<JsonObject> OpenAiAsync(AnalysisTaskWorkItem item, TaskState task, CancellationToken cancellationToken)
+    {
+        var endpoint = item.Ai!;
+        await task.EmitAsync("stats", "本地统计核计算中（置信区间与显著性检验）", 0.2, cancellationToken);
+        var local = LocalReport(item, OpenAiEngine);
+        var brief = AnalyticsBriefEngine.Build(RawRows(item.Rows));
+        var knowledge = await KnowledgeAsync(item, cancellationToken);
+
+        await task.EmitAsync("submit", "请求 " + endpoint.Model, 0.4, cancellationToken);
+        var completion = await openAi.CompleteAsync(endpoint, item.Record.Question, brief.Text, knowledge, aiOptions.TimeoutMs, cancellationToken);
+        var text = completion?["choices"] is JsonArray choices && choices.Count > 0 && choices[0] is JsonObject first
+            ? first["message"]?["content"]?.GetValue<string>()
+            : null;
+
+        await task.EmitAsync("merge", "合并 AI 叙述与本地统计产物", 0.9, cancellationToken);
+        var narrative = AnalysisReportMerge.ExtractJson(text);
+        if (narrative is null)
+        {
+            logger.LogWarning("provider narrative not parseable, falling back to local narrative provider={Provider}", OpenAiEngine);
+        }
+        var merged = AnalysisReportMerge.MergeWithLocal(narrative, local, OpenAiEngine, endpoint.Model);
+        if (completion?["usage"] is JsonNode usage) merged["tokenUsage"] = usage.DeepClone();
+        return merged;
+    }
+
+    private async Task<JsonObject> DegradeAsync(AnalysisTaskWorkItem item, TaskState task, string reason, CancellationToken cancellationToken)
+    {
+        // Node _degrade: the rules provider runs with its own progress events and no knowledge injection.
+        var rules = await RulesAsync(item, task, cancellationToken);
+        return AnalysisReportMerge.Degrade(rules, item.ProviderId, reason);
+    }
+
+    /// <summary>Node knowledgeFor: BM25 top-4 chunks of the owner's knowledge documents; nothing when there are none.</summary>
+    private async Task<IReadOnlyList<RetrievalHit>> KnowledgeAsync(AnalysisTaskWorkItem item, CancellationToken cancellationToken)
+    {
+        var knowledge = services.GetService<IKnowledgeRepository>();
+        if (knowledge is null) return [];
+        var documents = await knowledge.ListAsync(item.Record.TenantId, item.Record.OwnerId, cancellationToken);
+        if (documents.Count == 0) return [];
+        var hits = Bm25Retrieval.Retrieve(
+            documents.Select(static doc => new RetrievalDocument(doc.Id, doc.Name, doc.Text)).ToList(),
+            item.Record.Question,
+            topK: 4);
+        if (hits.Count > 0)
+        {
+            logger.LogInformation("knowledge retrieved hits={Hits} top={Top} score={Score}", hits.Count, hits[0].Name, hits[0].Score);
+        }
+        return hits;
     }
 
     /// <summary>
     /// The JS report shape: the analytics engine's report serialized with the analytics wire options,
-    /// then engine → server-rules, provenance → the datasource's own object (verbatim, as the JS
-    /// engine copies it), taskId / cached stamped the way Node's TaskStore._run does.
+    /// then engine → provider id, provenance → the datasource's own object (verbatim, as the JS
+    /// engine copies it), and the empty highlight slot dropped for the three intents whose JS code never writes it.
     /// </summary>
-    private static string ReportJson(AnalyticsReport report, JsonElement provenance, string taskId)
+    private static JsonObject LocalReport(AnalysisTaskWorkItem item, string engine)
     {
+        var report = AnalyticsReportEngine.AnalyzeMigratedIntent(item.Record.Question, AnalysisTaskRows.Map(item.Rows), provenance: null);
         var node = JsonNode.Parse(JsonSerializer.Serialize(report, AnalyticsEndpoints.ResponseJsonOptions))!.AsObject();
-        // JS shape: machine_fault / fail_root / overview always carry `highlight` (object or null); the three
-        // intents below never set the key. The C# record always has the slot, so drop it for those intents.
         if (node["highlight"] is null && node["intent"]?.GetValue<string>() is "material_cmp" or "corr_layer" or "cost_trend")
         {
             node.Remove("highlight");
         }
-        node["engine"] = Engine;
-        node["provenance"] = provenance.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
+        node["engine"] = engine;
+        node["provenance"] = item.Provenance.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
             ? null
-            : JsonNode.Parse(provenance.GetRawText());
-        node["taskId"] = taskId;
-        node["cached"] = false;
-        return node.ToJsonString();
+            : JsonNode.Parse(item.Provenance.GetRawText());
+        return node;
+    }
+
+    private static IReadOnlyList<RawRow> RawRows(JsonElement rows)
+    {
+        if (rows.ValueKind != JsonValueKind.Array) return [];
+        var mapped = new List<RawRow>(rows.GetArrayLength());
+        foreach (var row in rows.EnumerateArray())
+        {
+            try
+            {
+                mapped.Add(RawRow.FromJson(row));
+            }
+            catch (FormatException)
+            {
+                // Node's brief builder ignores what it cannot read; keep the same tolerance.
+            }
+        }
+        return mapped;
+    }
+
+    /// <summary>One task's mutable event log + the snapshot writer (Node emit / _persist / _finish / _fail).</summary>
+    private sealed class TaskState(AnalysisTaskRecord initial, PostgresAnalysisTaskRepository repository)
+    {
+        private readonly JsonArray _events = new();
+        private AnalysisTaskRecord _record = initial;
+
+        public async Task EmitAsync(string stage, string message, double progress, CancellationToken cancellationToken)
+        {
+            _events.Add(new JsonObject
+            {
+                ["seq"] = _events.Count + 1,
+                ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                ["stage"] = stage,
+                ["message"] = message,
+                ["progress"] = progress,
+            });
+            _record = Snapshot(_record, "running", _events, report: null, error: null);
+            await repository.UpsertAsync(_record, cancellationToken);
+        }
+
+        public async Task FinishAsync(string reportJson, CancellationToken cancellationToken)
+        {
+            _events.Add(new JsonObject
+            {
+                ["seq"] = _events.Count + 1,
+                ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                ["done"] = true,
+                ["progress"] = 1,
+                ["message"] = "分析完成",
+            });
+            _record = Snapshot(_record, "done", _events, reportJson, error: null);
+            await repository.UpsertAsync(_record, CancellationToken.None);
+        }
+
+        public async Task FailAsync(string error, CancellationToken cancellationToken)
+        {
+            _events.Add(new JsonObject
+            {
+                ["seq"] = _events.Count + 1,
+                ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                ["done"] = true,
+                ["error"] = error,
+                ["message"] = "分析失败：" + error,
+            });
+            _record = Snapshot(_record, "failed", _events, report: null, error);
+            await repository.UpsertAsync(_record, cancellationToken);
+        }
+
+        /// <summary>Node PostgresAnalysisStore._snapshot: progress / phase / message are derived from the last event.</summary>
+        private static AnalysisTaskRecord Snapshot(AnalysisTaskRecord record, string status, JsonArray events, string? report, string? error)
+        {
+            var last = events.Count > 0 ? events[events.Count - 1] as JsonObject : null;
+            var progress = Number(last?["progress"]) ?? (status == "done" ? 1 : 0);
+            var stage = last?["stage"]?.GetValue<string>();
+            // Node quirk kept on purpose: a failed task's terminal event has no stage, and the fallback
+            // only knows "done" or "running" — so failed rows carry phase "running".
+            var phase = stage ?? (status == "done" ? "done" : "running");
+            var message = last?["message"]?.GetValue<string>() ?? string.Empty;
+            var now = DateTimeOffset.UtcNow;
+            return record with
+            {
+                Status = status,
+                Progress = Math.Clamp(progress, 0, 1),
+                Phase = phase.Length > 64 ? phase[..64] : phase,
+                Message = message,
+                ReportJson = report,
+                ErrorMessage = error,
+                EventsJson = events.ToJsonString(),
+                FinishedAt = status is "done" or "failed" ? now : null,
+                UpdatedAt = now,
+            };
+        }
+
+        /// <summary>JsonValue keeps the CLR type it was created with (1 is an Int32, 0.2 a Double); read either as a double.</summary>
+        private static double? Number(JsonNode? node)
+        {
+            if (node is not JsonValue value) return null;
+            if (value.TryGetValue<double>(out var asDouble)) return asDouble;
+            if (value.TryGetValue<int>(out var asInt)) return asInt;
+            if (value.TryGetValue<long>(out var asLong)) return asLong;
+            return null;
+        }
     }
 }
 

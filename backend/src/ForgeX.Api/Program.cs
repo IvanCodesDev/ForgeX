@@ -96,6 +96,46 @@ if (analysisTasksEnabled)
     builder.Services.AddSingleton(new AnalysisTaskOptions(analysisTtlMs, analysisConcurrency, analysisQueueCapacity, analysisStaleMs));
     builder.Services.AddSingleton(new AnalysisTaskQueue(analysisQueueCapacity));
     builder.Services.AddSingleton<AnalysisTaskRuntime>();
+
+    // Stage 8.6c-2b-ii：AI provider / 成本闸门 / 结果缓存（进程内，对齐 Node ANALYSIS_PROVIDER / OPENAI_* / AI_* / RESULT_CACHE_*）。
+    var aiPreference = (builder.Configuration["Analysis:Provider"] ?? "auto").Trim().ToLowerInvariant();
+    if (aiPreference is not ("auto" or "openai" or "rules" or "local"))
+    {
+        throw new InvalidOperationException("Analysis:Provider must be 'auto', 'openai' or 'rules'.");
+    }
+    var aiTimeoutMs = ReadInt(builder.Configuration, "OpenAi:TimeoutMs", AnalysisAiOptions.DefaultTimeoutMs);
+    if (aiTimeoutMs < 1)
+    {
+        throw new InvalidOperationException("OpenAi:TimeoutMs must be positive.");
+    }
+    builder.Services.AddSingleton(new AnalysisAiOptions(
+        aiPreference,
+        (builder.Configuration["OpenAi:BaseUrl"] ?? AnalysisAiOptions.DefaultBaseUrl).Trim(),
+        (builder.Configuration["OpenAi:ApiKey"] ?? string.Empty).Trim(),
+        (builder.Configuration["OpenAi:Model"] ?? string.Empty).Trim(),
+        aiTimeoutMs,
+        builder.Configuration["Analysis:ProbeProvider"] != "0"));
+    var aiConcurrency = ReadInt(builder.Configuration, "Analysis:AiConcurrency", AnalysisGateOptions.DefaultAiConcurrency);
+    var aiQueueMax = ReadInt(builder.Configuration, "Analysis:AiQueueMax", AnalysisGateOptions.DefaultAiQueueMax);
+    var aiDailyPerCaller = ReadInt(builder.Configuration, "Analysis:AiDailyPerCaller", AnalysisGateOptions.DefaultDailyPerCaller);
+    var aiDailyGlobal = ReadInt(builder.Configuration, "Analysis:AiDailyGlobal", AnalysisGateOptions.DefaultDailyGlobal);
+    if (aiConcurrency < 1 || aiQueueMax < 0 || aiDailyPerCaller < 0 || aiDailyGlobal < 0)
+    {
+        throw new InvalidOperationException("Analysis:AiConcurrency must be positive; Analysis:AiQueueMax / AiDailyPerCaller / AiDailyGlobal must be >= 0 (0 = unlimited budget).");
+    }
+    builder.Services.AddSingleton(new AnalysisGateOptions(aiConcurrency, aiQueueMax, aiDailyPerCaller, aiDailyGlobal));
+    var cacheTtlMs = ReadLong(builder.Configuration, "Analysis:CacheTtlMs", AnalysisCacheOptions.DefaultTtlMs);
+    var cacheMax = ReadInt(builder.Configuration, "Analysis:CacheMax", AnalysisCacheOptions.DefaultMax);
+    if (cacheTtlMs < 1 || cacheMax < 0)
+    {
+        throw new InvalidOperationException("Analysis:CacheTtlMs must be positive and Analysis:CacheMax >= 0.");
+    }
+    builder.Services.AddSingleton(new AnalysisCacheOptions(cacheTtlMs, cacheMax));
+    builder.Services.AddSingleton<AnalysisProviderSelection>();
+    builder.Services.AddSingleton<AnalysisCostGate>();
+    builder.Services.AddSingleton<AnalysisResultCache>();
+    builder.Services.AddSingleton<OpenAiNarrativeClient>();
+    builder.Services.AddSingleton<AnalysisTaskExecutor>();
     builder.Services.AddHostedService<AnalysisTaskWorker>();
 }
 

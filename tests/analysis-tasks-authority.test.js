@@ -12,8 +12,9 @@
  *       - 8.6c-2a：/stream 消费 C# /events 命名帧并重新组成无名 data: 帧——progress/message 帧原样转发、心跳转发、
  *         C# done 快照帧不转发（事件里已有终态）或合成 Node 形状终态（重启恢复的 failed 任务）、Last-Event-ID 透传、
  *         C# 404 / 5xx 在发头前映射为 404 / 502；
- *       - 8.6c-2b 规则引擎腿：POST /api/analyze 由 Node 校验（空 / 超长 400 不转发）后转发 POST /api/v1/analysis-tasks
- *         （question 已 trim、datasourceId 缺省 sample），202 改写为 Node 形状，C# 404 / 5xx 映射；AI 任务仍在 Node 本地；
+ *       - 8.6c-2b：POST /api/analyze 由 Node 校验（空 / 超长 / 自带端点不完整 400 不转发）后转发 POST /api/v1/analysis-tasks
+ *         （question 已 trim、datasourceId 缺省 sample、自带端点作为 ai 字段），202 改写为 Node 形状（willUseAi / quota 透传，
+ *         reason 为 null 不回显），C# 404 / 5xx 映射；
  *   [4] 超时（复用 RESOURCE_AUTHORITY_TIMEOUT_MS）与 sidecar 不可达 → 502。
  */
 "use strict";
@@ -162,13 +163,19 @@ function createFakeSidecar() {
           return problem(res, 404, "datasource_not_found", "数据源不存在或已过期，请重新上传");
         }
         if (parsedBody && parsedBody.question === "boom") return problem(res, 500, "internal", "boom");
-        return json(res, 202, {
-          id: CREATED_ID,
-          engine: "server-rules",
-          willUseAi: false,
-          quota: null,
-          links: { self: "/api/v1/analysis-tasks/" + CREATED_ID, events: "/api/v1/analysis-tasks/" + CREATED_ID + "/events" },
-        });
+        const links = { self: "/api/v1/analysis-tasks/" + CREATED_ID, events: "/api/v1/analysis-tasks/" + CREATED_ID + "/events" };
+        if (parsedBody && parsedBody.ai) {
+          // 8.6c-2b-ii：自带端点 → C# 走 AI provider 并返回闸门预检；reason 为 null 时 Node 门面不得回显 null。
+          const exhausted = parsedBody.question === "quota-out";
+          return json(res, 202, {
+            id: CREATED_ID,
+            engine: "openai-compatible",
+            willUseAi: !exhausted,
+            quota: exhausted ? { ok: false, remaining: 0, reason: "额度已用尽（测试）" } : { ok: true, remaining: 3, reason: null },
+            links,
+          });
+        }
+        return json(res, 202, { id: CREATED_ID, engine: "server-rules", willUseAi: false, quota: null, links });
       }
       const prefix = "GET /api/v1/analysis-tasks/";
       if (!route.startsWith(prefix)) return json(res, 501, { error: "unexpected sidecar request: " + route });
@@ -571,6 +578,50 @@ async function main() {
     );
     const boom = await postJson(base, "/api/analyze", { question: "boom" }, alphaAuth);
     check("C# 500 → 创建 502 分析任务服务暂不可用", boom.status === 502 && boom.json.error === "分析任务服务暂不可用，请稍后再试", JSON.stringify(boom.json));
+
+    // AI 腿（8.6c-2b-ii）：自带端点先由 Node 校验，再作为 ai 字段转发一次；闸门预检由 C# 给出
+    const incompleteBefore = sidecar.observed.length;
+    const incomplete = await postJson(base, "/api/analyze", { question: "x", aiBaseUrl: "http://ai.example/v1" }, alphaAuth);
+    check(
+      "自带端点缺 aiModel 由 Node 本地 400，不转发",
+      incomplete.status === 400 && incomplete.json.error === "自带 AI 端点需要同时提供 aiBaseUrl 与 aiModel（aiApiKey 按端点要求可选）" &&
+        sidecar.observed.length === incompleteBefore,
+      JSON.stringify(incomplete.json)
+    );
+    const aiCreated = await postJson(
+      base,
+      "/api/analyze",
+      { question: "x", aiBaseUrl: " http://ai.example/v1/ ", aiApiKey: "sk-test-secret-0123456789", aiModel: "m-1" },
+      alphaAuth
+    );
+    const aiSeen = last();
+    check(
+      "自带端点作为 ai 字段转发（baseUrl 去尾斜杠）",
+      aiCreated.status === 202 && aiSeen && aiSeen.body && deepEqual(aiSeen.body.ai, { baseUrl: "http://ai.example/v1", apiKey: "sk-test-secret-0123456789", model: "m-1" }),
+      JSON.stringify(aiSeen && aiSeen.body)
+    );
+    check(
+      "202 透传 willUseAi / quota，reason 为 null 时不回显",
+      deepEqual(aiCreated.json, { taskId: CREATED_ID, engine: "openai-compatible", authenticated: true, willUseAi: true, quota: { ok: true, remaining: 3 } }),
+      JSON.stringify(aiCreated.json)
+    );
+    const quotaOut = await postJson(
+      base,
+      "/api/analyze",
+      { question: "quota-out", aiBaseUrl: "http://ai.example/v1", aiApiKey: "k", aiModel: "m-1" },
+      alphaAuth
+    );
+    check(
+      "额度用尽：willUseAi=false，quota 带 reason",
+      deepEqual(quotaOut.json, {
+        taskId: CREATED_ID,
+        engine: "openai-compatible",
+        authenticated: true,
+        willUseAi: false,
+        quota: { ok: false, remaining: 0, reason: "额度已用尽（测试）" },
+      }),
+      JSON.stringify(quotaOut.json)
+    );
   } finally {
     await csharpApp.close();
   }
