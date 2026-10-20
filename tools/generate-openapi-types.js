@@ -149,6 +149,8 @@ function generate(document, sourceSha256) {
 
 if (!fs.existsSync(sourcePath)) fail(`source not found: ${sourcePath}`);
 const source = fs.readFileSync(sourcePath);
+if (source.includes(Buffer.from("\r\n")))
+  fail("canonical OpenAPI source must use LF line endings, as required by .gitattributes");
 const sourceSha256 = crypto.createHash("sha256").update(source).digest("hex");
 const document = JSON.parse(source.toString("utf8"));
 const generated = generate(document, sourceSha256);

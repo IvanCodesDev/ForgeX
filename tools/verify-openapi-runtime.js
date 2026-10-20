@@ -254,6 +254,26 @@ async function main() {
     }
 
     const gcode = Buffer.from("G90\nM82\nG28\nM104 S250\nM140 S40\nG1 X0 Y0 Z0.2 F1200\nG1 X10 Y0 E1 F600\n", "utf8");
+    const meshBytes = Buffer.alloc(134);
+    meshBytes.writeUInt32LE(1, 80);
+    [0, 0, 0, 10, 0, 0, 0, 10, 0].forEach((value, index) => meshBytes.writeFloatLE(value, 96 + index * 4));
+    const meshResponse = await request(`${baseUrl}${operationPaths.get("analyzeMesh")}?format=stl`, {
+      method: "POST",
+      headers: { ...callerA, "Content-Type": "application/octet-stream" },
+      body: meshBytes,
+    });
+    if (meshResponse.status !== 200) throw new Error(`mesh inspection returned ${meshResponse.status}`);
+    const mesh = await meshResponse.json();
+    if (
+      mesh.sha256 !== sha256(meshBytes) ||
+      mesh.bytes !== meshBytes.length ||
+      mesh.unit !== null ||
+      mesh.volumeCm3 !== null ||
+      mesh.topology.boundaryEdges !== 3 ||
+      mesh.topology.selfIntersectionChecked !== false
+    ) {
+      throw new Error(`mesh raw-byte binding or open-surface contract invalid: ${JSON.stringify(mesh)}`);
+    }
     const query =
       "bedSizeMm=256&coordinateOrigin=corner&filamentDensityGPerCm3=1.24" +
       "&machineProfileId=corexy&materialProfileId=PLA&materialPriceCnyPerKg=100" +

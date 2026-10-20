@@ -86,10 +86,15 @@ public sealed partial class FileGCodeJobRepository : IGCodeJobRepository, IGCode
     public async Task<GCodeJobRecord?> GetAsync(string id, CancellationToken cancellationToken)
     {
         ValidateId(id);
-        if (!Directory.Exists(_root)) return null;
-        var path = Path.Combine(_root, id + ".json");
-        if (!File.Exists(path)) return null;
-        return await ReadAsync(path, cancellationToken).ConfigureAwait(false);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!Directory.Exists(_root)) return null;
+            var path = Path.Combine(_root, id + ".json");
+            if (!File.Exists(path)) return null;
+            return await ReadAsync(path, cancellationToken).ConfigureAwait(false);
+        }
+        finally { _gate.Release(); }
     }
 
     public async Task<GCodeJobRecord?> GetOwnedAsync(
@@ -109,14 +114,18 @@ public sealed partial class FileGCodeJobRepository : IGCodeJobRepository, IGCode
 
     public async Task<IReadOnlyList<GCodeJobRecord>> ListAsync(CancellationToken cancellationToken)
     {
-        var jobs = new List<GCodeJobRecord>();
-        if (!Directory.Exists(_root)) return jobs;
-        foreach (var path in Directory.EnumerateFiles(_root, "*.json").Order(StringComparer.Ordinal))
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            jobs.Add(await ReadAsync(path, cancellationToken).ConfigureAwait(false));
+            var jobs = new List<GCodeJobRecord>();
+            if (!Directory.Exists(_root)) return jobs;
+            foreach (var path in Directory.EnumerateFiles(_root, "*.json").Order(StringComparer.Ordinal))
+            {
+                jobs.Add(await ReadAsync(path, cancellationToken).ConfigureAwait(false));
+            }
+            return jobs;
         }
-
-        return jobs;
+        finally { _gate.Release(); }
     }
 
     public async Task<GCodeJobRecord> SaveAsync(GCodeJobRecord job, CancellationToken cancellationToken)
@@ -136,7 +145,9 @@ public sealed partial class FileGCodeJobRepository : IGCodeJobRepository, IGCode
 
     private static async Task<GCodeJobRecord> ReadAsync(string path, CancellationToken cancellationToken)
     {
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, true);
+        // Reads, replacement and restore share the same in-process gate. Delete sharing also
+        // permits atomic replacement while an external read handle still sees its old snapshot.
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 64 * 1024, true);
         var job = await JsonSerializer.DeserializeAsync<GCodeJobRecord>(stream, JsonOptions, cancellationToken)
             .ConfigureAwait(false) ?? throw new InvalidDataException($"Job record is empty: {Path.GetFileName(path)}");
         return NormalizePersistedJob(job);

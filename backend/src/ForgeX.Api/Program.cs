@@ -289,6 +289,7 @@ builder.Services.AddSingleton<IGCodeJobRepositoryMaintenance>(static services =>
 builder.Services.AddSingleton<IGCodeJobQueue>(_ => new GCodeJobQueue(queueCapacity));
 builder.Services.AddSingleton<GCodeJobRuntime>();
 builder.Services.AddSingleton<ForgeXMetrics>();
+builder.Services.AddSingleton<MeshAnalysisAdmission>();
 builder.Services.AddSingleton<GCodeJobWorker>();
 builder.Services.AddHostedService(static services => services.GetRequiredService<GCodeJobWorker>());
 
@@ -491,6 +492,17 @@ app.MapPost("/api/v1/gcode/analyze", GCodeEndpoints.AnalyzeAsync)
     .Produces<ApiProblem>(StatusCodes.Status415UnsupportedMediaType, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status422UnprocessableEntity, "application/problem+json")
     .Produces<ApiProblem>(StatusCodes.Status500InternalServerError, "application/problem+json");
+
+app.MapPost("/api/v1/meshes/analyze", MeshEndpoints.AnalyzeAsync)
+    .WithName("AnalyzeMesh")
+    .Produces<ForgeX.Domain.MeshAnalysisResult>()
+    .Produces<ApiProblem>(400, "application/problem+json")
+    .Produces<ApiProblem>(401, "application/problem+json")
+    .Produces<ApiProblem>(408, "application/problem+json")
+    .Produces<ApiProblem>(413, "application/problem+json")
+    .Produces<ApiProblem>(415, "application/problem+json")
+    .Produces<ApiProblem>(422, "application/problem+json")
+    .Produces<ApiProblem>(429, "application/problem+json");
 
 app.MapPost(
         "/api/v1/analytics/reports",

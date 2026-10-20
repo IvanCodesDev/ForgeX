@@ -34,6 +34,44 @@ try
     Check("source-health-count", sourceHealth.RecordCount == 2, sourceHealth.RecordCount);
     Check("source-health-provider-schema", sourceHealth.Provider == "file-json" && sourceHealth.SchemaVersion == 1, sourceHealth);
 
+    // Read snapshots while the same singleton repository atomically replaces them.
+    // The larger JSON keeps the read handle open long enough to reproduce Windows sharing races.
+    var concurrent = new FileGCodeJobRepository(Path.Combine(root, "concurrent"));
+    var snapshot = CreateJob(Guid.NewGuid().ToString("N"), tenantA, ownerA, "concurrent", now) with
+    { ErrorMessage = new string('x', 256 * 1024) };
+    await concurrent.SaveAsync(snapshot, CancellationToken.None);
+    var failures = new System.Collections.Concurrent.ConcurrentQueue<Exception>();
+    var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var readers = Enumerable.Range(0, 4).Select(async _ =>
+    {
+        await start.Task;
+        for (var iteration = 0; iteration < 40; iteration++)
+        {
+            try
+            {
+                var read = await concurrent.GetOwnedAsync(tenantA, ownerA, snapshot.Id, CancellationToken.None);
+                if (read?.Id != snapshot.Id) throw new InvalidDataException("Concurrent snapshot missing or torn.");
+                if ((await concurrent.ListAsync(CancellationToken.None)).Count != 1) throw new InvalidDataException("Concurrent listing lost a job.");
+            }
+            catch (Exception exception) { failures.Enqueue(exception); }
+        }
+    }).ToArray();
+    var writer = Task.Run(async () =>
+    {
+        await start.Task;
+        for (var iteration = 0; iteration < 40; iteration++)
+        {
+            try { await concurrent.SaveAsync(snapshot with { Progress = iteration / 40d }, CancellationToken.None); }
+            catch (Exception exception) { failures.Enqueue(exception); }
+        }
+    });
+    start.SetResult();
+    await Task.WhenAll(readers.Append(writer));
+    Check("concurrent-snapshot-read-write-without-sharing-errors", failures.IsEmpty,
+        failures.TryPeek(out var failure) ? failure.ToString() : null);
+    Check("concurrent-snapshot-last-write-readable",
+        (await concurrent.GetAsync(snapshot.Id, CancellationToken.None))?.Progress == 39 / 40d);
+
     using var backup = new MemoryStream();
     var created = await repository.BackupAsync(backup, CancellationToken.None);
     Check("backup-format", created.Format == "forgex-gcode-job-backup/v1", created.Format);

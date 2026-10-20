@@ -185,6 +185,7 @@ internal sealed class ForgeXMetrics
     public static string RouteLabel(PathString path)
     {
         var value = path.Value ?? string.Empty;
+        if (value.Equals("/api/v1/meshes/analyze", StringComparison.OrdinalIgnoreCase)) return "/api/v1/meshes/analyze";
         if (value is "/health/live" or "/health/ready" or "/healthz" or "/metrics" or "/openapi/v1.json" or
             "/api/v1/gcode/analyze" or "/api/v1/gcode/analyses")
         {

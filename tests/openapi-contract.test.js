@@ -15,6 +15,7 @@ const document = JSON.parse(fs.readFileSync(sourcePath, "utf8"));
 assert.strictEqual(document.openapi, "3.1.0", "OpenAPI version must remain 3.1.0");
 
 const expectedOperations = new Map([
+  ["analyzeMesh", ["POST", "/api/v1/meshes/analyze"]],
   ["analyzeGCode", ["POST", "/api/v1/gcode/analyze"]],
   ["createGCodeAnalysisJob", ["POST", "/api/v1/gcode/analyses"]],
   ["getGCodeAnalysisJob", ["GET", "/api/v1/jobs/{id}"]],
@@ -38,6 +39,9 @@ for (const [operationId, contract] of expectedOperations) {
 
 const schemas = document.components.schemas;
 for (const schemaName of [
+  "MeshAnalysisResult",
+  "MeshSize",
+  "MeshTopology",
   "GCodeAnalysisResponse",
   "GCodeInputSummary",
   "GCodeJobAcceptedResponse",

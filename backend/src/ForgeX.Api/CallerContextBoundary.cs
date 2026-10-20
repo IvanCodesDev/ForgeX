@@ -34,6 +34,7 @@ internal static class CallerContextBoundary
 
     // Match Kestrel's case-insensitive route literals without rewriting resource identifiers.
     public static bool AppliesTo(PathString path) =>
+        path.StartsWithSegments("/api/v1/meshes", StringComparison.OrdinalIgnoreCase) ||
         path.StartsWithSegments("/api/v1/gcode/analyses", StringComparison.OrdinalIgnoreCase) ||
         path.StartsWithSegments("/api/v1/jobs", StringComparison.OrdinalIgnoreCase) ||
         // Stage 8.1: share creation/revocation need the trusted caller context;

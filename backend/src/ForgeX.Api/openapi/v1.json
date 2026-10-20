@@ -12,6 +12,71 @@
     }
   ],
   "paths": {
+    "/api/v1/meshes/analyze": {
+      "post": {
+        "operationId": "analyzeMesh",
+        "summary": "Inspect bounded STL or core 3MF geometry",
+        "description": "Requires the caller boundary. Raw bytes are not persisted. STL assumes millimeters. Core 3MF supports units, build transforms and same-part components; required extensions and cross-part references are rejected. Edge adjacency is checked; self-intersection, vertex manifoldness and overlaps are not checked. Volume is a geometric estimate and is null when edge closure or orientation fails or multiple objects require an unimplemented boolean union. Limits: 64 MiB upload/total ZIP expansion, 16 MiB XML, 256 ZIP entries, 250000 triangles, 4096 instances and nesting depth 32. One request per process, 20 second timeout.",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "stl",
+                "3mf"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "C# geometry inspection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeshAnalysisResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "408": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
     "/health/live": {
       "get": {
         "operationId": "getLiveness",
@@ -614,6 +679,156 @@
       }
     },
     "schemas": {
+      "MeshAnalysisResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "engine",
+          "engineVersion",
+          "sha256",
+          "bytes",
+          "format",
+          "unit",
+          "triangleCount",
+          "droppedTriangles",
+          "objectCount",
+          "sizeMm",
+          "volumeCm3",
+          "surfaceAreaCm2",
+          "topology",
+          "warnings"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "1.0"
+          },
+          "engine": {
+            "type": "string",
+            "const": "forgex-mesh-csharp"
+          },
+          "engineVersion": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "stl-binary",
+              "stl-ascii",
+              "3mf"
+            ]
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "triangleCount": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "droppedTriangles": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "objectCount": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sizeMm": {
+            "$ref": "#/components/schemas/MeshSize"
+          },
+          "volumeCm3": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "surfaceAreaCm2": {
+            "type": "number",
+            "minimum": 0
+          },
+          "topology": {
+            "$ref": "#/components/schemas/MeshTopology"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MeshSize": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "x",
+          "y",
+          "z"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "minimum": 0
+          },
+          "y": {
+            "type": "number",
+            "minimum": 0
+          },
+          "z": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      },
+      "MeshTopology": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "boundaryEdges",
+          "nonManifoldEdges",
+          "inconsistentEdges",
+          "closedEdgeManifold",
+          "orientationConsistent",
+          "selfIntersectionChecked"
+        ],
+        "properties": {
+          "boundaryEdges": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nonManifoldEdges": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "inconsistentEdges": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "closedEdgeManifold": {
+            "type": "boolean"
+          },
+          "orientationConsistent": {
+            "type": "boolean"
+          },
+          "selfIntersectionChecked": {
+            "type": "boolean",
+            "const": false
+          }
+        }
+      },
       "HealthResponse": {
         "type": "object",
         "required": [
