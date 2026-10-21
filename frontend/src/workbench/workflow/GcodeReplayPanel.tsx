@@ -3,6 +3,8 @@ import { requestLayerTimeline, requestReplayCheckpoint } from "../../authority/g
 import type { AuthorityAnalysisResponse } from "../../authority/gcode-authority";
 import type { GCodeLayerTimeline, GCodeReplayCheckpoint } from "../../generated/forgex-api";
 import "./gcode-cost.css";
+import { ReplayBookmarks } from "./ReplayBookmarks";
+import { deriveLayerPlan } from "../../authority/gcode-replay";
 
 export function GcodeReplayPanel({
   jobId,
@@ -69,6 +71,39 @@ export function GcodeReplayPanel({
     }
   };
   const order = source.layers[previewLayer]?.sourceOrder;
+  const restore = async (seconds: number) => {
+    invalidate();
+    setPage(null);
+    setElapsed(String(seconds));
+    const controller = new AbortController();
+    pending.current = controller;
+    setBusy(true);
+    try {
+      const plan = deriveLayerPlan(source);
+      const row = plan.layers.find((layer) => layer.endSeconds > seconds);
+      const offset = Math.floor((row?.sequence ?? Math.max(0, plan.layers.length - 1)) / 50) * 50;
+      const loaded = await requestLayerTimeline(jobId, source, offset, import.meta.env, controller.signal);
+      const checked = await requestReplayCheckpoint(
+        jobId,
+        source,
+        seconds,
+        loaded.fingerprint,
+        import.meta.env,
+        controller.signal
+      );
+      if (!controller.signal.aborted) {
+        setPage(loaded);
+        setCheckpoint(checked);
+      }
+    } catch (failure) {
+      if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "书签恢复失败");
+    } finally {
+      if (pending.current === controller) {
+        pending.current = null;
+        setBusy(false);
+      }
+    }
+  };
   const download = () => {
     if (!page) return;
     const url = URL.createObjectURL(
@@ -101,6 +136,14 @@ export function GcodeReplayPanel({
           读取预览层的权威计划
         </button>
         {!canLink && <div className="note">预览层与权威层不能一一对应，暂不联动。</div>}
+        <ReplayBookmarks
+          source={source}
+          elapsedSeconds={checkpoint?.elapsedSeconds ?? null}
+          busy={busy}
+          onRestore={(seconds) => {
+            void restore(seconds);
+          }}
+        />
         {error && (
           <div className="note" role="alert">
             {error}

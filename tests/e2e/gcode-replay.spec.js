@@ -19,7 +19,7 @@ async function prepare(page) {
     .setInputFiles({ name: "descending-layers.gcode", mimeType: "application/x-gcode", buffer: Buffer.from(content) });
   await expect(page.locator('#authority-summary[data-authority="done"]')).toBeVisible({ timeout: 30000 });
   await page.locator("#flow-pills .flow-pill").nth(1).click();
-  await page.locator("#gcode-replay-panel summary").click();
+  await page.locator("#gcode-replay-panel > summary").click();
   const response = page.waitForResponse((r) => r.url().includes("/layer-timeline?"));
   await page.getByRole("button", { name: "加载权威时间轴", exact: true }).click();
   const result = await response;
