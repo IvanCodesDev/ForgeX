@@ -482,7 +482,7 @@ describe("整单打印数值锁定：行星齿轮 · FX-256-01 · 默认工艺 �
     for (const [ev] of events) counts[ev] = (counts[ev] || 0) + 1;
     expect(counts).toEqual({ sliced: 1, state: 3, layer: 80, "quality-actual": 1, done: 1, "job-record": 1 });
     expect(logs.at(-2)).toBe("ok:打印完成：行星齿轮 · 用时 26 分钟（机时）· 耗材 10.3 g");
-    expect(logs.at(-1)).toBe("info:成品实测质量评级 A（综合 90 分）· 详见「质量」面板");
+    expect(logs.at(-1)).toBe("info:仿真质量评级 A（综合 90 分）· 详见「质量」面板");
   });
 });
 
@@ -529,7 +529,7 @@ describe("导入 G-code 整单与故障链（Stage 10.4）", () => {
     expect(sim.currentAction).toBe("故障暂停");
     expect(sim.faultInfo).toEqual({
       name: "热失控保护",
-      msg: "喷嘴实测 173°C，低于目标 210°C 达 37°C 且无回升（持续 3.0s），加热已切断",
+      msg: "喷嘴模拟记录 173°C，低于目标 210°C 达 37°C 且无回升（持续 3.0s），加热已切断",
     });
 
     sim.resume();

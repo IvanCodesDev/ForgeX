@@ -1,4 +1,5 @@
-import { useEffect, useReducer } from "react";
+import { useEffect, useReducer, useState } from "react";
+import { simulationQualityAudit } from "../../../engine/quality-audit";
 import {
   legacyComputeQuality,
   legacyUtil,
@@ -39,6 +40,7 @@ interface QualityPageProps {
 export function QualityPage({ sim, bus }: QualityPageProps) {
   const { fmtHuman } = legacyUtil();
   const [, bump] = useReducer((version: number) => version + 1, 0);
+  const [exportError, setExportError] = useState("");
 
   /* 参数面板（遗留）调参经防抖走 renderCtx("quality")，页级守卫将其转发为
      ctx-page-refresh；实测报告则由打印完成时的 quality-actual 直达。 */
@@ -59,11 +61,11 @@ export function QualityPage({ sim, bus }: QualityPageProps) {
 
   return (
     <>
-      <div className="sec-label">本次成品实测报告</div>
+      <div className="sec-label">最近一次仿真质量报告</div>
       {actual ? (
         <>
           <div className="note">
-            实测评级{" "}
+            仿真评级{" "}
             <b className="mono" style={{ color: scoreColor(actual.score) }}>
               {actual.grade}
             </b>{" "}
@@ -71,9 +73,40 @@ export function QualityPage({ sim, bus }: QualityPageProps) {
             <b className="mono" style={{ color: scoreColor(actual.score) }}>
               {actual.score}
             </b>{" "}
-            / 100 — 机时 {fmtHuman(actual.elapsed)} · 耗材 {actual.usedG.toFixed(1)} g ·{" "}
-            {actual.at.toLocaleTimeString()} 完成。 数据来源：打印全程遥测（温度曲线 / 调平网格 / 事件实录 /
-            速度轨迹）。
+            / 100 — 模拟机时 {fmtHuman(actual.elapsed)} · 模拟耗材 {actual.usedG.toFixed(1)} g ·{" "}
+            {actual.at.toLocaleTimeString()} 完成。 数据来源：浏览器仿真遥测（温度 / 调平 / 事件 /
+            速度），不是打印机实测或成品检测。
+          </div>
+          <div data-react-only="simulation-quality-audit" data-quality-source="browser-simulation">
+            {actual.provenance && (
+              <div className="note">
+                来源模型：{actual.provenance.basis.modelName ?? "未记录"} · 机台：{actual.provenance.basis.machineId}
+              </div>
+            )}
+            <button
+              className="btn"
+              onClick={() => {
+                try {
+                  const json = simulationQualityAudit(actual),
+                    url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+                  const link = document.createElement("a");
+                  link.href = url;
+                  link.download = "forgex-simulation-quality.json";
+                  link.click();
+                  setTimeout(() => URL.revokeObjectURL(url), 0);
+                  setExportError("");
+                } catch (error) {
+                  setExportError(error instanceof Error ? error.message : "报告导出失败");
+                }
+              }}
+            >
+              下载仿真质量审计 JSON
+            </button>
+            {exportError && (
+              <div className="note" role="alert">
+                {exportError}
+              </div>
+            )}
           </div>
           {actual.checks.map((check) => (
             <QualityCheckItem key={check.name} check={check} />
@@ -82,8 +115,8 @@ export function QualityPage({ sim, bus }: QualityPageProps) {
       ) : (
         <div className="note">
           {printing
-            ? "打印进行中，正在采集运行遥测（温度偏差 / 事件 / 速度轨迹），完成后生成实测报告。"
-            : "尚无成品。完成一次打印后，这里将基于全程运行遥测生成实测质量报告。"}
+            ? "仿真进行中，正在记录模拟温度、事件和速度，完成后生成仿真质量报告。"
+            : "尚无仿真报告。完成一次浏览器仿真后可查看规则评分；该评分不能替代成品检测。"}
         </div>
       )}
 

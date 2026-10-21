@@ -182,7 +182,7 @@ describe("全流程：预热 → 调平 → 打印 → 完成（遥测与实测�
     expect(q.score).toBeLessThanOrEqual(99);
     expect(["A", "B", "C", "D"]).toContain(q.grade);
     expect(q.checks[2]!.score).toBeGreaterThanOrEqual(90);
-    expect(q.checks[1]!.tip).toContain("9 点实测网格");
+    expect(q.checks[1]!.tip).toContain("9 点模拟记录网格");
     expect(q.usedG).toBeGreaterThan(0);
     expect(sim._telemetry!.retractions).toBeGreaterThan(0);
     expect(sim._telemetry!.retractedMm).toBeGreaterThan(0);

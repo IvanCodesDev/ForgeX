@@ -10,6 +10,7 @@ import type { SlicePath } from "./slicer.ts";
 import type { FXScene } from "./scene.ts";
 import type { FXPrinterBase } from "./printer3d.ts";
 import type { ToolpathBuffers } from "./toolpath-buffers.ts";
+import type { SimulationQualityBasis } from "./quality-audit";
 
 interface FallbackMaterial {
   id: string;
@@ -234,6 +235,11 @@ export interface QualityCheck {
 }
 
 export interface QualityReport {
+  provenance: {
+    source: "browser-simulation";
+    modelVersion: "forgex-simulation-quality/1";
+    basis: SimulationQualityBasis;
+  };
   kind: "actual";
   score: number;
   grade: string;
@@ -401,11 +407,11 @@ export class FXSim {
     this.headPos = { x: 0, y: 0 };
     this.bedTargetY = this.printer.NOZZLE_Y - 150;
     this.printer.setBedTopY(this.bedTargetY);
-    this.levelMesh = null; // 5×5 调平数据（由 9 点实测拟合）
+    this.levelMesh = null; // 5×5 调平数据（由 9 点模拟记录拟合）
     this.leveledOnce = false;
     this.faultInfo = null;
-    this.lastQuality = null; // 最近一次打印的实测质量报告
-    this._telemetry = null; // 本次打印运行遥测（质量实测数据源）
+    this.lastQuality = null; // 最近一次浏览器仿真质量报告
+    this._telemetry = null; // 本次打印运行遥测（质量模拟记录数据源）
     this._bedErr = null; // 当前机台的床面误差场（确定性，机台固有）
     this._bedErrId = "";
 
@@ -691,7 +697,7 @@ export class FXSim {
     }
   }
 
-  /* ── 运行遥测（成品实测质量的数据源，随打印过程真实采集） ── */
+  /* ── 运行遥测（仿真质量的数据源，随打印过程真实采集） ── */
 
   private _beginTelemetry(): void {
     // 首层接触区的床面真实不均匀度（未调平时无补偿，直接决定首层成形）
@@ -755,7 +761,7 @@ export class FXSim {
     this.lastQuality = null;
     // autoLevel 开启时预热后会自动调平，无需告警；仅「关掉自动调平且从未调平」才是真裸奔
     if (!this.levelMesh && !this.settings.autoLevel)
-      this.log("warn", `未执行调平：首层接触区床面不均匀度实测 ${(eMax - eMin).toFixed(3)} mm，无补偿直接打印`);
+      this.log("warn", `未执行调平：首层接触区床面不均匀度模拟记录 ${(eMax - eMin).toFixed(3)} mm，无补偿直接打印`);
   }
 
   pause(byFault?: boolean): void {
@@ -802,7 +808,7 @@ export class FXSim {
     this.nozzleT.heaterBroken = false; // 复位物理层演练状态
     this.faultInfo = null;
     this._layer = null;
-    this._telemetry = null; // 中止无成品，不产出实测报告
+    this._telemetry = null; // 中止无成品，不产出模拟记录报告
     this.setState("idle");
     this.currentAction = "待机";
     this.progress = 0;
@@ -816,7 +822,7 @@ export class FXSim {
       return;
     }
     if (type === "thermal") {
-      // 物理层注入：加热器失效 → 温度按热惯性真实下跌 → 由热失控监测器凭实测偏差发现。
+      // 物理层注入：加热器失效 → 温度按热惯性真实下跌 → 由热失控监测器凭模拟记录偏差发现。
       // 注入本身不报警：报警是监测器的事，检测链路是真实的。
       if (this.nozzleT.heaterBroken) return;
       this.nozzleT.heaterBroken = true;
@@ -928,7 +934,7 @@ export class FXSim {
     }
   }
 
-  /** 热失控监测器：打印态持续比对「实测 vs 目标」，偏差 >15°C、温度无回升趋势且持续 >3s（机时）→ 保护。
+  /** 热失控监测器：打印态持续比对「模拟记录 vs 目标」，偏差 >15°C、温度无回升趋势且持续 >3s（机时）→ 保护。
       参考真实固件（Marlin thermal runaway protection）：偏差大但正在有效升温（排障回温）不算失控。
       对任何原因的温度失守都有效（演练注入的加热失效同样由它发现，而非注入直报）。 */
   private _thermalWatch(dt: number): void {
@@ -947,7 +953,7 @@ export class FXSim {
       if (this._thermalT >= 3) {
         this._raiseFault({
           name: "热失控保护",
-          msg: `喷嘴实测 ${this.nozzleNow.toFixed(0)}°C，低于目标 ${this.nozzleT.target.toFixed(0)}°C 达 ${dev.toFixed(0)}°C 且无回升（持续 ${this._thermalT.toFixed(1)}s），加热已切断`,
+          msg: `喷嘴模拟记录 ${this.nozzleNow.toFixed(0)}°C，低于目标 ${this.nozzleT.target.toFixed(0)}°C 达 ${dev.toFixed(0)}°C 且无回升（持续 ${this._thermalT.toFixed(1)}s），加热已切断`,
         });
         this._thermalT = 0;
       }
@@ -1037,7 +1043,7 @@ export class FXSim {
   }
 
   private _finishLeveling(): void {
-    // 9 个实测探测值（3×3）拟合当前机器构建平台的 5×5 补偿网格
+    // 9 个模拟记录探测值（3×3）拟合当前机器构建平台的 5×5 补偿网格
     const S = this._level!.samples;
     const half = this._level!.half;
     const probeR = this._level!.probeR;
@@ -1068,7 +1074,7 @@ export class FXSim {
     this.levelMesh = { grid: mesh, max: mx, samples: S.slice(), half, at: new Date() };
     this.leveledOnce = true;
     this.bus.emit("levelmesh");
-    this.log("ok", `调平完成：最大偏差 ${mx >= 0 ? "+" : ""}${mx.toFixed(3)} mm，9 点实测已拟合为 5×5 补偿网格`);
+    this.log("ok", `调平完成：最大偏差 ${mx >= 0 ? "+" : ""}${mx.toFixed(3)} mm，9 点模拟记录已拟合为 5×5 补偿网格`);
   }
 
   /* ── 时间与进度 ─────────────────────── */
@@ -1513,12 +1519,10 @@ export class FXSim {
       this.lastQuality = FXSim.computeActualQuality(this._telemetry, this.settings, this.model, {
         elapsed: this.machineElapsed,
         usedG: this.usedG - this._telemetry.usedG0,
+        gcodeSha256: typeof this.slice?.sha256 === "string" ? this.slice.sha256 : null,
       });
       this.bus.emit("quality-actual", this.lastQuality);
-      this.log(
-        "info",
-        `成品实测质量评级 ${this.lastQuality.grade}（综合 ${this.lastQuality.score} 分）· 详见「质量」面板`
-      );
+      this.log("info", `仿真质量评级 ${this.lastQuality.grade}（综合 ${this.lastQuality.score} 分）· 详见「质量」面板`);
     }
 
     // 成品判废：翘边与悬垂塌陷不是「打印中断」，而是机械上跑完了但零件报废——
@@ -1684,41 +1688,39 @@ export class FXSim {
     return out;
   }
 
-  /* ── 成品实测质量（打印过程遥测 → 实测报告，纯函数）
-     与 computeQuality（打印前参数预估）互补：这里的每一分都来自本次打印真实采集的数据 ── */
+  /* ── 仿真质量（打印过程遥测 → 模拟记录报告，纯函数）
+     与 computeQuality（打印前参数预估）互补：这里的分数来自浏览器仿真，不是设备或成品检测 ── */
 
   static computeActualQuality(
     tel: SimTelemetry,
     st: SimSettings,
     model: SimModel | null,
-    run?: { elapsed: number; usedG: number } | null
+    run?: { elapsed: number; usedG: number; gcodeSha256?: string | null } | null
   ): QualityReport {
-    void st;
-    void model;
     const checks: QualityCheck[] = [];
     const push = (name: string, score: number, tip: string) => {
       score = Math.round(clamp(score, 4, 99));
       checks.push({ name, score, level: score >= 80 ? "good" : score >= 55 ? "mid" : "bad", tip });
     };
 
-    // 1. 温度过程稳定性（实测偏差积分）
+    // 1. 温度过程稳定性（模拟记录偏差积分）
     const devAvg = tel.tempTime > 0 ? tel.tempDevSum / tel.tempTime : 0;
     let s = 100 - devAvg * 14 - Math.max(0, tel.tempDevMax - 8) * 1.6;
     push(
       "温度过程稳定性",
       s,
-      `全程实测：平均偏差 ${devAvg.toFixed(2)}°C · 峰值偏差 ${tel.tempDevMax.toFixed(1)}°C` +
+      `全程模拟记录：平均偏差 ${devAvg.toFixed(2)}°C · 峰值偏差 ${tel.tempDevMax.toFixed(1)}°C` +
         (tel.tempDevMax > 12 ? "，存在明显温度扰动（故障或大幅调参）" : "，温控收敛良好")
     );
 
-    // 2. 首层成形（调平补偿链实测）
+    // 2. 首层成形（调平补偿链模拟记录）
     if (tel.leveled) {
       const mx = Math.abs(tel.levelMax || 0);
       s = 97 - Math.max(0, mx - 0.15) * 60;
       push(
         "首层成形与调平",
         s,
-        `已按 9 点实测网格补偿（床面最大偏差 ${(tel.levelMax ?? 0) >= 0 ? "+" : ""}${(tel.levelMax || 0).toFixed(3)} mm）` +
+        `已按 9 点模拟记录网格补偿（床面最大偏差 ${(tel.levelMax ?? 0) >= 0 ? "+" : ""}${(tel.levelMax || 0).toFixed(3)} mm）` +
           (mx > 0.15 ? "，床面偏差偏大，建议检查平台" : "，首层厚度均匀")
       );
     } else {
@@ -1726,7 +1728,7 @@ export class FXSim {
       push(
         "首层成形与调平",
         s,
-        `未调平直接打印：接触区实测不均匀度 ${tel.firstLayerUneven.toFixed(3)} mm` +
+        `未调平直接打印：接触区模拟记录不均匀度 ${tel.firstLayerUneven.toFixed(3)} mm` +
           (tel.firstLayerUneven > 0.1 ? "，存在局部过压/脱粘风险，建议先运行自动调平" : "（本机床面较平整，侥幸过关）")
       );
     }
@@ -1752,7 +1754,7 @@ export class FXSim {
     push(
       "回抽与跨路径拉丝",
       s,
-      `实测 ${tel.travelMoves || 0} 次空驶 / ${(tel.travelMm || 0).toFixed(0)} mm，` +
+      `模拟记录 ${tel.travelMoves || 0} 次空驶 / ${(tel.travelMm || 0).toFixed(0)} mm，` +
         `${tel.retractions || 0} 次回抽 / ${(tel.retractedMm || 0).toFixed(1)} mm；` +
         (stringingRisk > 0.35
           ? "回抽保护不足，跨路径残余渗料风险较高"
@@ -1761,14 +1763,14 @@ export class FXSim {
             : "回抽量与跨路径距离匹配，拉丝风险受控")
     );
 
-    // 5. 速度一致性（变速时间占比实测）
+    // 5. 速度一致性（变速时间占比模拟记录）
     const offFrac = tel.printTime > 0 ? tel.offSpeedTime / tel.printTime : 0;
     s = 98 - offFrac * 45;
     push(
       "速度一致性",
       s,
       offFrac > 0.02
-        ? `实测 ${(offFrac * 100).toFixed(0)}% 的打印时间偏离切片基准速度，挤出量波动会体现在侧壁纹理`
+        ? `模拟记录 ${(offFrac * 100).toFixed(0)}% 的打印时间偏离切片基准速度，挤出量波动会体现在侧壁纹理`
         : "全程按切片基准速度执行，挤出均匀"
     );
 
@@ -1776,6 +1778,27 @@ export class FXSim {
     const grade = score >= 90 ? "A" : score >= 78 ? "B" : score >= 60 ? "C" : "D";
     return {
       kind: "actual",
+      provenance: {
+        source: "browser-simulation",
+        modelVersion: "forgex-simulation-quality/1",
+        basis: {
+          machineId: tel.machineId,
+          modelId: model?.id ?? null,
+          modelName: model?.name ?? null,
+          gcodeSha256: run?.gcodeSha256 && /^[a-f0-9]{64}$/.test(run.gcodeSha256) ? run.gcodeSha256 : null,
+          initialSettings: { ...tel.settings0 },
+          finalSettings: { ...st },
+          telemetry: {
+            ...Object.fromEntries(
+              Object.entries(tel).filter(
+                (entry): entry is [string, number | boolean] =>
+                  typeof entry[1] === "number" || typeof entry[1] === "boolean"
+              )
+            ),
+            faults: tel.faults.length,
+          },
+        },
+      },
       score,
       grade,
       checks,

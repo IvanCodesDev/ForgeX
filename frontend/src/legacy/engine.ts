@@ -295,8 +295,9 @@ export interface FleetMachineStatus {
   readonly trustworthy: boolean;
 }
 
-/** 打印完成后由全程运行遥测生成的实测质量报告。 */
+/** 仿真完成后由浏览器模拟遥测生成的规则评分；不是设备测量。 */
 export interface QualityReport {
+  readonly provenance?: import("../engine/sim").QualityReport["provenance"];
   readonly score: number;
   readonly grade: string;
   readonly elapsed: number;

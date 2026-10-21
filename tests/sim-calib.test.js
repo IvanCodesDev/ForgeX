@@ -127,7 +127,7 @@ console.log("\n[3] 全流程：预热 → 调平 → 打印 → 完成（遥测�
   check("综合分与评级合法", q && q.score >= 4 && q.score <= 99 && ["A", "B", "C", "D"].includes(q.grade),
     q ? `${q.grade}/${q.score}` : "null");
   check("干净打印 → 过程扰动高分", q.checks[2].score >= 90, String(q.checks[2].score));
-  check("已调平 → 首层维度引用网格实测", q.checks[1].tip.includes("9 点实测网格"), q.checks[1].tip);
+  check("已调平 → 首层维度引用模拟网格", q.checks[1].tip.includes("9 点模拟记录网格"), q.checks[1].tip);
   check("实测耗材量 > 0", q.usedG > 0, String(q.usedG));
   check("回抽执行被运行遥测记录", sim._telemetry.retractions > 0 && sim._telemetry.retractedMm > 0,
     `${sim._telemetry.retractions}/${sim._telemetry.retractedMm}`);

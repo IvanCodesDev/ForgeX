@@ -1152,15 +1152,15 @@
     _ctx_quality(body) {
       const sim = this.sim;
 
-      /* 成品实测报告（打印完成后由运行遥测生成，每一分都来自本次真实采集） */
+      /* 仿真质量报告（由浏览器模拟遥测生成，不是设备测量） */
       const aq = sim.lastQuality;
       if (aq) {
-        body.appendChild(el("div", "sec-label", "本次成品实测报告"));
+        body.appendChild(el("div", "sec-label", "最近一次仿真质量报告"));
         const gcol = aq.score >= 80 ? "var(--ok)" : aq.score >= 55 ? "var(--warn)" : "var(--err)";
         const sum = el("div", "note",
-          `实测评级 <b class="mono" style="color:${gcol}">${aq.grade}</b> · 综合 <b class="mono" style="color:${gcol}">${aq.score}</b> / 100
-           — 机时 ${FXU.fmtHuman(aq.elapsed)} · 耗材 ${aq.usedG.toFixed(1)} g · ${aq.at.toLocaleTimeString()} 完成。
-           数据来源：打印全程遥测（温度曲线 / 调平网格 / 事件实录 / 速度轨迹）。`);
+          `仿真评级 <b class="mono" style="color:${gcol}">${aq.grade}</b> · 综合 <b class="mono" style="color:${gcol}">${aq.score}</b> / 100
+           — 模拟机时 ${FXU.fmtHuman(aq.elapsed)} · 模拟耗材 ${aq.usedG.toFixed(1)} g · ${aq.at.toLocaleTimeString()} 完成。
+           数据来源：浏览器仿真遥测（温度 / 调平 / 事件 / 速度），不是打印机实测或成品检测。`);
         body.appendChild(sum);
         for (const q of aq.checks) {
           const item = el("div", "qcheck");
@@ -1173,10 +1173,10 @@
           body.appendChild(item);
         }
       } else {
-        body.appendChild(el("div", "sec-label", "本次成品实测报告"));
+        body.appendChild(el("div", "sec-label", "最近一次仿真质量报告"));
         body.appendChild(el("div", "note", sim.state === "print" || sim.state === "pause" || sim.state === "fault"
-          ? "打印进行中，正在采集运行遥测（温度偏差 / 事件 / 速度轨迹），完成后生成实测报告。"
-          : "尚无成品。完成一次打印后，这里将基于全程运行遥测生成实测质量报告。"));
+          ? "仿真进行中，正在记录模拟温度、事件和速度，完成后生成仿真质量报告。"
+          : "尚无仿真报告。完成一次浏览器仿真后可查看规则评分；该评分不能替代成品检测。"));
       }
 
       /* 打印前参数预估（随参数实时推导） */
