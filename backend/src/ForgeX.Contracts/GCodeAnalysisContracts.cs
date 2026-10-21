@@ -95,7 +95,8 @@ public sealed record GCodeLayerSummaryDto(
     double TravelLengthMm,
     double TimeSeconds,
     double FilamentLengthMm,
-    IReadOnlyDictionary<string, long> PathTypeCounts);
+    IReadOnlyDictionary<string, long> PathTypeCounts,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] int? SourceOrder = null);
 
 public sealed record GCodeToolpathVisualizationDto(
     string Encoding,

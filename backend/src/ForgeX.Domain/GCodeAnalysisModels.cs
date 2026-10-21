@@ -114,7 +114,8 @@ public sealed record GCodeLayerSummary(
     double TravelLengthMm,
     double TimeSeconds,
     double FilamentLengthMm,
-    IReadOnlyDictionary<string, long> PathTypeCounts);
+    IReadOnlyDictionary<string, long> PathTypeCounts,
+    int? SourceOrder = null);
 
 /// <summary>A bounded layer slice within the packed visualization segment buffer.</summary>
 public sealed record GCodeToolpathLayer(

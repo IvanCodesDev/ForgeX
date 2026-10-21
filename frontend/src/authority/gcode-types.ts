@@ -89,6 +89,7 @@ export interface AuthorityToolpathLayerView {
 }
 
 export interface GcodeLayerSummary {
+  readonly sourceOrder?: number | null;
   readonly index: number;
   readonly zMm: number;
   readonly pathCount: number;

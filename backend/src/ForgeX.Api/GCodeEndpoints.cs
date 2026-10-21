@@ -146,7 +146,8 @@ internal static class GCodeEndpoints
                 layer.TravelLengthMm,
                 layer.TimeSeconds,
                 layer.FilamentLengthMm,
-                layer.PathTypeCounts)).ToArray(),
+                layer.PathTypeCounts,
+                layer.SourceOrder)).ToArray(),
             new GCodeToolpathVisualizationDto(
                 visualization.Encoding,
                 visualization.RecordStrideBytes,

@@ -404,6 +404,33 @@ async function main() {
     )
       throw new Error("cost scenario leaked across tenants");
 
+    const timelineUrl = baseUrl + operationPaths.get("getGCodeLayerTimeline").replace("{id}", accepted.jobId);
+    const timelineResponse = await request(timelineUrl + "?offset=0&limit=1", { headers: callerA });
+    if (timelineResponse.status !== 200) throw new Error("timeline runtime route failed");
+    const timeline = await timelineResponse.json();
+    if (
+      timeline.layers.length !== 1 ||
+      timeline.layers[0].sequence !== 0 ||
+      timeline.basis.inputSha256 !== snapshot.result.input.sha256
+    )
+      throw new Error("timeline source or chronology drifted");
+    const checkpointUrl = baseUrl + operationPaths.get("createGCodeReplayCheckpoint").replace("{id}", accepted.jobId);
+    const checkpointResponse = await request(checkpointUrl, {
+      method: "POST",
+      headers: { ...callerA, "Content-Type": "application/json" },
+      body: JSON.stringify({ elapsedSeconds: timeline.totalSeconds }),
+    });
+    if (checkpointResponse.status !== 200) throw new Error("checkpoint runtime route failed");
+    const checkpoint = await checkpointResponse.json();
+    if (
+      checkpoint.phase !== "completed" ||
+      checkpoint.activeLayer !== null ||
+      checkpoint.completedLayerCount !== timeline.totalLayers ||
+      checkpoint.fingerprint !== timeline.fingerprint
+    )
+      throw new Error("checkpoint boundary or fingerprint drifted");
+    if ((await request(timelineUrl, { headers: callerB })).status !== 404)
+      throw new Error("timeline leaked across tenants");
     await waitForTerminal(baseUrl, acceptedB.links.status, callerB);
     await readTerminalSse(baseUrl + accepted.links.events, callerA);
     const cancelResponse = await request(baseUrl + accepted.links.cancel, { method: "POST", headers: callerA });
@@ -419,6 +446,8 @@ async function main() {
     }
     for (const required of [
       "# TYPE forgex_build_info gauge",
+      'forgex_http_requests_total{method="GET",route="/api/v1/gcode/analyses/{id}/layer-timeline",status="200"} 1',
+      'forgex_http_requests_total{method="POST",route="/api/v1/gcode/analyses/{id}/replay-checkpoints",status="200"} 1',
       "forgex_job_repository_ready 1",
       'forgex_http_requests_total{method="POST",route="/api/v1/gcode/analyses",status="202"} 2',
       'forgex_http_request_duration_seconds_count{method="POST",route="/api/v1/gcode/analyses"}',

@@ -91,6 +91,7 @@ internal static class GCodeCostSection
         gate.Check("cost-http-missing-id", await Send(json, target: path.Replace(id, new string('b', 32))) == 404);
         gate.Check("cost-http-forged-basis", await Send(json[..^1] + ",\"durationSeconds\":0}") == 400);
         gate.Check("cost-http-required-fields", await Send("{}") == 400);
+        gate.Check("cost-http-duplicate-fields", await Send(json[..^1] + ",\"averagePowerWatts\":201}") == 400);
         gate.Check("cost-http-null-body", await Send("null") == 400);
         gate.Check("cost-http-missing-evidence", await Send("{\"averagePowerWatts\":0,\"electricityCnyPerKwh\":0,\"machineCnyPerHour\":0,\"materialCnyPerKg\":0,\"evidence\":\"\"}") == 400);
         gate.Check("cost-http-nonfinite", await Send(json.Replace("200", "NaN")) == 400);

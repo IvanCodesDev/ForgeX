@@ -479,7 +479,7 @@ jobs:
       - run: xvfb-run --auto-servernum -- npm run test:e2e
 
       - name: React 工作台 C# 权威接线专项
-        run: npm run test:e2e:chromium -- tests/e2e/workbench-authority.spec.js tests/e2e/gcode-cost.spec.js
+        run: npm run test:e2e:chromium -- tests/e2e/workbench-authority.spec.js tests/e2e/gcode-cost.spec.js tests/e2e/gcode-replay.spec.js
         env:
           E2E_GCODE_AUTHORITY: dotnet
 
@@ -496,6 +496,7 @@ jobs:
             backend/artifacts/mesh-authority-panel.png
             backend/artifacts/mesh-topology-panel.png
             backend/artifacts/gcode-cost-panel.png
+            backend/artifacts/gcode-replay-panel.png
             backend/artifacts/machine-cost-comparison.png
             backend/artifacts/machine-log-worker.png
             backend/artifacts/machine-log-worker.json

@@ -15,7 +15,7 @@ namespace ForgeX.Simulation;
 /// </summary>
 public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
 {
-    public const string EngineVersion = "1.4.0";
+    public const string EngineVersion = "1.5.0";
 
     private const int ReadBufferSize = 64 * 1024;
     private static readonly Encoding StrictUtf8 = new UTF8Encoding(
@@ -429,7 +429,8 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
                     TravelLengthMm: layer.TravelLengthMm,
                     TimeSeconds: layer.TimeSeconds,
                     FilamentLengthMm: layer.FilamentLengthMm,
-                    PathTypeCounts: GCodeReadOnly.Dictionary(layer.PathTypeCounts)));
+                    PathTypeCounts: GCodeReadOnly.Dictionary(layer.PathTypeCounts),
+                    SourceOrder: layer.SourceOrder));
             }
 
             var visualization = BuildVisualization(ct);
@@ -845,7 +846,7 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
                         $"G-code exceeds the configured {_options.MaxLayers}-layer limit."));
             }
 
-            _currentLayer = new MutableLayer(zMm);
+            _currentLayer = new MutableLayer(zMm, _layers.Count);
             _layers.Add(_currentLayer);
         }
 
@@ -1249,8 +1250,9 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
             return maximum * Math.Sqrt((scaledX * scaledX) + (scaledY * scaledY));
         }
 
-        private sealed class MutableLayer(double zMm)
+        private sealed class MutableLayer(double zMm, int sourceOrder)
         {
+            public int SourceOrder { get; } = sourceOrder;
             public double ZMm { get; } = zMm;
             public long PathCount { get; set; }
             public double ExtrusionLengthMm { get; set; }

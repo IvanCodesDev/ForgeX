@@ -1,4 +1,6 @@
 import { useEffect, useReducer, useRef, useState, type CSSProperties } from "react";
+import type { ImportAssets } from "../useImportAssets";
+import { GcodeReplayPanel } from "../GcodeReplayPanel";
 import {
   legacyUtil,
   type LegacyEventBus,
@@ -72,11 +74,12 @@ function drawLayer(canvas: HTMLCanvasElement, layer: SliceLayer, bedSizeMm: numb
 }
 
 interface SlicePageProps {
+  readonly assets: ImportAssets;
   readonly sim: LegacySim;
   readonly bus: LegacyEventBus;
 }
 
-export function SlicePage({ sim, bus }: SlicePageProps) {
+export function SlicePage({ sim, bus, assets }: SlicePageProps) {
   const { clamp, fmtHuman } = legacyUtil();
   /* 重新切片后 slice 引用整体更换，靠版本号驱动重渲染（旧实现靠整页重建）。 */
   const [, bumpSliceVersion] = useReducer((version: number) => version + 1, 0);
@@ -159,6 +162,28 @@ export function SlicePage({ sim, bus }: SlicePageProps) {
           <span>3D 视口联动</span>
         </label>
       </div>
+
+      {assets.authority.mode === "dotnet" &&
+        assets.authority.status === "done" &&
+        assets.authority.jobId &&
+        assets.authority.result && (
+          <GcodeReplayPanel
+            key={assets.authority.jobId}
+            jobId={assets.authority.jobId}
+            source={assets.authority.result}
+            previewLayer={layerIndex}
+            canLink={
+              assets.gcode?.sha256 === assets.authority.result.input.sha256 &&
+              new Set(assets.authority.result.layers.map((value) => value.zMm)).size ===
+                assets.authority.result.layers.length &&
+              assets.authority.result.layers.length === slice.layers.length &&
+              assets.authority.result.layers.every(
+                (value, index) => Math.abs(value.zMm - (slice.layers[index]?.z ?? NaN)) < 1e-6
+              )
+            }
+            onPreview={(index) => setLayerNo(index + 1)}
+          />
+        )}
 
       <div className="sec-label">切片统计</div>
       <div>

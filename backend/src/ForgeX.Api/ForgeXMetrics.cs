@@ -186,6 +186,9 @@ internal sealed class ForgeXMetrics
     {
         var value = path.Value ?? string.Empty;
         if (value.Equals("/api/v1/meshes/analyze", StringComparison.OrdinalIgnoreCase)) return "/api/v1/meshes/analyze";
+        if (value.StartsWith("/api/v1/gcode/analyses/", StringComparison.OrdinalIgnoreCase) && value.Count(c => c == '/') == 6)
+            foreach (var suffix in new[] { "layer-timeline", "replay-checkpoints" })
+                if (value.EndsWith("/" + suffix, StringComparison.OrdinalIgnoreCase)) return "/api/v1/gcode/analyses/{id}/" + suffix;
         if (value.StartsWith("/api/v1/gcode/analyses/", StringComparison.OrdinalIgnoreCase) &&
             value.EndsWith("/cost-estimates", StringComparison.OrdinalIgnoreCase) && value.Count(c => c == '/') == 6)
             return "/api/v1/gcode/analyses/{id}/cost-estimates";

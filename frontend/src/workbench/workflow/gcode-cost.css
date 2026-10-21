@@ -30,3 +30,26 @@
   min-height: 64px;
   resize: vertical;
 }
+/* Keep the motion-plan list bounded inside the workflow panel. */
+.replay-rows {
+  max-height: 320px;
+  overflow: auto;
+}
+.replay-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0;
+  border-bottom: 1px solid #ffffff18;
+}
+.replay-row > span {
+  width: 100%;
+  font-size: 11px;
+}
+.replay-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 8px 0;
+}

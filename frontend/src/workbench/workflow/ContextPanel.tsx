@@ -11,7 +11,7 @@ import type { WorkflowNav } from "./useWorkflowNav";
 /** 四个流程页全部由 React 渲染；renderCtx 只负责 currentNav 同步与刷新事件。 */
 function renderReactPage(id: WorkflowNavId, handles: WorkbenchHandles, assets: ImportAssets): ReactNode | null {
   if (id === "import") return <ImportPage sim={handles.sim} ui={handles.ui} bus={handles.bus} assets={assets} />;
-  if (id === "slice") return <SlicePage sim={handles.sim} bus={handles.bus} />;
+  if (id === "slice") return <SlicePage sim={handles.sim} bus={handles.bus} assets={assets} />;
   if (id === "calib") return <CalibPage sim={handles.sim} bus={handles.bus} />;
   if (id === "quality") return <QualityPage sim={handles.sim} bus={handles.bus} />;
   return null;

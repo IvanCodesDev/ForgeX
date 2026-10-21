@@ -266,6 +266,7 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
       unit,
     };
   });
+  const layerCount = root.layers.length;
   const layers = root.layers.map((value, index) => {
     const layer = requireRecord(value, `layers[${index}]`);
     const actualIndex = requireNonNegativeInteger(layer, "index", `layers[${index}].index`);
@@ -286,7 +287,18 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
     if (countedPaths !== pathCount) {
       throw new Error(`C# 权威结果契约不一致：layers[${index}] pathTypeCounts=${countedPaths}, pathCount=${pathCount}`);
     }
+    const sourceOrder = layer.sourceOrder;
+    if (
+      sourceOrder !== undefined &&
+      sourceOrder !== null &&
+      (typeof sourceOrder !== "number" ||
+        !Number.isInteger(sourceOrder) ||
+        sourceOrder < 0 ||
+        sourceOrder >= layerCount)
+    )
+      throw new Error("C# 权威结果层执行顺序无效");
     return {
+      ...(sourceOrder === undefined ? {} : { sourceOrder }),
       index: actualIndex,
       zMm: requireFinite(layer, "zMm"),
       pathCount,
@@ -297,6 +309,12 @@ export function parseAuthorityResponse(value: unknown): AuthorityAnalysisRespons
       pathTypeCounts,
     };
   });
+  const orders = layers.map((layer) => layer.sourceOrder);
+  if (
+    orders.some((order) => order != null) &&
+    (orders.some((order) => order == null) || new Set(orders).size !== layers.length)
+  )
+    throw new Error("C# 权威结果层执行顺序缺失或重复");
   const rawVisualization = requireRecord(root.visualization, "visualization");
   const encoding = requireString(rawVisualization, "encoding");
   const recordStrideBytes = requireNonNegativeInteger(rawVisualization, "recordStrideBytes");

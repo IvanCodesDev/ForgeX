@@ -556,6 +556,29 @@ app.MapPost(
     .WithName("ValidateCalibrationBundle")
     .ExcludeFromDescription();
 
+app.MapGet("/api/v1/gcode/analyses/{id}/layer-timeline", GCodeReplayEndpoints.TimelineAsync)
+    .WithName("GetGCodeLayerTimeline")
+    .Produces<ForgeX.Domain.GCodeLayerTimeline>()
+    .Produces<ApiProblem>(400, "application/problem+json")
+    .Produces<ApiProblem>(401, "application/problem+json")
+    .Produces<ApiProblem>(404, "application/problem+json")
+    .Produces<ApiProblem>(409, "application/problem+json")
+    .Produces<ApiProblem>(422, "application/problem+json")
+    .Produces<ApiProblem>(429, "application/problem+json");
+
+app.MapPost("/api/v1/gcode/analyses/{id}/replay-checkpoints", GCodeReplayEndpoints.CheckpointAsync)
+    .WithName("CreateGCodeReplayCheckpoint")
+    .Accepts<ForgeX.Domain.GCodeReplayInputs>("application/json")
+    .Produces<ForgeX.Domain.GCodeReplayCheckpoint>()
+    .Produces<ApiProblem>(400, "application/problem+json")
+    .Produces<ApiProblem>(401, "application/problem+json")
+    .Produces<ApiProblem>(404, "application/problem+json")
+    .Produces<ApiProblem>(409, "application/problem+json")
+    .Produces<ApiProblem>(413, "application/problem+json")
+    .Produces<ApiProblem>(415, "application/problem+json")
+    .Produces<ApiProblem>(422, "application/problem+json")
+    .Produces<ApiProblem>(429, "application/problem+json");
+
 app.MapPost("/api/v1/gcode/analyses/{id}/cost-estimates", GCodeCostEndpoints.EstimateAsync)
     .WithName("EstimateGCodeCost")
     .Accepts<ForgeX.Domain.GCodeCostInputs>("application/json")

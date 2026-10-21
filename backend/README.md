@@ -69,10 +69,24 @@ the immediate preview used by `browser` and `shadow` modes.
 - 平均功率 0–100000 W、电价 0–100 CNY/kWh、纯机时费率 0–100000 CNY/h、材料单价 0–5000 CNY/kg。作业运动估算时长上限 365 天，耗材上限 1000000 g，非有限值或超限源数据拒绝。请求上限 16 KiB，包含无 Content-Length 的流式请求；只接受 JSON。
 - 能耗 = 平均功率 × 秒数 / 3600000；电费 = 未舍入能耗 × 电价；机时费 = 秒数 / 3600 × 纯机时费率；材料费 = 耗材克数 × 单价 / 1000。能耗保留 9 位小数，费用分项保留 6 位小数，采用十进制中点取偶数舍入；总成本为已舍入分项之和，仅在全部输入已知时提供，否则返回显式 `null` 并列出缺失项。
 - 模型版本 `forgex-gcode-cost/2` 的 SHA-256 绑定 `modelVersion`、源作业 ID、原件 SHA-256、Profile 指纹、分析引擎版本、时长/耗材及规范化的输入和依据。依据统一 CRLF→LF 并 trim，十进制去除无意义尾零；按 Domain 记录顺序以 `JsonSerializerDefaults.Web` 序列化上述对象并对 UTF-8 字节取哈希。同一作业同一输入结果可复现，任一绑定项改变后指纹改变。
-- 成本场景不修改或另存作业文件，不改变原 G-code 引擎 1.4.0 或分析 Profile 指纹。React 对响应的作业、原件、Profile、时长/耗材、声明输入、缺失状态和分项公式做绑定校验；修改输入清除结果，切换模型取消在途请求。可下载包含完整依据、公式结果和指纹的 JSON，自行保存。
+- 成本场景不修改或另存作业文件，不改写源作业或分析 Profile 指纹。React 对响应的作业、原件、Profile、时长/耗材、声明输入、缺失状态和分项公式做绑定校验；修改输入清除结果，切换模型取消在途请求。可下载包含完整依据、公式结果和指纹的 JSON，自行保存。
 - 面板仅在 dotnet 模式的真实异步作业成功后出现；browser / shadow、离线或同步回退不显示此面板，也不发出成本请求。机时费率应排除材料和电费；估算不补齐 G-code 运动时长之外的预热、保温、待机或换料，不是电表实测或最终账单。现场实测与更完整的设备能耗模型仍待接入。
 
 `ForgeX.ResourceGate` 包含成本公式、舍入、零值/缺失、指纹与真实 HTTP 隔离验证；OpenAPI 运行时门禁请求实际作业成本；CI 的 `E2E_GCODE_AUTHORITY=dotnet` 专项验证真实作业、输入失效、审计下载和取消。
+
+## C# 层计划与回放检查点
+
+G-code 引擎 `1.5.0` 在按 Z 排序前保存每个挤出层的 `sourceOrder`；响应契约仍为 `1.0`，该字段允许缺省或显式 `null`，便于读取旧结果。时间轴严格使用源执行顺序，支持降层和重复高度；不从按高度排序的层数组或采样几何猜测顺序。
+
+- `GET /api/v1/gcode/analyses/{id}/layer-timeline?offset=0&limit=50`：返回分页层计划、首层前运动、总时长、正向耗丝及来源指纹；每页 1–200 层，offset 可等于总层数。层行同时保留执行序号与按高度排序的 layerIndex，时间区间为 `[startSeconds, endSeconds)`。未知、重复或非整数分页参数拒绝。
+- `POST /api/v1/gcode/analyses/{id}/replay-checkpoints`：输入 `{"elapsedSeconds":1.5}`，上限 4 KiB；返回首层前空驶、活动层或完成状态。位于边界时进入下一层；零时长层计入已完成层，不做除零。只累计完整完成层的正向 E 增量，不按时间比例分配当前层材料、成本或喷头位置。
+- 两端点仅接受当前调用方已完成的作业。不存在/跨租户/跨用户为 404，未完成或未保存源执行顺序的旧结果为 409（须用原件重新分析），文件/引擎/Profile 或层数值损坏为 422。最多支持 100000 层、365 天运动时长及 1000000 g 净耗材，每进程最多同时构建两份计划，繁忙为 429、`Retry-After: 1`。请求取消贯穿构建循环。
+- `forgex-gcode-layer-timeline/1` 指纹绑定作业、原件 SHA-256、Profile、引擎、作业运动时长及净耗材、首层前运动和全部执行层数值；不随分页或定位时间改变。模型以固定字段顺序、InvariantCulture 数字（double 使用 `R`）及 LF 分隔增量计算 SHA-256，避免构造整份时间轴 JSON 作为哈希临时副本。
+- 层正向耗丝只含有 XY 挤出运动的正向 E；作业净耗丝还包含回抽和纯 E，不能互换。运动时长不含预热、等待和固件加速度，不代表真机运行进度。当前功能不创建持久化仿真会话、不执行热场模型，也不由采样预览插值物理状态。
+- React 切片页显式加载 50 层分页，可按秒定位、跳转预览并下载当前页与检查点的审计 JSON。客户端再次核验来源和层/时间算术；修改输入、翻页或切换作业取消旧请求。仅在原件一致、层数和 Z 可一一对应且无重复高度时联动预览；重复高度的计划仍可核验。只向 C# 单进程服务请求，Node 兼容网关未代理这些新端点；离线不发请求。
+- 成本与回放共用有界严格 JSON 读取器，拒绝重复键、未知字段、错误大小写、数值字符串及过深 JSON，正文实际长度也受限。
+
+ResourceGate 覆盖源顺序、降层/重复高度、首层空驶、零时长层、边界、指纹、取消、旧结果、分页/JSON 拒绝及调用方隔离；OpenAPI 运行时核验实际路由、检查点及有界指标。Chromium 专项覆盖真实 55 层降层作业、两页计划、审计原件与过期响应。
 
 ## Stage 5-A G-code Profile authority
 
@@ -131,10 +145,9 @@ whose operational limits or price differ even when their bytes and Profile IDs m
 `1.4.0` returns a `material` estimate whose direct CNY cost is `filamentMassG * priceCnyPerKg /
 1000`, plus a `risk` assessment with a bounded score, low/medium/high level, observed metrics, and
 stable findings for bounds, temperature, speed, flow, homing, single-layer completeness, and arc
-approximation. Energy and machine-time cost are intentionally excluded until auditable power and
-rate inputs exist.
+approximation. Energy and machine-time estimates use the separate declared-input cost endpoint above.
 
-The G-code engine contract version is `1.4.0`.
+The current G-code engine contract version is `1.5.0`; the motion replay endpoints above require its recorded source order.
 New asynchronous idempotency fingerprints use `forgex-gcode-job/2`. A completed Stage 5-A file-job
 record without `layers`, a Stage 5-B record without `visualization`, or a Stage 5-C record without
 `material`/`risk`, is reopened as a stable
@@ -372,4 +385,4 @@ The old page remains at `/`, the React page remains at `/react/`, and the defaul
 23. G-code → 公共契约第 23 组验证直接权威端点和作业身份边界，异步持久化由单进程部署演练/JobGate 补齐。Node 的流式代理实现测试在代理删除后才退役，不能用直连接口通过来宣称这些代理分支已逐条迁移。
 24. 单进程路由错误 → 公共契约第 24 组验证内部 405/415、`Allow`、公共中文 404，以及 GET/POST/DELETE/HEAD 和大小写路径。
 
-公共 HTTP 契约现为 196 项；ResourceGate 为 629 项（file + postgres 双腿，包含 provider 等内部契约 59 项、部署健康故障验证 16 项、网格解析/HTTP 验证 127 项和成本模型/HTTP/前置契约验证 60 项）。CI 分别保存 `csharp-server-contract.json` 与 `resource-authority-gate.json`。测试数量不能替代删除审批、真实容器验收和生产观察；现阶段仍保留 Node、经典前端及原测试链。
+公共 HTTP 契约现为 196 项；ResourceGate 为 680 项（file + postgres 双腿，包含 provider 等内部契约 59 项、部署健康故障验证 16 项、网格解析/HTTP 验证 127 项、成本模型/HTTP/前置契约验证 61 项及层计划回放 50 项）。CI 分别保存 `csharp-server-contract.json` 与 `resource-authority-gate.json`。测试数量不能替代删除审批、真实容器验收和生产观察；现阶段仍保留 Node、经典前端及原测试链。

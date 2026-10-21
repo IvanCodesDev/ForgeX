@@ -16,6 +16,8 @@ assert.strictEqual(document.openapi, "3.1.0", "OpenAPI version must remain 3.1.0
 
 const expectedOperations = new Map([
   ["analyzeMesh", ["POST", "/api/v1/meshes/analyze"]],
+  ["getGCodeLayerTimeline", ["GET", "/api/v1/gcode/analyses/{id}/layer-timeline"]],
+  ["createGCodeReplayCheckpoint", ["POST", "/api/v1/gcode/analyses/{id}/replay-checkpoints"]],
   ["estimateGCodeCost", ["POST", "/api/v1/gcode/analyses/{id}/cost-estimates"]],
   ["analyzeGCode", ["POST", "/api/v1/gcode/analyze"]],
   ["createGCodeAnalysisJob", ["POST", "/api/v1/gcode/analyses"]],
@@ -44,6 +46,9 @@ for (const schemaName of [
   "MeshSize",
   "MeshTopology",
   "GCodeCostEstimate",
+  "GCodeLayerTimeline",
+  "GCodeReplayInputs",
+  "GCodeReplayCheckpoint",
   "GCodeCostInputs",
   "GCodeAnalysisResponse",
   "GCodeInputSummary",
