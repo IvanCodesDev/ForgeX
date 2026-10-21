@@ -3,6 +3,7 @@
    结构化错误不回退、Worker 基建故障回退主线程（结果与 Worker 路径同源）、取消、看门狗超时。 */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sha256 } from "../../engine/gcode-parser";
+import * as gcodeParser from "../../engine/gcode-parser";
 import type { MeshImportRequest, MeshImportWorkerReply } from "./mesh-import-protocol";
 
 const { FakeWorker } = vi.hoisted(() => {
@@ -17,6 +18,7 @@ const { FakeWorker } = vi.hoisted(() => {
     }
     onmessage: ((event: MessageEvent<MeshImportWorkerReply>) => void) | null = null;
     onerror: ((event: ErrorEvent) => void) | null = null;
+    onmessageerror: (() => void) | null = null;
     posted: MeshImportRequest[] = [];
     terminated = false;
     constructor() {
@@ -71,7 +73,62 @@ describe("importMeshFile：Worker 边界与主线程兜底", () => {
     file = new File([tinyStl()], "tiny.stl");
   });
   afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+
+  it.each(["cancel", "timeout"])("兜底读取中 %s 后不再哈希，也不再发进度", async (ending) => {
+    vi.useFakeTimers();
+    FakeWorker.ctorError = new Error("no worker");
+    let release!: (buffer: ArrayBuffer) => void;
+    vi.spyOn(file, "arrayBuffer").mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      })
+    );
+    const progress: MeshImportProgress[] = [];
+    const handle = importMeshFile(file, (p) => progress.push(p));
+    const hash = vi.spyOn(gcodeParser, "sha256");
+    const failed = expect(handle.promise).rejects.toMatchObject({
+      code: ending === "cancel" ? "CANCELLED" : "TIMEOUT",
+    });
+    if (ending === "cancel") handle.cancel();
+    else await vi.advanceTimersByTimeAsync(180000);
+    await failed;
+    const count = progress.length;
+    release(tinyStl().buffer);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(hash).not.toHaveBeenCalled();
+    expect(progress).toHaveLength(count);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("postMessage 抛错只启动一次兜底，旧 Worker 消息不会覆盖结果", async () => {
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (
+      this: InstanceType<typeof FakeWorker>,
+      request
+    ) {
+      this.posted.push(request);
+      throw new Error("clone failed");
+    });
+    const read = vi.spyOn(file, "arrayBuffer");
+    const handle = importMeshFile(file);
+    const worker = FakeWorker.instances[0]!;
+    worker.crash("late");
+    worker.crash("late again");
+    worker.onmessageerror?.();
+    worker.reply({ type: "result", requestId: worker.posted[0]!.requestId, sha256: "stale", mesh: {} as never });
+    expect((await handle.promise).via).toBe("main");
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(worker.terminated).toBe(true);
+  });
+  it("消息反序列化失败终止 Worker，不在主线程重试", async () => {
+    const read = vi.spyOn(file, "arrayBuffer"),
+      handle = importMeshFile(file);
+    FakeWorker.instances[0]!.onmessageerror?.();
+    await expect(handle.promise).rejects.toMatchObject({ code: "WORKER_FAILURE" });
+    expect(read).not.toHaveBeenCalled();
+    expect(FakeWorker.instances[0]!.terminated).toBe(true);
   });
 
   it("Worker 成功：进度逐条转发，结果带 via=worker，收尾追加 rebuild 并终止 Worker", async () => {

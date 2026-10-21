@@ -114,6 +114,8 @@ export interface ImportAssets {
   handleMeshFile(file: File): void;
   handleMachineLogFile(file: File): void;
   cancelMachineLogImport(): void;
+  cancelGcodeImport(): void;
+  cancelMeshImport(): void;
   handleProfileFile(file: File): void;
   handleCalibrationFile(file: File): void;
   updateImage(patch: Partial<ImageModelState>, options?: { debounce?: boolean }): void;
@@ -150,11 +152,19 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
   const authorityAbort = useRef<AbortController | null>(null);
   const gcodeImportHandle = useRef<GcodeImportHandle | null>(null);
   const meshImportHandle = useRef<MeshImportHandle | null>(null);
+  const gcodeImportEpoch = useRef(0);
+  const meshImportEpoch = useRef(0);
   const meshAuthorityAbort = useRef<AbortController | null>(null);
   const machineLogImportHandle = useRef<MachineLogImportHandle | null>(null);
   const machineLogImportEpoch = useRef(0);
   useEffect(
     () => () => {
+      gcodeImportEpoch.current++;
+      meshImportEpoch.current++;
+      gcodeImportHandle.current?.cancel();
+      gcodeImportHandle.current = null;
+      authorityAbort.current?.abort();
+      authorityAbort.current = null;
       meshImportHandle.current?.cancel();
       meshAuthorityAbort.current?.abort();
       meshImportHandle.current = null;
@@ -178,14 +188,18 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
       const controller = new AbortController();
       authorityAbort.current = controller;
       setAuthority({ mode: authorityMode, ...AUTHORITY_IDLE, status: "running", phase: "queued" });
-      const onProgress = (progress: AuthorityJobProgress) =>
+      const onProgress = (progress: AuthorityJobProgress) => {
+        if (controller.signal.aborted) return;
         setAuthority((current) =>
           current.status === "running"
             ? { ...current, jobId: progress.jobId, phase: progress.phase, progress: progress.progress }
             : current
         );
+      };
       requestAuthorityJobAnalysis(file, options, import.meta.env, controller.signal, {
-        onAccepted: (jobId) => setAuthority((current) => ({ ...current, jobId })),
+        onAccepted: (jobId) => {
+          if (!controller.signal.aborted) setAuthority((current) => ({ ...current, jobId }));
+        },
         onProgress,
       })
         .then((result) => {
@@ -243,25 +257,34 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
     setMachineLogImport(MACHINE_LOG_IMPORT_IDLE);
   }, []);
 
-  const clearGcodeChain = useCallback(() => {
-    cancelMachineLogImport();
+  const cancelGcodeImport = useCallback(() => {
+    gcodeImportEpoch.current++;
     gcodeImportHandle.current?.cancel();
     gcodeImportHandle.current = null;
     setGcodeImport(GCODE_IMPORT_IDLE);
+  }, []);
+  const cancelMeshImport = useCallback(() => {
+    meshImportEpoch.current++;
+    meshImportHandle.current?.cancel();
+    meshImportHandle.current = null;
+    setMeshImport(MESH_IMPORT_IDLE);
+  }, []);
+
+  const clearGcodeChain = useCallback(() => {
+    cancelMachineLogImport();
+    cancelGcodeImport();
     setGcode(null);
     gcodeRef.current = null;
     setMachineLog(null);
     authorityAbort.current?.abort();
     setAuthority({ mode: authorityMode, ...AUTHORITY_IDLE });
-  }, [authorityMode, cancelMachineLogImport]);
+  }, [authorityMode, cancelMachineLogImport, cancelGcodeImport]);
 
   const clearMeshChain = useCallback(() => {
     meshAuthorityAbort.current?.abort();
-    meshImportHandle.current?.cancel();
-    meshImportHandle.current = null;
-    setMeshImport(MESH_IMPORT_IDLE);
+    cancelMeshImport();
     setMesh(null);
-  }, []);
+  }, [cancelMeshImport]);
 
   const clearImportChain = useCallback(() => {
     clearGcodeChain();
@@ -340,11 +363,14 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
       if (printLocked(sim)) return ui.toast("打印中不可导入 G-code", "warn");
       const origin = String(sim.printer.KIN_TAG || "").toLowerCase() === "delta" ? "center" : "corner";
       const options = { densityG: sim.material.densityG, bedSize: sim.printer.BED_SIZE || 256, origin } as const;
-      gcodeImportHandle.current?.cancel();
+      cancelGcodeImport();
+      cancelMeshImport();
+      const epoch = gcodeImportEpoch.current;
       setGcodeImport({ status: "parsing", phase: "read", progress: 0 });
-      const handle = importGcodeFile(file, options, (progress) =>
-        setGcodeImport({ status: "parsing", phase: progress.phase, progress: progress.progress })
-      );
+      const handle = importGcodeFile(file, options, (progress) => {
+        if (gcodeImportEpoch.current === epoch)
+          setGcodeImport({ status: "parsing", phase: progress.phase, progress: progress.progress });
+      });
       gcodeImportHandle.current = handle;
       handle.promise
         .then(({ parsed, sourceText, sha256, toolpath }) => {
@@ -361,6 +387,7 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
         })
         .catch((error: unknown) => {
           if (error instanceof GcodeImportError && error.code === "CANCELLED") return;
+          if (gcodeImportHandle.current !== handle) return;
           console.error("[gcode-import]", error);
           ui.toast("G-code 导入失败：" + String((error as Error)?.message ?? error), "err");
         })
@@ -371,7 +398,7 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
           }
         });
     },
-    [sim, ui, requestAuthority, clearMeshChain]
+    [sim, ui, requestAuthority, clearMeshChain, cancelGcodeImport, cancelMeshImport]
   );
 
   /* STL / 3MF 在 Worker 内读取、SHA-256、解析、归一化（Stage 9.3 前半，浏览器预览口径）；
@@ -383,11 +410,14 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
       if (file.size > MAX_MESH_BYTES)
         return ui.toast(`网格文件超过 ${Math.round(MAX_MESH_BYTES / 1024 / 1024)}MB，请先精简`, "err");
       if (printLocked(sim)) return ui.toast("打印中不可更换模型", "warn");
-      meshImportHandle.current?.cancel();
+      cancelMeshImport();
+      cancelGcodeImport();
+      const epoch = meshImportEpoch.current;
       setMeshImport({ status: "parsing", phase: "read", progress: 0 });
-      const handle = importMeshFile(file, (progress) =>
-        setMeshImport({ status: "parsing", phase: progress.phase, progress: progress.progress })
-      );
+      const handle = importMeshFile(file, (progress) => {
+        if (meshImportEpoch.current === epoch)
+          setMeshImport({ status: "parsing", phase: progress.phase, progress: progress.progress });
+      });
       meshImportHandle.current = handle;
       handle.promise
         .then(({ mesh: payload, sha256, via }) => {
@@ -440,6 +470,7 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
         })
         .catch((error: unknown) => {
           if (error instanceof MeshImportError && error.code === "CANCELLED") return;
+          if (meshImportHandle.current !== handle) return;
           console.error("[mesh-import]", error);
           ui.toast("网格导入失败：" + String((error as Error)?.message ?? error), "err");
         })
@@ -450,7 +481,7 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
           }
         });
     },
-    [sim, ui, clearGcodeChain]
+    [sim, ui, clearGcodeChain, cancelGcodeImport, cancelMeshImport]
   );
 
   const handleMachineLogFile = useCallback(
@@ -593,6 +624,8 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
       handleMeshFile,
       handleMachineLogFile,
       cancelMachineLogImport,
+      cancelGcodeImport,
+      cancelMeshImport,
       handleProfileFile,
       handleCalibrationFile,
       updateImage,
@@ -613,6 +646,8 @@ export function useImportAssets(handles: WorkbenchHandles | null): ImportAssets 
       handleMeshFile,
       handleMachineLogFile,
       cancelMachineLogImport,
+      cancelGcodeImport,
+      cancelMeshImport,
       handleProfileFile,
       handleCalibrationFile,
       updateImage,

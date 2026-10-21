@@ -49,19 +49,24 @@ let nextRequestId = 1;
 
 async function parseOnMainThread(
   file: File,
-  onProgress?: (progress: MeshImportProgress) => void
+  onProgress: ((progress: MeshImportProgress) => void) | undefined,
+  checkActive: () => void
 ): Promise<MeshImportSuccess> {
   let phase: MeshImportPhase = "read";
   try {
     if (file.size > MAX_MESH_BYTES)
       throw new Error(`网格文件超过 ${Math.round(MAX_MESH_BYTES / 1024 / 1024)}MB，请先精简`);
     onProgress?.({ phase: "read", progress: 0 });
+    checkActive();
     const buffer = await file.arrayBuffer();
+    checkActive();
     phase = "hash";
     const digest = await sha256(buffer);
+    checkActive();
     phase = "parse";
     onProgress?.({ phase: "parse", progress: 0 });
     const mesh = await parseMeshBuffer(buffer, file.name);
+    checkActive();
     onProgress?.({ phase: "parse", progress: 1 });
     return { mesh, sha256: digest, via: "main" };
   } catch (error) {
@@ -79,6 +84,7 @@ export function importMeshFile(file: File, onProgress?: (progress: MeshImportPro
   let worker: Worker | null = null;
   let watchdog: number | null = null;
   let settled = false;
+  let fallback = false;
   let rejectPromise: (error: unknown) => void = () => {};
 
   const cleanup = () => {
@@ -103,13 +109,26 @@ export function importMeshFile(file: File, onProgress?: (progress: MeshImportPro
       markImportVia(value.via);
       resolve(value);
     };
-    const fallbackToMainThread = () => {
-      cleanup();
-      parseOnMainThread(file, onProgress).then(settle, fail);
+    const checkActive = () => {
+      if (settled) throw new MeshImportError("CANCELLED", "网格导入已结束");
     };
+    const report = (progress: MeshImportProgress) => {
+      if (!settled) onProgress?.(progress);
+    };
+    const fallbackToMainThread = () => {
+      if (settled || fallback) return;
+      fallback = true;
+      worker?.terminate();
+      worker = null;
+      // 保留看门狗，取消后阻止后续哈希、解析与进度回调。
+      parseOnMainThread(file, report, checkActive).then(settle, fail);
+    };
+    watchdog = window.setTimeout(() => {
+      fail(new MeshImportError("TIMEOUT", "网格解析超时，已结束本次导入"));
+    }, IMPORT_TIMEOUT_MS);
 
     try {
-      worker = new MeshImportWorkerCtor();
+      worker = new MeshImportWorkerCtor({ name: "forgex-mesh" });
     } catch {
       worker = null;
     }
@@ -120,27 +139,24 @@ export function importMeshFile(file: File, onProgress?: (progress: MeshImportPro
 
     const requestId = nextRequestId++;
     let workerReplied = false;
-    watchdog = window.setTimeout(() => {
-      fail(new MeshImportError("TIMEOUT", "网格解析超时，已终止后台任务"));
-    }, IMPORT_TIMEOUT_MS);
 
     worker.onmessage = (event: MessageEvent<MeshImportWorkerReply>) => {
       const message = event.data;
-      if (!message || message.requestId !== requestId || settled) return;
+      if (!message || message.requestId !== requestId || settled || fallback) return;
       workerReplied = true;
       if (message.type === "progress") {
-        onProgress?.({ phase: message.phase, progress: message.progress });
+        report({ phase: message.phase, progress: message.progress });
         return;
       }
       if (message.type === "error") {
         fail(new MeshImportError(message.code, message.message, message.phase));
         return;
       }
-      onProgress?.({ phase: "rebuild", progress: 1 });
+      report({ phase: "rebuild", progress: 1 });
       settle({ mesh: message.mesh, sha256: message.sha256, via: "worker" });
     };
     worker.onerror = (event) => {
-      if (settled) return;
+      if (settled || fallback) return;
       if (!workerReplied) {
         event.preventDefault();
         fallbackToMainThread();
@@ -148,7 +164,15 @@ export function importMeshFile(file: File, onProgress?: (progress: MeshImportPro
       }
       fail(new MeshImportError("WORKER_FAILURE", event.message || "网格解析 Worker 异常退出"));
     };
-    worker.postMessage({ type: "parse", requestId, file } satisfies MeshImportRequest);
+    worker.onmessageerror = () => {
+      if (!fallback) fail(new MeshImportError("WORKER_FAILURE", "无法读取网格后台结果"));
+    };
+    try {
+      worker.postMessage({ type: "parse", requestId, file } satisfies MeshImportRequest);
+    } catch {
+      if (!workerReplied) fallbackToMainThread();
+      else fail(new MeshImportError("WORKER_FAILURE", "无法发送网格后台任务"));
+    }
   });
 
   return {

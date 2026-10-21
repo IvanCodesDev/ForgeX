@@ -436,6 +436,9 @@ function GcodeSection(ctx: PageContext) {
           {`正在后台解析 G-code（界面保持可交互）：${GCODE_PHASE_LABEL[importing.phase ?? "read"]} · ${Math.round(
             importing.progress * 100
           )}%`}
+          <button className="btn" type="button" onClick={assets.cancelGcodeImport}>
+            取消 G-code 导入
+          </button>
         </div>
       ) : null}
       {gcode && sim.importedToolpath ? (
@@ -634,6 +637,9 @@ function MeshSection({ sim, assets }: PageContext) {
           {`正在后台解析网格（界面保持可交互）：${MESH_PHASE_LABEL[importing.phase ?? "read"]} · ${Math.round(
             importing.progress * 100
           )}%`}
+          <button className="btn" type="button" onClick={assets.cancelMeshImport}>
+            取消网格导入
+          </button>
         </div>
       ) : null}
       {live ? <MeshSummary state={state} /> : null}

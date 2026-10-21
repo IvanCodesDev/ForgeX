@@ -58,20 +58,37 @@ let nextRequestId = 1;
 async function parseOnMainThread(
   file: File,
   options: GcodeParserOptions,
-  onProgress?: (progress: GcodeImportProgress) => void
+  onProgress: ((progress: GcodeImportProgress) => void) | undefined,
+  checkActive: () => void
 ): Promise<GcodeImportSuccess> {
-  if (file.size > MAX_BYTES) {
-    throw new GcodeImportError("FILE_TOO_LARGE", `G-code 超过 ${Math.round(MAX_BYTES / 1024 / 1024)}MB，请先精简`);
+  let phase: GcodeImportPhase = "read";
+  try {
+    if (file.size > MAX_BYTES) {
+      throw new GcodeImportError("FILE_TOO_LARGE", `G-code 超过 ${Math.round(MAX_BYTES / 1024 / 1024)}MB，请先精简`);
+    }
+    onProgress?.({ phase: "read", progress: 0 });
+    checkActive();
+    const buffer = await file.arrayBuffer();
+    checkActive();
+    phase = "hash";
+    const digest = await sha256(buffer);
+    checkActive();
+    phase = "parse";
+    onProgress?.({ phase: "parse", progress: 0 });
+    const sourceText = new TextDecoder("utf-8").decode(new Uint8Array(buffer));
+    const parsed = parse(sourceText, options);
+    checkActive();
+    parsed.sha256 = digest;
+    onProgress?.({ phase: "parse", progress: 1 });
+    return { parsed, sourceText, sha256: digest, via: "main" };
+  } catch (error) {
+    if (error instanceof GcodeImportError) throw error;
+    throw new GcodeImportError(
+      phase === "read" ? "READ_FAILED" : phase === "hash" ? "CRYPTO_UNAVAILABLE" : "PARSE_FAILED",
+      String((error as Error)?.message ?? error),
+      phase
+    );
   }
-  onProgress?.({ phase: "read", progress: 0 });
-  const buffer = await file.arrayBuffer();
-  const digest = await sha256(buffer);
-  onProgress?.({ phase: "parse", progress: 0 });
-  const sourceText = new TextDecoder("utf-8").decode(new Uint8Array(buffer));
-  const parsed = parse(sourceText, options);
-  parsed.sha256 = digest;
-  onProgress?.({ phase: "parse", progress: 1 });
-  return { parsed, sourceText, sha256: digest, via: "main" };
 }
 
 /** 测试探针（与 window.FX 调试句柄同性质）：E2E 卡口据此断言 Worker 路径真的被走到 */
@@ -87,7 +104,8 @@ export function importGcodeFile(
   let worker: Worker | null = null;
   let watchdog: number | null = null;
   let settled = false;
-  let cancelled = false;
+  let fallback = false;
+  let rebuilding = false;
   let rejectPromise: (error: unknown) => void = () => {};
 
   const cleanup = () => {
@@ -112,13 +130,26 @@ export function importGcodeFile(
       markImportVia(value.via);
       resolve(value);
     };
-    const fallbackToMainThread = () => {
-      cleanup();
-      parseOnMainThread(file, options, onProgress).then(settle, fail);
+    const checkActive = () => {
+      if (settled) throw new GcodeImportError("CANCELLED", "G-code 导入已结束");
     };
+    const report = (progress: GcodeImportProgress) => {
+      if (!settled) onProgress?.(progress);
+    };
+    const fallbackToMainThread = () => {
+      if (settled || fallback) return;
+      fallback = true;
+      worker?.terminate();
+      worker = null;
+      // 看门狗覆盖兜底路径；每个异步阶段后检查取消/超时，阻止旧文件继续处理。
+      parseOnMainThread(file, options, report, checkActive).then(settle, fail);
+    };
+    watchdog = window.setTimeout(() => {
+      fail(new GcodeImportError("TIMEOUT", "G-code 解析超时，已结束本次导入"));
+    }, IMPORT_TIMEOUT_MS);
 
     try {
-      worker = new GcodeImportWorkerCtor();
+      worker = new GcodeImportWorkerCtor({ name: "forgex-gcode" });
     } catch {
       worker = null;
     }
@@ -130,16 +161,13 @@ export function importGcodeFile(
     const requestId = nextRequestId++;
     let workerReplied = false;
     let sourceText = "";
-    watchdog = window.setTimeout(() => {
-      fail(new GcodeImportError("TIMEOUT", "G-code 解析超时，已终止后台任务"));
-    }, IMPORT_TIMEOUT_MS);
 
     worker.onmessage = (event: MessageEvent<GcodeImportWorkerReply>) => {
       const message = event.data;
-      if (!message || message.requestId !== requestId || settled) return;
+      if (!message || message.requestId !== requestId || settled || fallback || rebuilding) return;
       workerReplied = true;
       if (message.type === "progress") {
-        onProgress?.({ phase: message.phase, progress: message.progress });
+        report({ phase: message.phase, progress: message.progress });
         return;
       }
       if (message.type === "source-text") {
@@ -151,24 +179,28 @@ export function importGcodeFile(
         return;
       }
       /* result：分片重建对象图；每片之间让出事件循环并响应取消 */
-      onProgress?.({ phase: "rebuild", progress: 0 });
+      rebuilding = true;
+      worker?.terminate();
+      worker = null;
+      report({ phase: "rebuild", progress: 0 });
       const yieldToEventLoop = () =>
         new Promise<void>((yieldResolve, yieldReject) => {
           window.setTimeout(() => {
-            if (cancelled) yieldReject(new GcodeImportError("CANCELLED", "G-code 导入已取消"));
+            if (settled) yieldReject(new GcodeImportError("CANCELLED", "G-code 导入已取消"));
             else yieldResolve();
           }, 0);
         });
       unpackParsedGcode(message.packed, { yieldToEventLoop })
         .then((parsed) => {
+          checkActive();
           parsed.sha256 = message.sha256;
-          onProgress?.({ phase: "rebuild", progress: 1 });
+          report({ phase: "rebuild", progress: 1 });
           settle({ parsed, sourceText, sha256: message.sha256, toolpath: message.toolpath, via: "worker" });
         })
         .catch(fail);
     };
     worker.onerror = (event) => {
-      if (settled) return;
+      if (settled || fallback || rebuilding) return;
       /* 业务消息到达前的失败＝Worker 基建不可用（如受限环境加载失败）→ 回退主线程；
          之后的失败是真异常，结构化上抛。 */
       if (!workerReplied) {
@@ -178,14 +210,21 @@ export function importGcodeFile(
       }
       fail(new GcodeImportError("WORKER_FAILURE", event.message || "G-code Worker 异常退出"));
     };
-    worker.postMessage({ type: "parse", requestId, file, options } satisfies GcodeImportRequest);
+    worker.onmessageerror = () => {
+      if (!fallback && !rebuilding) fail(new GcodeImportError("WORKER_FAILURE", "无法读取 G-code 后台结果"));
+    };
+    try {
+      worker.postMessage({ type: "parse", requestId, file, options } satisfies GcodeImportRequest);
+    } catch {
+      if (!workerReplied) fallbackToMainThread();
+      else fail(new GcodeImportError("WORKER_FAILURE", "无法发送 G-code 后台任务"));
+    }
   });
 
   return {
     promise,
     cancel() {
       if (settled) return;
-      cancelled = true;
       settled = true;
       cleanup();
       rejectPromise(new GcodeImportError("CANCELLED", "G-code 导入已取消"));
