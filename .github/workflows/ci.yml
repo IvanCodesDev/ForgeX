@@ -202,7 +202,7 @@ jobs:
       - name: C# 公共服务契约（Node 退役前的 HTTP 替身）
         run: npm run dotnet:server-contract
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: csharp-server-contract-dotnet-10.0.302
@@ -210,14 +210,14 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: gcode-golden-diff-dotnet-10.0.302
           path: backend/artifacts/gcode-golden-diff.json
           if-no-files-found: error
           retention-days: 14
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: gcode-job-gate-dotnet-10.0.302
           path: |
@@ -227,7 +227,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: persistence-recovery-dotnet-10.0.302
           path: |
@@ -237,28 +237,28 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: analytics-golden-diff-dotnet-10.0.302
           path: backend/artifacts/analytics-golden-diff.json
           if-no-files-found: error
           retention-days: 14
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: rules-authority-dualrun-dotnet-10.0.302
           path: backend/artifacts/rules-authority-dualrun.json
           if-no-files-found: error
           retention-days: 14
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: auth-matrix-dotnet-10.0.302
           path: backend/artifacts/auth-matrix.json
           if-no-files-found: error
           retention-days: 14
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: static-hosting-dotnet-10.0.302
           path: |
@@ -267,7 +267,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: resource-authority-dotnet-10.0.302
           path: |
@@ -332,7 +332,7 @@ jobs:
       - name: SLO、告警、轮换与回滚运行手册门禁
         run: npm run ops:check && npm run rollback:rehearse
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: production-readiness-audit
           path: |
@@ -488,7 +488,7 @@ jobs:
         env:
           E2E_MESH_AUTHORITY: dotnet
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mesh-authority-ui
@@ -503,7 +503,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report
