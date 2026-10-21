@@ -24,7 +24,7 @@ jobs:
       matrix:
         node: ["22"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -44,7 +44,7 @@ jobs:
     name: Lint & format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -61,7 +61,7 @@ jobs:
     name: React frontend · typecheck, test & build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -110,7 +110,7 @@ jobs:
       POSTGRES_URL: postgres://forgex:forgex@localhost:5432/forgex
       FORGEX_DRILL_REQUIRE_ALL: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -282,7 +282,7 @@ jobs:
     name: C# deployment + legacy Node rollback containers
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -309,7 +309,7 @@ jobs:
     name: 诚实性检查
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -454,7 +454,7 @@ jobs:
     env:
       POSTGRES_URL: postgres://forgex:forgex@localhost:5432/forgex
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
