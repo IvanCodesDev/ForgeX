@@ -208,6 +208,7 @@ export interface MachineLogState {
 }
 
 export interface ImageModelState {
+  readonly sha256?: string;
   readonly img: HTMLImageElement | null;
   readonly name: string;
   readonly mode: "relief" | "silhouette";

@@ -95,6 +95,29 @@ test.describe("React 离线单文件（Stage 7.2 验收）", () => {
     expect(requests).toEqual([]);
   });
 
+  test("file:// 图片摘要与建模可用，切页后预览 URL 保持有效且零网络", async ({ page }) => {
+    const requests = [];
+    page.on("request", (request) => {
+      if (/^https?:/i.test(request.url())) requests.push(request.url());
+    });
+    await waitBooted(page);
+    await page.locator("#flow-pills .flow-pill").first().click();
+    const source =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="white"/><circle cx="24" cy="24" r="16" fill="black"/></svg>';
+    await page
+      .locator("#file-input")
+      .setInputFiles({ name: "offline-image.svg", mimeType: "image/svg+xml", buffer: Buffer.from(source) });
+    await expect(page.locator(".img-preview .ip-name")).toHaveText("offline-image.svg");
+    await expect(
+      page.locator(`.img-preview [title="${createHash("sha256").update(source).digest("hex")}"]`)
+    ).toBeVisible();
+    expect(await page.evaluate(() => window.FX.sim.model.id)).toBe("image");
+    await page.locator("#flow-pills .flow-pill").nth(1).click();
+    await page.locator("#flow-pills .flow-pill").first().click();
+    await expect.poll(() => page.locator(".img-preview img").evaluate((img) => img.naturalWidth)).toBe(48);
+    expect(requests).toEqual([]);
+  });
+
   test("file:// 启动：无报错、设计令牌生效、四机型可切换", async ({ page }) => {
     const errors = watchErrors(page);
     await waitBooted(page);

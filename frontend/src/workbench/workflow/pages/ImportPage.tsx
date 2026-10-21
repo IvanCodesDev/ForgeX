@@ -81,7 +81,7 @@ function UploadZone({
   );
 }
 
-function PrinterSection({ sim, ui, bump }: PageContext & { bump(): void }) {
+function PrinterSection({ sim, ui, assets, bump }: PageContext & { bump(): void }) {
   const { printers } = legacyImportServices();
   const locked = printLocked(sim);
   return (
@@ -96,6 +96,7 @@ function PrinterSection({ sim, ui, bump }: PageContext & { bump(): void }) {
               if (printLocked(sim)) return ui.toast("打印中不可切换机型", "warn");
               if (sim.printer.ID === printer.id) return;
               if (sim.setPrinterModel(printer.id)) {
+                assets.clearImportChain();
                 ui.toast(`已切换至「${printer.name}」（${printer.desc}）`, "ok");
                 bump();
               }
@@ -659,12 +660,25 @@ function ImageSection({ assets }: PageContext) {
         onClick={() => document.getElementById("file-input")?.click()}
         onFile={assets.handleImageFile}
       />
+      {assets.imageImport && (
+        <div className="note" role="status" data-image-import={assets.imageImport.phase}>
+          正在导入图片：{{ read: "读取文件", hash: "校验摘要", decode: "解码图片" }[assets.imageImport.phase]}
+          <button className="btn" onClick={assets.cancelImageImport}>
+            取消图片导入
+          </button>
+        </div>
+      )}
       {image.img ? (
         <>
           <div className="img-preview">
             <img src={image.img.src} alt="" />
             <div>
               <div className="ip-name">{image.name}</div>
+              {image.sha256 && (
+                <div className="ip-meta" title={image.sha256}>
+                  SHA-256 {image.sha256.slice(0, 12)}…
+                </div>
+              )}
               <div className="ip-meta">{`${image.img.naturalWidth} × ${image.img.naturalHeight} px`}</div>
             </div>
           </div>

@@ -73,6 +73,19 @@ async function prepare(page, kind, fallback = false) {
   );
 }
 for (const kind of ["gcode", "mesh"]) {
+  test(`${kind}：任务完成前开始仿真，不再接受迟到导入`, async ({ page }) => {
+    await prepare(page, kind);
+    const original = await page.evaluate(() => window.FX.sim.model.id);
+    await page.locator(`#${kind}-input`).setInputFiles(kind === "gcode" ? gcode : mesh);
+    await page.waitForFunction(() => window.__importProbe.held);
+    await page.evaluate(() => {
+      window.FX.sim.start();
+      window.__releaseImportWorker();
+    });
+    await expect(page.locator(`[data-${kind}-import]`)).toHaveCount(0);
+    expect(await page.evaluate(() => window.FX.sim.model.id)).toBe(original);
+    await expect(page.locator(kind === "gcode" ? "#gcode-summary" : "#mesh-summary")).toHaveCount(0);
+  });
   test(`${kind}：取消后台导入后丢弃已排队结果`, async ({ page }) => {
     await prepare(page, kind);
     const model = await page.evaluate(() => window.FX.sim.model.id);
