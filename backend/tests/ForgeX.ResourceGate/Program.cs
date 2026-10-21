@@ -23,6 +23,7 @@ try
     await MeshTopologySection.RunAsync(gate);
     await GCodeCostSection.RunAsync(gate);
     await GCodeReplaySection.RunAsync(gate);
+    await GCodeUnitsSection.RunAsync(gate);
     await FileCollectionSection.RunAsync(gate);
     await SharesSection.RunAsync(gate);
     await DatasourcesSection.RunAsync(gate);

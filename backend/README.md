@@ -74,9 +74,15 @@ the immediate preview used by `browser` and `shadow` modes.
 
 `ForgeX.ResourceGate` 包含成本公式、舍入、零值/缺失、指纹与真实 HTTP 隔离验证；OpenAPI 运行时门禁请求实际作业成本；CI 的 `E2E_GCODE_AUTHORITY=dotnet` 专项验证真实作业、输入失效、审计下载和取消。
 
+## G-code 单位与挤出模式边界
+
+引擎 `1.6.0`、React 解析器与经典解析器统一将 `G20` 的英寸 XYZ、长度 E 与 F 进给换算为毫米；`G21` 恢复毫米输入。内部坐标、已保存的进给及 E 状态始终使用毫米，单位切换本身不重置它们；`G92` 的输入数值也按当前单位换算。Profile 的平台尺寸和材料参数不随文件单位改变，原始字节 SHA-256 仍绑定上传原件。曾出现 G20 的文件附带单位换算提示；原有毫米夹具金标保持一致。单位定义见 [Marlin G20](https://marlinfw.org/docs/gcode/G020.html)。
+
+当前仍采用单工具、1.75 mm 耗材的长度挤出模型。`T0` 可用，选择其他工具返回 `GCODE_UNSUPPORTED_TOOL`，避免把不同工具的独立 E 状态合并。`M200 S0` 或未声明 S 的 `M200 D0` 可明确关闭体积模式；其余 M200 指令（包括只查询配置）以 `GCODE_UNSUPPORTED_VOLUMETRIC_EXTRUSION` 拒绝，不把体积 E 当作长度。M200 参数定义见 [Marlin 文档](https://marlinfw.org/docs/gcode/M200.html)。程序无法读取设备已有的单位/体积模式，未声明时按毫米与长度 E 解释；旧引擎分析过的英寸文件应重新分析，不自动改写历史结果。本轮不扩展完整固件、工作坐标系或多工具仿真。
+
 ## C# 层计划与回放检查点
 
-G-code 引擎 `1.5.0` 在按 Z 排序前保存每个挤出层的 `sourceOrder`；响应契约仍为 `1.0`，该字段允许缺省或显式 `null`，便于读取旧结果。时间轴严格使用源执行顺序，支持降层和重复高度；不从按高度排序的层数组或采样几何猜测顺序。
+G-code 引擎自 `1.5.0` 起在按 Z 排序前保存每个挤出层的 `sourceOrder`；响应契约仍为 `1.0`，该字段允许缺省或显式 `null`，便于读取旧结果。时间轴严格使用源执行顺序，支持降层和重复高度；不从按高度排序的层数组或采样几何猜测顺序。
 
 - `GET /api/v1/gcode/analyses/{id}/layer-timeline?offset=0&limit=50`：返回分页层计划、首层前运动、总时长、正向耗丝及来源指纹；每页 1–200 层，offset 可等于总层数。层行同时保留执行序号与按高度排序的 layerIndex，时间区间为 `[startSeconds, endSeconds)`。未知、重复或非整数分页参数拒绝。
 - `POST /api/v1/gcode/analyses/{id}/replay-checkpoints`：输入 `{"elapsedSeconds":1.5}`，上限 4 KiB；返回首层前空驶、活动层或完成状态。位于边界时进入下一层；零时长层计入已完成层，不做除零。只累计完整完成层的正向 E 增量，不按时间比例分配当前层材料、成本或喷头位置。
@@ -147,7 +153,7 @@ whose operational limits or price differ even when their bytes and Profile IDs m
 stable findings for bounds, temperature, speed, flow, homing, single-layer completeness, and arc
 approximation. Energy and machine-time estimates use the separate declared-input cost endpoint above.
 
-The current G-code engine contract version is `1.5.0`; the motion replay endpoints above require its recorded source order.
+The current G-code engine contract version is `1.6.0`; motion replay requires the source order recorded since `1.5.0`.
 New asynchronous idempotency fingerprints use `forgex-gcode-job/2`. A completed Stage 5-A file-job
 record without `layers`, a Stage 5-B record without `visualization`, or a Stage 5-C record without
 `material`/`risk`, is reopened as a stable
@@ -385,4 +391,4 @@ The old page remains at `/`, the React page remains at `/react/`, and the defaul
 23. G-code → 公共契约第 23 组验证直接权威端点和作业身份边界，异步持久化由单进程部署演练/JobGate 补齐。Node 的流式代理实现测试在代理删除后才退役，不能用直连接口通过来宣称这些代理分支已逐条迁移。
 24. 单进程路由错误 → 公共契约第 24 组验证内部 405/415、`Allow`、公共中文 404，以及 GET/POST/DELETE/HEAD 和大小写路径。
 
-公共 HTTP 契约现为 196 项；ResourceGate 为 680 项（file + postgres 双腿，包含 provider 等内部契约 59 项、部署健康故障验证 16 项、网格解析/HTTP 验证 127 项、成本模型/HTTP/前置契约验证 61 项及层计划回放 50 项）。CI 分别保存 `csharp-server-contract.json` 与 `resource-authority-gate.json`。测试数量不能替代删除审批、真实容器验收和生产观察；现阶段仍保留 Node、经典前端及原测试链。
+公共 HTTP 契约现为 196 项；ResourceGate 为 698 项（file + postgres 双腿，包含 provider 等内部契约 59 项、部署健康故障验证 16 项、网格解析/HTTP 验证 127 项、成本模型/HTTP/前置契约验证 61 项、层计划回放 50 项及 G-code 单位/模式 18 项）。CI 分别保存 `csharp-server-contract.json` 与 `resource-authority-gate.json`。测试数量不能替代删除审批、真实容器验收和生产观察；现阶段仍保留 Node、经典前端及原测试链。

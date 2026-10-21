@@ -5,7 +5,7 @@
   "baselineEngineVersion": "0.19.0-stage0",
   "approvedBy": "workspace-owner-directed-baseline",
   "updatePolicy": "不得在测试失败时覆盖；仅在解释算法/契约变化后显式运行 golden:update。",
-  "engineSourceSha256": "631d8298f915ea7784f87860d4e0312f958ff438e7d00af005525b1ab9077331",
+  "engineSourceSha256": "5190315ca678e3e3445d61daef8ff06715ab632fda11d2e5e739120d839c7619",
   "caseCount": 24,
   "cases": [
     {

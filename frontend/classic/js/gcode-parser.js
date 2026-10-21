@@ -148,6 +148,7 @@
     var totalFilamentMm = 0;   // E 的真实增量合计（**精确值**，非估算）
     var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     var arcCount = 0;
+    var unitScale = 1, inchUnitsSeen = false;
 
     /* 流式输入状态。lineCount 从 1 开始，与旧实现 split(...).length 完全一致。 */
     var lineBuffer = "";
@@ -180,6 +181,14 @@
       return L;
     }
 
+    function lengthWord(line, letter) {
+      var raw = word(line, letter);
+      if (raw === null) return null;
+      var value = raw * unitScale;
+      if (!Number.isFinite(value) || Math.abs(value) > 1e12) throw new Error("G-code 换算后的长度或速度超出支持范围");
+      return value;
+    }
+
     function processLine(raw) {
       if (!raw) return;
       var line = raw.trim();
@@ -207,14 +216,16 @@
       if (g) {
         var code = +g[1];
 
+        if (code === 20) { unitScale = 25.4; inchUnitsSeen = true; return; }
+        if (code === 21) { unitScale = 1; return; }
         if (code === 90) { absXYZ = true; return; }
         if (code === 91) { absXYZ = false; return; }
         if (code === 92) {                     // 设置当前位置（常用于 E 归零）
-          var ge = word(line, "E");
+          var ge = lengthWord(line, "E");
           if (ge != null) e = ge;
-          var gx = word(line, "X"); if (gx != null) x = gx;
-          var gy = word(line, "Y"); if (gy != null) y = gy;
-          var gz = word(line, "Z"); if (gz != null) z = gz;
+          var gx = lengthWord(line, "X"); if (gx != null) x = gx;
+          var gy = lengthWord(line, "Y"); if (gy != null) y = gy;
+          var gz = lengthWord(line, "Z"); if (gz != null) z = gz;
           return;
         }
         if (code === 28) {                     // 归位
@@ -230,8 +241,8 @@
         }
         if (code !== 0 && code !== 1 && code !== 2 && code !== 3) return;
 
-        var nx = word(line, "X"), ny = word(line, "Y"), nz = word(line, "Z");
-        var ne = word(line, "E"), nf = word(line, "F");
+        var nx = lengthWord(line, "X"), ny = lengthWord(line, "Y"), nz = lengthWord(line, "Z");
+        var ne = lengthWord(line, "E"), nf = lengthWord(line, "F");
         if (nf != null && nf > 0) f = nf;
 
         var px = x, py = y;
@@ -289,10 +300,16 @@
         return;
       }
 
+      var tool = /^T(\d+)/i.exec(line);
+      if (tool && +tool[1] !== 0) throw new Error("当前仅支持 T0 单工具 G-code，不能合并多工具的独立挤出坐标");
       var m = /^M(\d+)/i.exec(line);
       if (m) {
         var mc = +m[1];
-        if (mc === 82) absE = true;
+        if (mc === 200) {
+          var enabled = word(line, "S"), diameter = word(line, "D");
+          if (enabled !== 0 && !(enabled === null && diameter === 0)) throw new Error("当前不支持 M200 体积挤出；请使用明确关闭体积模式的长度 E 指令");
+        }
+        else if (mc === 82) absE = true;
         else if (mc === 83) absE = false;
         else if (mc === 104 || mc === 109) {
           var s1 = word(line, "S");
@@ -375,6 +392,7 @@
 
       if (!homed) warnings.push("文件中没有 G28 归位指令，坐标可能不是绝对机床坐标");
       if (arcCount) warnings.push("含 " + arcCount + " 条圆弧指令（G2/G3），已按直线段近似，弧长略偏小");
+      if (inchUnitsSeen) warnings.push("G20 英寸坐标、长度挤出与进给速度已统一换算为毫米");
       var cMinX = minX - offset, cMaxX = maxX - offset;
       var cMinY = minY - offset, cMaxY = maxY - offset;
       if (cMinX < -half || cMaxX > half || cMinY < -half || cMaxY > half) {

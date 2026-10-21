@@ -198,6 +198,8 @@ export function createIncrementalParser(opt?: GcodeParserOptions): IncrementalPa
     e = 0,
     f = 1200;
   let homed = false;
+  let unitScale = 1,
+    inchUnitsSeen = false;
 
   /* 累积结果 */
   let layers: GcodeLayer[] = [];
@@ -249,6 +251,14 @@ export function createIncrementalParser(opt?: GcodeParserOptions): IncrementalPa
     return L;
   }
 
+  function lengthWord(line: string, letter: string): number | null {
+    const raw = word(line, letter);
+    if (raw === null) return null;
+    const value = raw * unitScale;
+    if (!Number.isFinite(value) || Math.abs(value) > 1e12) throw new Error("G-code 换算后的长度或速度超出支持范围");
+    return value;
+  }
+
   function processLine(raw: string): void {
     if (!raw) return;
     let line = raw.trim();
@@ -277,6 +287,15 @@ export function createIncrementalParser(opt?: GcodeParserOptions): IncrementalPa
     if (g) {
       const code = +g[1]!;
 
+      if (code === 20) {
+        unitScale = 25.4;
+        inchUnitsSeen = true;
+        return;
+      }
+      if (code === 21) {
+        unitScale = 1;
+        return;
+      }
       if (code === 90) {
         absXYZ = true;
         return;
@@ -287,13 +306,13 @@ export function createIncrementalParser(opt?: GcodeParserOptions): IncrementalPa
       }
       if (code === 92) {
         // 设置当前位置（常用于 E 归零）
-        const ge = word(line, "E");
+        const ge = lengthWord(line, "E");
         if (ge != null) e = ge;
-        const gx = word(line, "X");
+        const gx = lengthWord(line, "X");
         if (gx != null) x = gx;
-        const gy = word(line, "Y");
+        const gy = lengthWord(line, "Y");
         if (gy != null) y = gy;
-        const gz = word(line, "Z");
+        const gz = lengthWord(line, "Z");
         if (gz != null) z = gz;
         return;
       }
@@ -312,11 +331,11 @@ export function createIncrementalParser(opt?: GcodeParserOptions): IncrementalPa
       }
       if (code !== 0 && code !== 1 && code !== 2 && code !== 3) return;
 
-      const nx = word(line, "X"),
-        ny = word(line, "Y"),
-        nz = word(line, "Z");
-      const ne = word(line, "E"),
-        nf = word(line, "F");
+      const nx = lengthWord(line, "X"),
+        ny = lengthWord(line, "Y"),
+        nz = lengthWord(line, "Z");
+      const ne = lengthWord(line, "E"),
+        nf = lengthWord(line, "F");
       if (nf != null && nf > 0) f = nf;
 
       const px = x,
@@ -380,10 +399,17 @@ export function createIncrementalParser(opt?: GcodeParserOptions): IncrementalPa
       return;
     }
 
+    const tool = /^T(\d+)/i.exec(line);
+    if (tool && +tool[1]! !== 0) throw new Error("当前仅支持 T0 单工具 G-code，不能合并多工具的独立挤出坐标");
     const m = /^M(\d+)/i.exec(line);
     if (m) {
       const mc = +m[1]!;
-      if (mc === 82) absE = true;
+      if (mc === 200) {
+        const enabled = word(line, "S"),
+          diameter = word(line, "D");
+        if (enabled !== 0 && !(enabled === null && diameter === 0))
+          throw new Error("当前不支持 M200 体积挤出；请使用明确关闭体积模式的长度 E 指令");
+      } else if (mc === 82) absE = true;
       else if (mc === 83) absE = false;
       else if (mc === 104 || mc === 109) {
         const s1 = word(line, "S");
@@ -458,6 +484,7 @@ export function createIncrementalParser(opt?: GcodeParserOptions): IncrementalPa
       throw new Error("未解析到任何挤出路径 —— 请确认这是 FDM 打印机的 G-code");
     }
     layers.sort((a, b) => a.z - b.z);
+    if (inchUnitsSeen) warnings.push("G20 英寸坐标、长度挤出与进给速度已统一换算为毫米");
 
     /* 统计。挤出体积用 E 的真实增量换算，不是「路径长 × 截面积」的估算。 */
     const volumeMm3 = Math.max(0, totalFilamentMm) * FILAMENT_AREA_175;

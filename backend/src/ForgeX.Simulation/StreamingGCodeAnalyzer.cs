@@ -15,7 +15,7 @@ namespace ForgeX.Simulation;
 /// </summary>
 public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
 {
-    public const string EngineVersion = "1.5.0";
+    public const string EngineVersion = "1.6.0";
 
     private const int ReadBufferSize = 64 * 1024;
     private static readonly Encoding StrictUtf8 = new UTF8Encoding(
@@ -286,6 +286,8 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
         private bool _atStart = true;
         private long _lineCount = 1;
         private bool _finished;
+        private double _unitScale = 1d;
+        private bool _inchUnitsSeen;
 
         public ParserState(GCodeAnalysisOptions options)
         {
@@ -373,6 +375,8 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
             }
 
             _layers.Sort(static (left, right) => left.ZMm.CompareTo(right.ZMm));
+            if (_inchUnitsSeen)
+                _warnings.Add(new GCodeWarning("GCODE_INCH_UNITS_NORMALIZED", "G20 coordinates, linear extrusion and feed rates were converted from inches to millimetres."));
             if (!_homed)
             {
                 _warnings.Add(new GCodeWarning(
@@ -539,12 +543,21 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
             {
                 ProcessMCode(mCode, line);
             }
+            else if (TryReadCommand(line, 'T', out var tool) && tool != 0)
+                throw new GCodeAnalysisException("GCODE_UNSUPPORTED_TOOL", "当前仅支持 T0 单工具 G-code，不能合并多工具的独立挤出坐标。");
         }
 
         private void ProcessGCode(int code, string line)
         {
             switch (code)
             {
+                case 20:
+                    _unitScale = 25.4d;
+                    _inchUnitsSeen = true;
+                    return;
+                case 21:
+                    _unitScale = 1d;
+                    return;
                 case 90:
                     _absoluteXyz = true;
                     return;
@@ -572,11 +585,11 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
                     return;
             }
 
-            var nextX = ReadWord(line, 'X');
-            var nextY = ReadWord(line, 'Y');
-            var nextZ = ReadWord(line, 'Z');
-            var nextE = ReadWord(line, 'E');
-            var nextFeed = ReadWord(line, 'F');
+            var nextX = ReadLength(line, 'X');
+            var nextY = ReadLength(line, 'Y');
+            var nextZ = ReadLength(line, 'Z');
+            var nextE = ReadLength(line, 'E');
+            var nextFeed = ReadLength(line, 'F');
             if (nextFeed is > 0d)
             {
                 _feed = nextFeed.Value;
@@ -666,6 +679,13 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
         {
             switch (code)
             {
+                case 200:
+                    // Only an explicit disable is supported: E remains a filament length.
+                    var enabled = ReadWord(line, 'S');
+                    var diameter = ReadWord(line, 'D');
+                    if (enabled != 0d && !(enabled is null && diameter == 0d))
+                        throw new GCodeAnalysisException("GCODE_UNSUPPORTED_VOLUMETRIC_EXTRUSION", "当前不支持 M200 体积挤出；请使用明确关闭体积模式的长度 E 指令。");
+                    break;
                 case 82:
                     _absoluteE = true;
                     break;
@@ -810,29 +830,37 @@ public sealed partial class StreamingGCodeAnalyzer : IGCodeAnalyzer
 
         private void SetPosition(string line)
         {
-            var value = ReadWord(line, 'E');
+            var value = ReadLength(line, 'E');
             if (value.HasValue)
             {
                 _e = value.Value;
             }
 
-            value = ReadWord(line, 'X');
+            value = ReadLength(line, 'X');
             if (value.HasValue)
             {
                 _x = value.Value;
             }
 
-            value = ReadWord(line, 'Y');
+            value = ReadLength(line, 'Y');
             if (value.HasValue)
             {
                 _y = value.Value;
             }
 
-            value = ReadWord(line, 'Z');
+            value = ReadLength(line, 'Z');
             if (value.HasValue)
             {
                 _z = value.Value;
             }
+        }
+
+        private double? ReadLength(string line, char letter)
+        {
+            var value = ReadWord(line, letter) * _unitScale;
+            if (value.HasValue && (!double.IsFinite(value.Value) || Math.Abs(value.Value) > 1e12))
+                throw new GCodeAnalysisException("GCODE_NUMERIC_RANGE", "G-code 换算后的长度或速度超出支持范围。");
+            return value;
         }
 
         private void StartLayer(double zMm)
